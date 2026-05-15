@@ -22,3 +22,6 @@ Read its `references/pattern-catalog.md` when choosing the artifact shape.
 
 If this is a new repository, create the first project plan as a browser-openable HTML file under `webpage/`. Make it concrete enough that a fresh agent session can implement from it: goals, constraints, architecture, milestones, risks, tests, and next actions.
 
+## Cross-Agent Note
+
+This starter also includes native instruction files for Claude Code, Cursor, VS Code/GitHub Copilot, Roo Code, Cline, Continue, Windsurf, and Gemini CLI. Keep those files aligned with this one when changing the documentation convention.
