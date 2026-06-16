@@ -26,8 +26,14 @@
       "disabled": false
     },
     "mem0": {
-      "command": "C:\\\\Users\\\\mauls\\\\.local\\\\bin\\\\mem0-mcp-selfhosted.exe",
-      "args": [],
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\mem0-patched\\run-mem0.ps1"
+      ],
       "env": {
         "MEM0_PROVIDER": "ollama",
         "MEM0_LLM_MODEL": "qwen2.5:1.5b",
