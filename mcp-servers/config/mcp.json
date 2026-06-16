@@ -26,12 +26,8 @@
       "disabled": false
     },
     "mem0": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\mem0-patched",
-        "mem0-mcp-selfhosted"
-      ],
+      "command": "mem0-mcp-selfhosted",
+      "args": [],
       "env": {
         "MEM0_PROVIDER": "ollama",
         "MEM0_LLM_MODEL": "qwen2.5:1.5b",
@@ -42,8 +38,8 @@
         "MEM0_EMBEDDING_MODEL": "bge-m3:latest",
         "MEM0_TRANSPORT": "stdio"
       },
-      "connect_timeout": 120,
-      "execute_timeout": 180,
+      "connect_timeout": 60,
+      "execute_timeout": 120,
       "disabled": false
     },
     "superpowers": {
