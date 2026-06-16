@@ -21,19 +21,17 @@ temp/
 *.tar
 *.tar.gz
 
+# Serena per-project data (auto-generated, not tracked)
+.serena/
+
 # MCP server data (persistent, machine-local)
 mcp-servers/data/
 
 # Node.js dependencies (generated)
 mcp-servers/superpowers/node_modules/
 mcp-servers/superpowers/package-lock.json
-.serena/
-
 mcp-servers/superpowers/pnpm-lock.yaml
 mcp-servers/superpowers/.git/
 mcp-servers/superpowers/.github/
 mcp-servers/superpowers/.gitignore
 mcp-servers/superpowers/tsconfig.json
-.serena/
-
-mcp-servers/superpowers/pnpm-lock.yaml
