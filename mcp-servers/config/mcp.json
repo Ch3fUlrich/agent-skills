@@ -30,7 +30,7 @@
       ],
       "env": {
         "MEM0_PROVIDER": "ollama",
-        "MEM0_LLM_MODEL": "gemma4:e4b",
+        "MEM0_LLM_MODEL": "qwen2.5:1.5b",
         "MEM0_LLM_MAX_TOKENS": "256",
         "MEM0_USER_ID": "mauls",
         "MEM0_ENABLE_GRAPH": "false",
