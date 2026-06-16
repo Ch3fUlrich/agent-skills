@@ -44,7 +44,7 @@ foreach ($Repo in $Repos) {
     $IndexFile = Join-Path $Repo.FullName ".serena" "project.json"
     if (-not (Test-Path $IndexFile)) {
         try {
-            serena project create --project "$($Repo.FullName)" --index 2>&1 | Out-Null
+            serena project create "$($Repo.FullName)" --index 2>&1 | Out-Null
             Write-Host "    v Indexed: $($Repo.Name)" -ForegroundColor Green
             $NewCount++
         } catch {

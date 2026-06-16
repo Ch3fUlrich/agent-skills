@@ -65,7 +65,7 @@ repos under `C:\Users\mauls\Documents\Code` have been pre-indexed with language
 servers downloaded. If a new repo is added, run:
 
 ```powershell
-serena project create --project "C:\Users\mauls\Documents\Code\NEW_REPO_NAME" --index
+serena project create "C:\Users\mauls\Documents\Code\NEW_REPO_NAME" --index
 ```
 
 Or use the automated script:

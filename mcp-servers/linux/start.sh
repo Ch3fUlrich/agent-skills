@@ -19,7 +19,7 @@ echo -e "  Checking for new repos..."
 for repo in "$HOME/Documents/Code"/*/; do
     [ -d "$repo/.git" ] || continue
     [ -f "$repo/.serena/project.json" ] && continue
-    serena project create --project "$repo" --index 2>/dev/null && echo -e "    \033[32mv Indexed: $(basename "$repo")\033[0m"
+    serena project create "$repo" --index 2>/dev/null && echo -e "    \033[32mv Indexed: $(basename "$repo")\033[0m"
 done
 
 echo ""

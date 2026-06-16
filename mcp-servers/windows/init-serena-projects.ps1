@@ -44,13 +44,13 @@ foreach ($Repo in $Repos) {
     if (Test-Path $IndexFile) {
         Write-Host "  Already indexed. Updating..." -ForegroundColor Gray
         try {
-            serena project index --project "$ProjectDir" 2>&1 | Out-Null
+            serena project index "$ProjectDir" 2>&1 | Out-Null
             Write-Host "  v Updated" -ForegroundColor Green
             $Skipped++
         } catch {
             Write-Host "  Re-creating..." -ForegroundColor Yellow
             try {
-                serena project create --project "$ProjectDir" --index 2>&1 | Out-Null
+                serena project create "$ProjectDir" --index 2>&1 | Out-Null
                 Write-Host "  v Created + indexed" -ForegroundColor Green
                 $Count++
             } catch {
@@ -60,7 +60,7 @@ foreach ($Repo in $Repos) {
         }
     } else {
         try {
-            serena project create --project "$ProjectDir" --index 2>&1 | Out-Null
+            serena project create "$ProjectDir" --index 2>&1 | Out-Null
             Write-Host "  v Created + indexed" -ForegroundColor Green
             $Count++
         } catch {

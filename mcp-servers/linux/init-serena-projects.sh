@@ -23,9 +23,9 @@ for repo in "$CODE_ROOT"/*/; do
     echo -e "\033[33m[$((COUNT + 1))] $name...\033[0m"
     
     if [ -f "$repo/.serena/project.json" ]; then
-        serena project index --project "$repo" 2>/dev/null && SKIPPED=$((SKIPPED + 1)) && echo -e "  \033[32mv Updated\033[0m" || true
+        serena project index "$repo" 2>/dev/null && SKIPPED=$((SKIPPED + 1)) && echo -e "  \033[32mv Updated\033[0m" || true
     else
-        serena project create --project "$repo" --index 2>/dev/null && COUNT=$((COUNT + 1)) && echo -e "  \033[32mv Created + indexed\033[0m" || { ERRORS=$((ERRORS + 1)); echo -e "  \033[31mX Error\033[0m"; }
+        serena project create "$repo" --index 2>/dev/null && COUNT=$((COUNT + 1)) && echo -e "  \033[32mv Created + indexed\033[0m" || { ERRORS=$((ERRORS + 1)); echo -e "  \033[31mX Error\033[0m"; }
     fi
 done
 

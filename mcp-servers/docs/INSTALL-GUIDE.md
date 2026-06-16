@@ -108,14 +108,14 @@ serena --version
 
 ```powershell
 # Create a temporary test project
-serena project create --project C:\Users\mauls\Documents\Code\agent-skills --index
+serena project create "C:\Users\mauls\Documents\Code\agent-skills" --index
 
 # List available tools
 serena tools list --all --project C:\Users\mauls\Documents\Code\agent-skills
 ```
 
 ```bash
-serena project create --project ~/Documents/Code/agent-skills --index
+serena project create ~/Documents/Code/agent-skills --index
 serena tools list --all --project ~/Documents/Code/agent-skills
 ```
 
