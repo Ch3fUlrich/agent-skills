@@ -25,7 +25,7 @@
     "mem0": {
       "command": "uvx",
       "args": [
-        "--from", "git+https://github.com/elvismdev/mem0-mcp-selfhosted",
+        "--from", "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\mem0-patched",
         "mem0-mcp-selfhosted"
       ],
       "env": {
