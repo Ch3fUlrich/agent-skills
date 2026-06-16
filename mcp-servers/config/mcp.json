@@ -8,14 +8,19 @@
     "serena": {
       "command": "uvx",
       "args": [
-        "--from", "serena-agent",
+        "--from",
+        "serena-agent",
         "serena",
         "start-mcp-server",
         "--project-from-cwd",
-        "--open-web-dashboard", "false",
-        "--enable-gui-log-window", "false"
+        "--open-web-dashboard",
+        "false",
+        "--enable-gui-log-window",
+        "false"
       ],
-      "env": {"SERENA_HOME": "C:\\Users\\mauls\\.serena"},
+      "env": {
+        "SERENA_HOME": "C:\\Users\\mauls\\.serena"
+      },
       "connect_timeout": 120,
       "execute_timeout": 240,
       "disabled": false
@@ -23,7 +28,8 @@
     "mem0": {
       "command": "uvx",
       "args": [
-        "--from", "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\mem0-patched",
+        "--from",
+        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\mem0-patched",
         "mem0-mcp-selfhosted"
       ],
       "env": {
@@ -36,13 +42,15 @@
         "MEM0_EMBEDDING_MODEL": "bge-m3:latest",
         "MEM0_TRANSPORT": "stdio"
       },
-      "connect_timeout": 60,
-      "execute_timeout": 120,
+      "connect_timeout": 120,
+      "execute_timeout": 180,
       "disabled": false
     },
     "superpowers": {
       "command": "node",
-      "args": ["C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\superpowers\\build\\index.js"],
+      "args": [
+        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\superpowers\\build\\index.js"
+      ],
       "env": {},
       "connect_timeout": 60,
       "execute_timeout": 120,
@@ -50,7 +58,13 @@
     },
     "filesystem": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\mauls\\Documents\\Code"],
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\mauls\\Documents\\Code"
+      ],
       "env": {},
       "connect_timeout": 60,
       "execute_timeout": 120,

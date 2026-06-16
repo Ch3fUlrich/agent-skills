@@ -1,195 +1,210 @@
 # MCP Server Stack — Self-Hosted, No API Keys
 
-A combined MCP server stack for CodeWhale and Claude Code that reduces token
-usage by 40–60% on code-heavy tasks through semantic navigation, persistent
-memory, and disciplined coding workflows.
+A combined MCP server stack for CodeWhale that reduces token usage by
+40–60% on code-heavy tasks through semantic navigation, persistent memory,
+and disciplined coding workflows.
 
 All servers are **fully self-hosted** — no cloud API keys, no external services.
-Runs on your own hardware with Docker + uv/Python.
+Runs on your own hardware with Docker + uv + Node.js.
 
 ## Quick Start
 
 ```powershell
-# Windows
 cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
 .\windows\setup.ps1
 .\windows\init-serena-projects.ps1   # Pre-index all repos (one-time)
 # Restart CodeWhale
 ```
 
-```bash
-# Linux
-cd ~/Documents/Code/agent-skills/mcp-servers
-bash linux/setup.sh
-bash linux/init-serena-projects.sh
-```
+Then run `.\windows\start.ps1` each session or after reboot to start Qdrant
+and pre-warm Ollama models.
 
-Or follow the [Manual Installation Guide](docs/INSTALL-GUIDE.md) for step-by-step
-instructions with explanations.
+See [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup.
 
 ## What's Inside
 
-| MCP Server | Purpose | Token Savings |
-|-----------|---------|:---:|
-| [Serena](https://github.com/oraios/serena) | LSP semantic code navigation | ~40–60% |
-| [Mem0](https://github.com/elvismdev/mem0-mcp-selfhosted) | Persistent cross-session memory | Context reuse |
-| [Superpowers](https://github.com/erophames/superpowers-mcp) | Disciplined workflow skills | Quality |
-| [Filesystem](https://github.com/modelcontextprotocol/servers) | Recursive `directory_tree`, batch reads, file metadata | ~5% |
+| MCP Server | Transport | Purpose | Token Savings |
+|-----------|-----------|---------|:---:|
+| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation — find symbols, references, structure without reading files | ~40–60% |
+| [Mem0](https://github.com/elvismdev/mem0-mcp-selfhosted) | stdio (`uvx` from local patch) | Persistent cross-session memory — store and recall facts across sessions | Context reuse |
+| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality |
+| [Filesystem](https://github.com/modelcontextprotocol/servers) | stdio (`cmd /c npx`) | Recursive `directory_tree`, batch reads, file metadata | ~5% |
+
+> **Mem0 note**: Uses a locally patched version of `mem0-mcp-selfhosted` that
+> fixes `search_memories` and `get_memories` for mem0ai v2.x. See `mem0-patched/patch.py`.
 
 ## How It Works
 
 ```
                     stdio (per-session)
-  CodeWhale ────────────▶ serena-agent        ── LSP tools
-  (or Claude Code) ─────▶ superpowers-mcp     ── workflow tools
-                   ─────▶ mem0-mcp-selfhosted ── memory tools
-                                                  │ HTTP
-                          Docker (persistent)      │
-                          ┌───────────────────────┘
-                          │
-                    ┌─────▼──────┐    ┌───────────┐
-                    │  Qdrant    │    │  Ollama   │
-                    │  :6333     │    │  :11434   │
-                    │  vector DB │    │  bge-m3   │
-                    └────────────┘    └───────────┘
+  CodeWhale ────────────▶ serena-agent        ── LSP tools (51 tools)
+  (or Claude Code) ─────▶ superpowers-mcp     ── workflow tools (14 skills)
+                   ─────▶ mem0-mcp-selfhosted ── memory tools (11 tools)
+                   ─────▶ filesystem MCP      ── file tools (14 tools)
+                              │
+            Docker (persistent)│
+            ┌─────────────────┘
+            ▼
+      ┌──────────┐     ┌──────────────┐
+      │ Qdrant   │     │  Ollama      │
+      │ :6333    │     │  :11434      │
+      │ vector   │     │  bge-m3      │
+      │ store    │     │  qwen2.5:1.5b│
+      └──────────┘     └──────────────┘
 ```
 
 ### Multi-Repo Support
 
-Serena's `--project-from-cwd` flag auto-detects which repository you're working
-in by walking up from the current directory and finding `.git`. All 35 repos
-have been pre-indexed with language servers downloaded — no repeated setup.
-
-```
-C:\Users\mauls\Documents\Code\
-├── 2fast2mouse/       cd here → Serena sees 2fast2mouse
-├── DeepLabCut/        cd here → Serena sees DeepLabCut
-├── AnimalClass/       cd here → Serena sees AnimalClass
-└── ...                (35 repos, all pre-indexed)
-```
+Serena's `--project-from-cwd` auto-detects the active repository from `.git`.
+All 35 repos under `C:\Users\mauls\Documents\Code` have been pre-indexed.
 
 ### Mem0 Project Isolation
 
-All memories are partitioned by `MEM0_USER_ID=mauls`. The agent skill
-(`agent-skills/skills/mcp-servers-setup/SKILL.md`) instructs the agent to
-**always include the repo name** in memory operations — preventing ambiguity
-between projects.
+All memories use `MEM0_USER_ID=mauls` (persistent Windows env var). The agent
+skill at `skills/mcp-servers-setup/SKILL.md` instructs agents to always include
+the repo name in memories — preventing spillover between projects.
+
+## Requirements
+
+| Component | Check | Install |
+|-----------|-------|---------|
+| Docker Desktop | `docker info` | `winget install Docker.DockerDesktop` |
+| Native Ollama | `ollama list` or `curl :11434` | `winget install Ollama.Ollama` |
+| uv (Python) | `uv --version` | `winget install --id=astral-sh.uv -e` |
+| Node.js 18+ | `node --version` | `winget install OpenJS.NodeJS.LTS` |
+| CodeWhale 0.8+ | `codewhale-tui --version` | `codewhale-tui update` |
 
 ## Repository Layout — File Tree with Explanations
 
 ```
-mcp-servers/                          # Root: self-contained MCP server stack
+mcp-servers/                          # Root: self-contained MCP server stack.
+│                                     # Everything needed runs from this directory.
 │
-├── README.md                         # This file — overview & quick start
-├── docker-compose.yml                # Qdrant vector database (Docker container).
-│                                     # Mem0 stores embeddings here. Port 6333.
-│                                     # Native Ollama (outside Docker) provides
-│                                     # embeddings via bge-m3 on port 11434.
+├── README.md                         # This file — overview, quick start, architecture.
+├── docker-compose.yml                # Qdrant vector database (single Docker container).
+│                                     # Mem0 stores embeddings here. Persistent volume
+│                                     # at data/qdrant/. Uses native Ollama (outside
+│                                     # Docker) on port 11434 for embeddings.
 ├── .env.example                      # Template for environment overrides.
-│                                     # Copy to .env and adjust.
+│                                     # Copy to .env and adjust as needed.
 ├── TODO.md                           # Claude Code migration plan (5 phases).
 │                                     # Step-by-step from "run both" to "only MCP".
 │
-├── windows/                          # Windows PowerShell scripts (run from pwsh.exe)
-│   ├── setup.ps1                     # One-command setup: starts Qdrant, pulls bge-m3,
-│   │                                 # installs Serena + Superpowers, deploys MCP config.
+├── windows/                          # Windows PowerShell scripts (pwsh.exe).
+│   ├── setup.ps1                     # One-command setup: starts Qdrant, pulls bge-m3
+│   │                                 # and qwen2.5, installs Serena + Superpowers,
+│   │                                 # sets MEM0_USER_ID and OLLAMA_KEEP_ALIVE env vars,
+│   │                                 # deploys MCP config to ~/.codewhale/mcp.json.
 │   │                                 # Run once. Then run init-serena-projects.ps1.
-│   ├── start.ps1                     # Start Qdrant + check Ollama + auto-index new repos.
-│   │                                 # Run daily or on reboot before CodeWhale.
-│   ├── stop.ps1                      # Gracefully stop Qdrant (data preserved).
-│   ├── test.ps1                      # 5-test suite: Qdrant health, Ollama models,
-│   │                                 # Serena CLI, Superpowers, MCP config validity.
-│   ├── init-serena-projects.ps1      # Scan all 35 repos under C:\Users\mauls\Documents\Code,
-│   │                                 # create Serena project configs, download language
-│   │                                 # servers (pyright, typescript-ls, etc.).
-│   │                                 # Run once after setup; re-run when adding new repos.
-│   └── migrate.ps1                   # Migrate knowledge from Claude Code plugins
-│                                     # into the new MCP server stack (Serena indices
-│                                     # are shared, Mem0 gets bootstrap memories).
+│   ├── start.ps1                     # Daily startup: starts Qdrant, pre-warms Ollama
+│   │                                 # models (bge-m3 + qwen2.5:1.5b), auto-indexes
+│   │                                 # any new git repos with Serena. Run before
+│   │                                 # CodeWhale each session.
+│   ├── stop.ps1                      # Gracefully stops Qdrant (data preserved at
+│   │                                 # data/qdrant/). Run when done for the day.
+│   ├── test.ps1                      # Test suite: Qdrant health, Ollama models,
+│   │                                 # Serena CLI, Superpowers build, MCP config
+│   │                                 # validity, server count. Run after setup.
+│   ├── init-serena-projects.ps1      # Scans all git repos under Code root, creates
+│   │                                 # Serena project configs (.serena/project.yml),
+│   │                                 # downloads language servers. Auto-answers "N"
+│   │                                 # to language detection prompts. Run once;
+│   │                                 # re-run when adding new repos.
+│   └── migrate.ps1                   # Migrates knowledge from Claude Code plugins
+│                                     # into Mem0 bootstrap memories. Generates
+│                                     # data/mem0/bootstrap_memories.txt.
 │
-├── linux/                            # Linux/macOS counterparts (Bash)
-│   ├── setup.sh                      # Same logic as windows/setup.ps1
-│   ├── start.sh                      # Qdrant + Ollama check + auto-index
-│   ├── stop.sh                       # Stop Qdrant
-│   ├── test.sh                       # 5-test suite (curl-based)
-│   ├── init-serena-projects.sh       # Scan ~/Documents/Code, index all repos
-│   └── migrate.sh                    # Claude Code → Mem0 bootstrap (Unix)
+├── linux/                            # Linux/macOS Bash equivalents of all scripts above.
+│   ├── setup.sh, start.sh, stop.sh
+│   ├── test.sh, init-serena-projects.sh, migrate.sh
 │
 ├── config/
 │   ├── mcp.json                      # ⚠ ACTIVE CONFIG — deployed to ~/.codewhale/mcp.json.
-│   │                                 # Defines 3 MCP servers for CodeWhale:
-│   │                                 #   serena: uvx serena-agent with --project-from-cwd
-│   │                                 #   mem0:   uvx mem0-mcp-selfhosted (env-var config)
-│   │                                 #   superpowers: node build/index.js
-│   │                                 # All config via env vars, no YAML files.
-│   │                                 # After editing: Copy-Item to ~/.codewhale/mcp.json.
-│   ├── mcp-claude-code.json          # Same 3 servers, but formatted for Claude Code's
-│   │                                 # .claude/mcp.json format (mcpServers key instead of servers).
-│   │                                 # Used in Phase 4 of TODO.md migration.
-│   ├── mem0-config.yaml              # ⚠ DEPRECATED (kept for reference).
-│   │                                 # mem0-mcp-selfhosted uses env vars only.
-│   │                                 # See mcp.json "env" block for active settings.
-│   └── serena-project.yml            # Optional per-repo Serena config template.
-│                                     # Copy to any repo's .serena/project.yml to add
-│                                     # additional_workspace_folders (cross-repo refs),
-│                                     # language overrides, or custom ignore patterns.
+│   │                                 # Defines 4 stdio MCP servers:
+│   │                                 #   serena: uvx serena-agent (LSP, 240s timeout)
+│   │                                 #   mem0:   uvx from local patch (memory, 180s)
+│   │                                 #   superpowers: node build/index.js (14 skills)
+│   │                                 #   filesystem: cmd /c npx (Windows workaround)
+│   │                                 # After editing: `Copy-Item config\mcp.json ~\.codewhale\`
+│   ├── mcp-claude-code.json          # Same servers formatted for Claude Code's MCP
+│   │                                 # format (mcpServers key). Used in TODO.md Phase 4.
+│   ├── mem0-config.yaml              # Reference only — mem0 reads env vars, not YAML.
+│   │                                 # All active settings are in mcp.json's env block.
+│   └── serena-project.yml            # Optional per-repo template. Copy to any repo's
+│                                     # .serena/project.yml to add cross-repo workspace
+│                                     # folders, language overrides, or ignore patterns.
 │
-├── superpowers/                      # Cloned + built Node.js MCP server.
-│   ├── src/                          # TypeScript source (read-only reference)
-│   ├── build/index.js                # The compiled server binary. CodeWhale spawns
-│   │                                 # this via "node build/index.js" on demand.
-│   │                                 # Discovered 14 skills from Claude Code cache.
-│   ├── package.json                  # Superpowers-mcp v0.1.0, MIT license
-│   └── node_modules/                 # Dependencies (not tracked in git)
+├── mem0-patched/                     # ⚠ Locally patched mem0-mcp-selfhosted server.
+│   │                                 # Fixes mem0ai v2.x compatibility: moves user_id
+│   │                                 # into filters dict for search_memories and
+│   │                                 # get_memories. See patch.py for the fix.
+│   ├── patch.py                      # Python script that applies the patch to server.py.
+│   ├── src/mem0_mcp_selfhosted/      # Patched source code.
+│   │   ├── server.py                 # Main MCP server (patched for v2.x compat)
+│   │   ├── config.py                 # Env-var based configuration
+│   │   ├── helpers.py                # Utility functions (list_entities, safe_bulk_delete)
+│   │   └── env.py                    # Env var reader
+│   └── .venv/                        # uv-managed virtualenv (not tracked in git)
+│
+├── superpowers/                      # Node.js MCP server for coding workflows.
+│   ├── build/index.js                # Compiled server binary (CodeWhale spawns this).
+│   │                                 # Discovers 14 skills from Claude Code cache.
+│   ├── src/                          # TypeScript source (read-only reference).
+│   ├── package.json                  # v0.1.0, MIT license.
+│   └── node_modules/                 # Node.js dependencies (not tracked in git).
 │
 ├── docs/
-│   ├── ARCHITECTURE.md               # System architecture: how Serena, Mem0, Superpowers
-│   │                                 # connect, their data flow, and component details.
-│   ├── TOKEN_SAVINGS.md              # Detailed analysis: ~50% token reduction,
-│   │                                 # with before/after examples for common tasks.
-│   ├── TROUBLESHOOTING.md            # All known issues: port conflicts, PATH issues,
+│   ├── ARCHITECTURE.md               # Full system architecture: data flow, component
+│   │                                 # details, security model.
+│   ├── TOKEN_SAVINGS.md              # Detailed analysis: ~50% reduction, before/after
+│   │                                 # examples for common coding tasks.
+│   ├── TROUBLESHOOTING.md            # All known issues: port conflicts, PATH problems,
 │   │                                 # timeout fixes, GPU detection, reset procedures.
-│   └── INSTALL-GUIDE.md              # Manual step-by-step guide for human setup
-│                                     # when automated scripts can't be used.
-│                                     # Includes a manual TODO checklist.
+│   └── INSTALL-GUIDE.md              # Manual step-by-step setup for humans.
+│                                     # Includes prerequisite checks, server-by-server
+│                                     # install, and a printable TODO checklist.
 │
-├── data/                             # Persistent data (auto-created, not in git)
-│   ├── qdrant/                       # Qdrant vector database storage (memories)
-│   └── mem0/                         # Mem0 SQLite history + bootstrap files
+├── data/                             # Persistent runtime data (auto-created, not in git).
+│   ├── qdrant/                       # Qdrant vector database — Mem0 embeddings stored here.
+│   └── mem0/                         # Mem0 SQLite history + bootstrap memory files.
 │
-└── repository-starters/              # Install files to enable MCP setup in new repos
+└── repository-starters/              # Copy these into new repos to enable MCP setup.
     └── mcp-servers/
-        ├── AGENTS.md                 # MCP tool instructions for AGENTS.md-aware tools
-        ├── CLAUDE.md                 # Instructions for Claude Code agents
-        └── README.md                 # How to use the starter pack
+        ├── AGENTS.md                 # MCP tool instructions for AGENTS.md-aware tools.
+        ├── CLAUDE.md                 # Instructions for Claude Code agents.
+        └── README.md                 # How to use the starter pack.
 ```
 
-## Requirements
+## Ollama Models
 
-- **Docker Desktop** (for Qdrant)
-- **uv** (Python package manager — `winget install --id=astral-sh.uv -e`)
-- **Node.js 18+** (for Superpowers — already installed: v24.16.0)
-- **Native Ollama** (for embeddings — already running with bge-m3)
-- **12 GB GPU** (optional — GPU acceleration for Ollama; CPU fallback works)
-- **CodeWhale 0.8+** or **Claude Code**
+| Model | Size | Purpose |
+|-------|------|---------|
+| `bge-m3:latest` | 566 MB | Embedding generation for Mem0 vector search |
+| `qwen2.5:1.5b` | ~1 GB | LLM-based memory extraction in Mem0 |
+| `gemma4:e4b` | 9.6 GB | General-purpose (available but not used by MCP) |
+
+Models are pre-warmed at startup (`start.ps1`) and kept in VRAM via
+`OLLAMA_KEEP_ALIVE=24h` (persistent system env var).
+
+## Environment Variables
+
+| Variable | Value | Set By |
+|----------|-------|--------|
+| `MEM0_USER_ID` | `mauls` | `setup.ps1` — persistent user env var |
+| `OLLAMA_KEEP_ALIVE` | `24h` | `setup.ps1` — keeps models in VRAM |
 
 ## Documentation
 
 | Document | Description |
 |---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full system architecture and data flow |
-| [TOKEN_SAVINGS.md](docs/TOKEN_SAVINGS.md) | How much tokens each server saves |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and data flow |
+| [TOKEN_SAVINGS.md](docs/TOKEN_SAVINGS.md) | Token savings estimates |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and fixes |
-| [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) | Manual step-by-step installation |
+| [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) | Manual step-by-step setup |
 | [TODO.md](TODO.md) | Claude Code migration plan |
+| `skills/mcp-servers-setup/SKILL.md` | Agent skill for proper MCP usage |
 
-## Agent Skill
+## Claude Code Migration
 
-The `agent-skills/skills/mcp-servers-setup/SKILL.md` skill teaches agents how to:
-
-- Use Serena tools for code navigation (not file reads)
-- Tag Mem0 memories with project names for isolation
-- Activate Superpowers workflows for complex tasks
-- Ensure proper project initialization
-
-Load the skill with: `load_skill("mcp-servers-setup")`
+Currently Claude Code uses its own plugin system. See [TODO.md](TODO.md) for
+the 5-phase migration to use the same MCP servers as CodeWhale.
