@@ -1,0 +1,32 @@
+# Docker Compose — Persistent Service for Mem0
+
+# Qdrant: Vector database for Mem0 memory storage
+# Ollama: Use the native Windows Ollama (already running on :11434)
+#         The docker-compose no longer runs Ollama in a container.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage:
+#   docker compose up -d        # Start Qdrant
+#   docker compose down         # Stop Qdrant
+#   docker compose ps           # Check status
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ─── Qdrant Vector Database ────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: mcp-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage:delegated
+    environment:
+      QDRANT__LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

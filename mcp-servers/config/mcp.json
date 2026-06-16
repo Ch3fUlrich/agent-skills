@@ -1,0 +1,70 @@
+{
+  "timeouts": {
+    "connect_timeout": 30,
+    "execute_timeout": 180,
+    "read_timeout": 180
+  },
+  "servers": {
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from", "serena-agent",
+        "serena",
+        "start-mcp-server",
+        "--project-from-cwd",
+        "--open-web-dashboard", "false",
+        "--enable-gui-log-window", "false"
+      ],
+      "env": {
+        "SERENA_HOME": "C:\\Users\\mauls\\.serena"
+      },
+      "connect_timeout": 120,
+      "execute_timeout": 240,
+      "disabled": false
+    },
+    "mem0": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/elvismdev/mem0-mcp-selfhosted",
+        "mem0-mcp-selfhosted"
+      ],
+      "env": {
+        "MEM0_PROVIDER": "ollama",
+        "MEM0_LLM_MODEL": "gemma4:e4b",
+        "MEM0_USER_ID": "mauls",
+        "MEM0_ENABLE_GRAPH": "false",
+        "MEM0_QDRANT_URL": "http://localhost:6333",
+        "MEM0_OLLAMA_BASE_URL": "http://localhost:11434",
+        "MEM0_EMBEDDING_MODEL": "bge-m3:latest",
+        "MEM0_TRANSPORT": "stdio"
+      },
+      "connect_timeout": 60,
+      "execute_timeout": 120,
+      "disabled": false
+    },
+    "superpowers": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\superpowers\\build\\index.js"
+      ],
+      "env": {},
+      "connect_timeout": 60,
+      "execute_timeout": 120,
+      "disabled": false
+    },
+    "filesystem": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\mauls\\Documents\\Code"
+      ],
+      "env": {},
+      "connect_timeout": 60,
+      "execute_timeout": 120,
+      "disabled": false
+    }
+  }
+}

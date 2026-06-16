@@ -21,3 +21,15 @@ temp/
 *.tar
 *.tar.gz
 
+# MCP server data (persistent, machine-local)
+mcp-servers/data/
+
+# Node.js dependencies (generated)
+mcp-servers/superpowers/node_modules/
+mcp-servers/superpowers/package-lock.json
+mcp-servers/superpowers/pnpm-lock.yaml
+mcp-servers/superpowers/.git/
+mcp-servers/superpowers/.github/
+mcp-servers/superpowers/.gitignore
+mcp-servers/superpowers/tsconfig.json
+mcp-servers/superpowers/pnpm-lock.yaml
