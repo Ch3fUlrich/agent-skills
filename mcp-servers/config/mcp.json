@@ -15,9 +15,7 @@
         "--open-web-dashboard", "false",
         "--enable-gui-log-window", "false"
       ],
-      "env": {
-        "SERENA_HOME": "C:\\Users\\mauls\\.serena"
-      },
+      "env": {"SERENA_HOME": "C:\\Users\\mauls\\.serena"},
       "connect_timeout": 120,
       "execute_timeout": 240,
       "disabled": false
@@ -31,25 +29,20 @@
       "env": {
         "MEM0_PROVIDER": "ollama",
         "MEM0_LLM_MODEL": "qwen2.5:1.5b",
-        "MEM0_LLM_MAX_TOKENS": "256",
         "MEM0_USER_ID": "mauls",
         "MEM0_ENABLE_GRAPH": "false",
         "MEM0_QDRANT_URL": "http://localhost:6333",
         "MEM0_OLLAMA_BASE_URL": "http://localhost:11434",
         "MEM0_EMBEDDING_MODEL": "bge-m3:latest",
-        "MEM0_EMBED_DIMS": "1024",
-        "MEM0_COLLECTION": "mem0_mcp_selfhosted",
         "MEM0_TRANSPORT": "stdio"
       },
       "connect_timeout": 60,
-      "execute_timeout": 180,
+      "execute_timeout": 120,
       "disabled": false
     },
     "superpowers": {
       "command": "node",
-      "args": [
-        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\superpowers\\build\\index.js"
-      ],
+      "args": ["C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\superpowers\\build\\index.js"],
       "env": {},
       "connect_timeout": 60,
       "execute_timeout": 120,
@@ -57,13 +50,7 @@
     },
     "filesystem": {
       "command": "cmd",
-      "args": [
-        "/c",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "C:\\Users\\mauls\\Documents\\Code"
-      ],
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\mauls\\Documents\\Code"],
       "env": {},
       "connect_timeout": 60,
       "execute_timeout": 120,
