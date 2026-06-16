@@ -28,6 +28,14 @@ try {
     Write-Host "  ! Ollama not responding. Start it manually: ollama serve" -ForegroundColor Yellow
 }
 
+# ─── Pre-warm Ollama models ─────────────────────────────────────────────────
+Write-Host "  Warming models..." -ForegroundColor Gray
+try {
+    $null = Invoke-WebRequest -Uri "http://localhost:11434/api/embed" -Method POST -Body '{"model":"bge-m3:latest","input":"warmup"}' -ContentType "application/json" -TimeoutSec 30
+    $null = Invoke-WebRequest -Uri "http://localhost:11434/api/generate" -Method POST -Body '{"model":"gemma4:e4b","prompt":"warmup","stream":false}' -ContentType "application/json" -TimeoutSec 60
+    Write-Host "  v Models warmed" -ForegroundColor Green
+} catch { Write-Host "  ! Model warm failed: $_" -ForegroundColor Yellow }
+
 # ─── Initialize New Serena Projects ──────────────────────────────────────────
 Write-Host "  Checking for new repos to index..." -ForegroundColor Gray
 $Repos = Get-ChildItem -Path $CodeRoot -Directory | Where-Object { Test-Path (Join-Path $_.FullName ".git") }

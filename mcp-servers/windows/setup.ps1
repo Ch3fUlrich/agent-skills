@@ -67,7 +67,21 @@ Write-Host "  v Superpowers ready" -ForegroundColor Green
 Write-Host ""
 
 # ─── CodeWhale Config ─────────────────────────────────────────────────────────
-Write-Host "[6/6] Configuring CodeWhale..." -ForegroundColor Yellow
+Write-Host "[6/8] Setting MEM0_USER_ID as persistent env var..." -ForegroundColor Yellow
+try {
+    [Environment]::SetEnvironmentVariable("MEM0_USER_ID", "mauls", "User")
+    Write-Host "  v MEM0_USER_ID=mauls set (prevents frozenset error)" -ForegroundColor Green
+} catch { Write-Host "  ! Could not set MEM0_USER_ID: $_" -ForegroundColor Yellow }
+Write-Host ""
+
+Write-Host "[7/8] Setting OLLAMA_KEEP_ALIVE to keep models in VRAM..." -ForegroundColor Yellow
+try {
+    [Environment]::SetEnvironmentVariable("OLLAMA_KEEP_ALIVE", "24h", "User")
+    Write-Host "  v OLLAMA_KEEP_ALIVE=24h set" -ForegroundColor Green
+} catch { Write-Host "  ! Could not set OLLAMA_KEEP_ALIVE: $_" -ForegroundColor Yellow }
+Write-Host ""
+
+Write-Host "[8/8] Configuring CodeWhale..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codewhale" | Out-Null
 Copy-Item -Path "$RepoRoot\config\mcp.json" -Destination $CodeWhaleMCP -Force
 Write-Host "  v MCP config deployed" -ForegroundColor Green

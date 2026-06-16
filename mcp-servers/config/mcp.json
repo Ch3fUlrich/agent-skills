@@ -1,8 +1,8 @@
 {
   "timeouts": {
     "connect_timeout": 30,
-    "execute_timeout": 180,
-    "read_timeout": 180
+    "execute_timeout": 300,
+    "read_timeout": 300
   },
   "servers": {
     "serena": {
@@ -31,15 +31,18 @@
       "env": {
         "MEM0_PROVIDER": "ollama",
         "MEM0_LLM_MODEL": "gemma4:e4b",
+        "MEM0_LLM_MAX_TOKENS": "256",
         "MEM0_USER_ID": "mauls",
         "MEM0_ENABLE_GRAPH": "false",
         "MEM0_QDRANT_URL": "http://localhost:6333",
         "MEM0_OLLAMA_BASE_URL": "http://localhost:11434",
         "MEM0_EMBEDDING_MODEL": "bge-m3:latest",
+        "MEM0_EMBED_DIMS": "1024",
+        "MEM0_COLLECTION": "mem0_mcp_selfhosted",
         "MEM0_TRANSPORT": "stdio"
       },
       "connect_timeout": 60,
-      "execute_timeout": 120,
+      "execute_timeout": 180,
       "disabled": false
     },
     "superpowers": {
