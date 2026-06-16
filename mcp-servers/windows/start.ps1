@@ -41,10 +41,10 @@ Write-Host "  Checking for new repos to index..." -ForegroundColor Gray
 $Repos = Get-ChildItem -Path $CodeRoot -Directory | Where-Object { Test-Path (Join-Path $_.FullName ".git") }
 $NewCount = 0
 foreach ($Repo in $Repos) {
-    $IndexFile = Join-Path $Repo.FullName ".serena" "project.json"
+    $IndexFile = Join-Path $Repo.FullName ".serena" "project.yml"
     if (-not (Test-Path $IndexFile)) {
         try {
-            serena project create "$($Repo.FullName)" --index 2>&1 | Out-Null
+            ("N`n" * 10) | serena project create "$($Repo.FullName)" --index 2>&1 | Out-Null
             Write-Host "    v Indexed: $($Repo.Name)" -ForegroundColor Green
             $NewCount++
         } catch {

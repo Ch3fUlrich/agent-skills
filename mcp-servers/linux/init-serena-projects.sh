@@ -22,10 +22,10 @@ for repo in "$CODE_ROOT"/*/; do
     name=$(basename "$repo")
     echo -e "\033[33m[$((COUNT + 1))] $name...\033[0m"
     
-    if [ -f "$repo/.serena/project.json" ]; then
+    if [ -f "$repo/.serena/project.yml" ]; then
         serena project index "$repo" 2>/dev/null && SKIPPED=$((SKIPPED + 1)) && echo -e "  \033[32mv Updated\033[0m" || true
     else
-        serena project create "$repo" --index 2>/dev/null && COUNT=$((COUNT + 1)) && echo -e "  \033[32mv Created + indexed\033[0m" || { ERRORS=$((ERRORS + 1)); echo -e "  \033[31mX Error\033[0m"; }
+        printf 'n\n%.0s' {1..5} | serena project create "$repo" --index 2>/dev/null && COUNT=$((COUNT + 1)) && echo -e "  \033[32mv Created + indexed\033[0m" || { ERRORS=$((ERRORS + 1)); echo -e "  \033[31mX Error\033[0m"; }
     fi
 done
 

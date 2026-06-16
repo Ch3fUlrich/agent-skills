@@ -18,8 +18,8 @@ curl -sf http://localhost:11434/api/tags >/dev/null && echo -e "  \033[32mv Olla
 echo -e "  Checking for new repos..."
 for repo in "$HOME/Documents/Code"/*/; do
     [ -d "$repo/.git" ] || continue
-    [ -f "$repo/.serena/project.json" ] && continue
-    serena project create "$repo" --index 2>/dev/null && echo -e "    \033[32mv Indexed: $(basename "$repo")\033[0m"
+    [ -f "$repo/.serena/project.yml" ] && continue
+    printf 'n\n%.0s' {1..5} | serena project create "$repo" --index 2>/dev/null && echo -e "    \033[32mv Indexed: $(basename "$repo")\033[0m"
 done
 
 echo ""
