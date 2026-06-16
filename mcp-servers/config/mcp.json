@@ -26,7 +26,7 @@
       "disabled": false
     },
     "mem0": {
-      "command": "mem0-mcp-selfhosted",
+      "command": "C:\\\\Users\\\\mauls\\\\.local\\\\bin\\\\mem0-mcp-selfhosted.exe",
       "args": [],
       "env": {
         "MEM0_PROVIDER": "ollama",
