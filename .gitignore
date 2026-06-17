@@ -76,4 +76,14 @@ instructions/html-working-documents.md
 docs/agent-compatibility.md
 
 # Test files (not needed at runtime)
-mcp-servers/superpowers/src/*.test.ts
+mcp-servers/superpowers/src/prompts/register.test.ts
+mcp-servers/superpowers/src/resources/register.test.ts
+mcp-servers/superpowers/src/skills/discovery.test.ts
+mcp-servers/superpowers/src/skills/types.test.ts
+mcp-servers/superpowers/src/tools/intelligence.test.ts
+mcp-servers/superpowers/src/tools/register.test.ts
+mcp-servers/superpowers/src/config.test.ts
+mcp-servers/superpowers/src/git.test.ts
+mcp-servers/superpowers/src/integration.test.ts
+mcp-servers/superpowers/src/server.test.ts
+mcp-servers/superpowers/src/update.test.ts
