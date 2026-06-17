@@ -1,144 +1,116 @@
 ---
 name: mcp-servers-setup
-description: Configure and use the self-hosted MCP server stack (Serena, Mem0, Superpowers, Filesystem) for token-efficient coding with per-project memory isolation. Use when working in any repository under the Code monorepo.
+description: Configure and use the self-hosted MCP server stack (Serena, Superpowers, Filesystem) for token-efficient coding. Mem0 is disabled due to CodeWhale timeout limitation.
 ---
 
-# MCP Servers Setup — Per-Project Isolated
+# MCP Servers Setup
 
 This skill ensures proper configuration and usage of the self-hosted MCP server
 stack across all repositories in `C:\Users\mauls\Documents\Code`.
 
-**Key design principle**: Memories from repository A must never be visible
-when working in repository B. Serena handles this automatically (per-repo
-`.serena/` directories). Mem0 requires explicit `agent_id` scoping.
+## Active MCP Servers (3)
 
-## Available MCP Tools
+### Serena — Semantic Code Navigation (51 tools)
 
-### Serena — Semantic Code Navigation (Auto-Isolated)
+| Tool | Purpose | Token Savings |
+|------|---------|:---:|
+| `mcp_serena_find_symbol` | Find definitions | 90%+ vs file read |
+| `mcp_serena_find_references` | Find all call sites | 80%+ vs multi-file read |
+| `mcp_serena_get_symbols_overview` | Module structure | 95%+ vs full file read |
+| `mcp_serena_search_for_pattern` | Regex search | 50%+ vs grep+read |
+| `mcp_serena_write_memory` | Project-scoped notes | N/A |
+| `mcp_serena_read_memory` | Read project notes | N/A |
 
-| Tool | Token Savings | Project Isolation |
-|------|:---:|---|
-| `mcp_serena_find_symbol` | 90%+ vs file read | Auto (`.serena/project.yml` per repo) |
-| `mcp_serena_find_references` | 80%+ vs multi-file read | Auto |
-| `mcp_serena_get_symbols_overview` | 95%+ vs full file read | Auto |
-| `mcp_serena_find_declaration` | 90%+ vs manual search | Auto |
-| `mcp_serena_find_file` | N/A | Auto |
+**Usage**: Always activate the project first, then use symbolic tools:
+```
+mcp_serena_activate_project(project="agent-skills")
+mcp_serena_find_symbol(name_path_pattern="function_name")
+mcp_serena_find_references(name_path_pattern="ClassName", relative_path="src/")
+```
 
-**Rule**: Use these for any code navigation task before reading files.
-Serena returns precise results with 10-100x fewer tokens than file reads.
+**Project isolation**: Automatic via `.serena/project.yml` per repo.
+Each repo gets its own language server indices.
 
-Serena's `--project-from-cwd` detects the current repo via `.git` and loads
-the correct `.serena/project.yml` index. No configuration needed per repo.
-Each repo's language server indices are fully isolated.
+**Serena memories** (`write_memory` / `read_memory`): Project-scoped notes
+that persist within the project. Use these as a lightweight alternative to
+Mem0 for storing architecture decisions, coding conventions, etc.
 
-### Mem0 — Persistent Memory (Agent-ID Isolated)
+### Superpowers — Workflow Skills (14 skills)
+
+| Skill | When to Use |
+|-------|------------|
+| `systematic-debugging` | Any bug, test failure, unexpected behavior |
+| `test-driven-development` | Before writing implementation code |
+| `brainstorming` | Before creative work, features, design |
+| `writing-plans` | Multi-step tasks with specs |
+| `requesting-code-review` | Before merging |
+| `subagent-driven-development` | Independent parallel tasks |
+| `verification-before-completion` | Before claiming work is done |
+
+**Usage**:
+```
+mcp_superpowers_use_skill(name="systematic-debugging")
+mcp_superpowers_recommend_skills(task="debug a timeout issue")
+mcp_superpowers_compose_workflow(goal="add error handling to pipeline")
+```
+
+### Filesystem — Directory Operations (14 tools)
 
 | Tool | Purpose |
 |------|---------|
-| `mcp_mem0_add_memory` | Store a fact or decision |
-| `mcp_mem0_search_memories` | Semantic search across memories |
-| `mcp_mem0_get_memories` | List all memories for a scope |
-| `mcp_mem0_get_memory` | Fetch a single memory by ID |
-| `mcp_mem0_delete_memory` | Remove a specific memory |
-| `mcp_mem0_list_entities` | List which users/agents/runs have memories |
+| `mcp_filesystem_directory_tree` | Recursive JSON tree (NOT in built-in tools) |
+| `mcp_filesystem_read_multiple_files` | Batch file reads |
+| `mcp_filesystem_search_files` | Glob search |
+| `mcp_filesystem_get_file_info` | File metadata |
 
-#### CRITICAL: Permanent Project Isolation Rule
+## Disabled Server
 
-**Every Mem0 tool call MUST include `agent_id` set to the current repository name.** This is the ONLY reliable isolation mechanism — the `MEM0_USER_ID=mauls` is shared globally, but `agent_id` provides per-project fencing.
+### Mem0 — Persistent Memory ❌
 
-**Determining the current repository name**:
-- Read from `$env:PWD` or the active workspace path
-- Extract the leaf directory name (e.g., `DeepLabCut`, `agent-skills`, `MARBLE`)
-- ALWAYS include this as `agent_id` in every mem0 call
+**Disabled** because CodeWhale has a hardcoded 120s MCP timeout that overrides
+any `execute_timeout` value in `mcp.json` or `config.toml`. The mem0 binary
+works correctly (26.5s after model pre-warm), but CodeWhale's stdio transport
+always times out at exactly 120s regardless of per-server configuration.
 
-Correct usage (working in `DeepLabCut`):
-```
-add_memory(text="...", agent_id="DeepLabCut")
-search_memories(query="...", agent_id="DeepLabCut")
-get_memories(agent_id="DeepLabCut")
-```
+The infrastructure (Qdrant, Ollama, patched binary) remains in place for when
+CodeWhale supports per-server timeouts.
 
-Working in `agent-skills`:
-```
-add_memory(text="...", agent_id="agent-skills")
-search_memories(query="...", agent_id="agent-skills")
-get_memories(agent_id="agent-skills")
-```
+## Infrastructure
 
-**Verification**: After storing memories in a repo, search with the same
-`agent_id` — you should see ONLY that repo's memories. Search with a
-different `agent_id` — you should see zero results.
-
-**!!! Never omit `agent_id` !!!** — doing so causes permanent cross-project
-memory contamination that is very difficult to clean up.
-
-### Superpowers — Disciplined Workflows
-
-- `mcp_superpowers_use_skill` — Activate a workflow (tdd, debug, brainstorm, plan)
-- `mcp_superpowers_list_skills` — List available skills (14 total)
-- `mcp_superpowers_compose_workflow` — Multi-skill workflow for a goal
-- `mcp_superpowers_recommend_skills` — Semantic skill matching
-
-**Rule**: For complex multi-step tasks, activate the relevant workflow first.
-14 skills available covering TDD, debugging, brainstorming, code review, and more.
-
-### Filesystem — Recursive Directory Operations
-
-- `mcp_filesystem_directory_tree` — Recursive JSON tree (not in CodeWhale's built-ins)
-- `mcp_filesystem_read_multiple_files` — Batch file reads
-- `mcp_filesystem_get_file_info` — File metadata
-- `mcp_filesystem_search_files` — Glob search
+| Service | Address | Model(s) | Purpose |
+|---------|---------|----------|---------|
+| Qdrant | `:6333` | — | Vector store |
+| Ollama | `:11434` | bge-m3 (566MB), qwen2.5:1.5b | Embedding + extraction |
+| OLLAMA_KEEP_ALIVE=24h | Windows env | — | Keep models in VRAM |
 
 ## Project Initialization
 
-Serena creates project indices automatically via `--project-from-cwd`. All
-repos under `C:\Users\mauls\Documents\Code` can be indexed with:
-
 ```powershell
 cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
-.\windows\init-serena-projects.ps1
+.\windows\start.ps1     # Start Qdrant, pre-warm Ollama models
+.\windows\test.ps1      # Verify all services
 ```
-
-Each repo gets its own `.serena/project.yml` — fully isolated.
-
-## Backend Infrastructure
-
-| Service | Address | Purpose | Start |
-|---------|---------|---------|-------|
-| Qdrant v1.18.2 | `:6333` | Vector store for Mem0 | `docker compose up -d qdrant` |
-| Ollama (native) | `:11434` | LLM + embeddings | `ollama serve` |
-| bge-m3 (566MB) | in Ollama | Embedding model | Pre-warmed on start |
-| qwen2.5:1.5b (1GB) | in Ollama | Memory extraction | Pre-warmed on start |
-| OLLAMA_KEEP_ALIVE=24h | env var | Keeps models in VRAM | Set by setup.ps1 |
 
 ## Recommended Workflow
 
-1. **Start session**: `cd agent-skills/mcp-servers; .\windows\start.ps1`
-2. **Open CodeWhale**: Navigate to the repo you're working on
-3. **Determine repo name**: Extract from CWD (e.g., `basename $PWD`)
-4. **Navigation**: Use Serena tools instead of reading files
-5. **Memory**: Use Mem0 with `agent_id=<repo-name>`
-6. **Workflows**: Use Superpowers for complex tasks
-7. **End session**: Memories persist in Mem0 for next session
+1. Run `.\windows\start.ps1` to start services and pre-warm models
+2. Activate Serena project: `mcp_serena_activate_project(project="repo-name")`
+3. Use Serena for navigation, Superpowers for workflows, Filesystem for directory ops
+4. End session: services keep running
 
-## Verification Commands
+## Troubleshooting
 
 ```powershell
-# Run full test suite
-cd agent-skills/mcp-servers
+# Full health check
 .\windows\test.ps1
 
-# Serena project list
+# Serena
 serena project list
+serena --version
 
-# Mem0 entity isolation check (should show per-repo agent_ids)
-# From CodeWhale: mcp_mem0_list_entities
-# The result should show "agents" key with repo names
+# Qdrant
+curl http://localhost:6333/
 
-# Infrastructure health
-curl http://localhost:6333/          # Qdrant: {"title":"qdrant - vector search engine"}
-curl http://localhost:11434/api/tags # Ollama: models list
-
-# Config validation
-cat ~/.codewhale/mcp.json | python -m json.tool
+# Ollama
+curl http://localhost:11434/api/tags
 ```
