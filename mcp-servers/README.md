@@ -245,3 +245,27 @@ mcp_serena_find_symbol(name_path_pattern="setup")
 mcp_superpowers_list_skills()
 mcp_filesystem_directory_tree(path="agent-skills/mcp-servers")
 ```
+
+## Tool Deduplication
+
+To reduce context bloat, Serena tools that duplicate CodeWhale built-ins
+are excluded in `~/.serena/serena_config.yml`:
+
+| Excluded (Serena) | Use Instead (CodeWhale) |
+|---|---|
+| `create_text_file` | `write_file` |
+| `read_file` | `read_file` |
+| `execute_shell_command` | `exec_shell` |
+| `list_dir` | `list_dir` |
+| `search_for_pattern` | `grep_files` |
+| `find_file` | `file_search` |
+| `replace_content` | `edit_file` / `apply_patch` |
+
+**Filesystem server is kept** despite some duplicate tools (`read_file`,
+`write_file`, `edit_file`, `list_directory`, `search_files`) because its
+unique tools are valuable:
+- `directory_tree` — recursive JSON tree (no CodeWhale equivalent)
+- `read_multiple_files` — batch file reads
+- `get_file_info` — file metadata (size, dates, permissions)
+- `move_file` — rename/move (no CodeWhale equivalent)
+- `create_directory` — recursive mkdir (no CodeWhale equivalent)
