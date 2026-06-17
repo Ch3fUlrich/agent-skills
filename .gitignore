@@ -21,6 +21,30 @@ temp/
 *.tar
 *.tar.gz
 
+# Python (virtual environments, bytecode, caches)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# CodeWhale local session data
+.codewhale/
+
 # Serena per-project data (auto-generated, not tracked)
 .serena/
 
@@ -35,3 +59,11 @@ mcp-servers/superpowers/.git/
 mcp-servers/superpowers/.github/
 mcp-servers/superpowers/.gitignore
 mcp-servers/superpowers/tsconfig.json
+
+# Mem0 patched server (generated/reproducible)
+mcp-servers/mem0-patched/.venv/
+mcp-servers/mem0-patched/uv.lock
+mcp-servers/mem0-patched/benchmarks/
+
+# Generated JS source maps (reproducible from TypeScript)
+mcp-servers/superpowers/build/*.map
