@@ -36,16 +36,6 @@
       "args": [
         "C:/Users/mauls/Documents/Code/agent-skills/mcp-servers/superpowers/build/index.js"
       ]
-    },
-    "filesystem": {
-      "command": "cmd",
-      "args": [
-        "/c",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "C:\\Users\\mauls\\Documents\\Code"
-      ]
     }
   }
 }

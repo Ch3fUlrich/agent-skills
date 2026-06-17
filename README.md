@@ -13,28 +13,41 @@ The goal is not to turn every note into HTML. The goal is to give future agents 
 ## Repository Layout
 
 ```text
-instructions/
-  html-working-documents.md
-
-skills/
+skills/                        # Skill library — copy into .codex/skills/ or $CODEX_HOME/skills/
   html-working-documents/
     SKILL.md
     agents/openai.yaml
     references/pattern-catalog.md
+  mcp-servers-setup/
+    SKILL.md
 
-repository-starters/
+starters/                      # Starter packs — copy into target repo root
   html-working-documents/
     AGENTS.md
     CLAUDE.md
     GEMINI.md
     README.md
+    .github/copilot-instructions.md
     .codex/skills/html-working-documents/
     .cursor/rules/html-working-documents.mdc
-    .github/copilot-instructions.md
-    .roo/rules/html-working-documents.md
     .clinerules/html-working-documents.md
     .continue/rules/html-working-documents.md
+    .roo/rules/html-working-documents.md
     .windsurf/rules/html-working-documents.md
+  mcp-servers/
+    AGENTS.md
+    CLAUDE.md
+    README.md
+
+mcp-servers/                   # Self-hosted MCP server stack
+  config/
+  docs/
+  scripts/
+    linux/
+    windows/
+  servers/
+    mem0-patched/
+    superpowers/
 
 docs/
   agent-compatibility.md
@@ -45,7 +58,7 @@ docs/
 Copy the contents of:
 
 ```text
-repository-starters/html-working-documents/
+starters/html-working-documents/
 ```
 
 into the root of your target repository.
@@ -91,8 +104,11 @@ Repo-local installation is better when the workflow is part of a project convent
 | Skill | Purpose |
 | --- | --- |
 | `html-working-documents` | Create self-contained HTML artifacts for planning, review, research, diagrams, reports, prototypes, and handoff. |
+| `mcp-servers-setup` | Configure and use the self-hosted MCP server stack for token-efficient coding. |
 
 ## Adding More Skills
+
+See `CONTRIBUTING.md` for conventions on adding skills and starter packs.
 
 Each skill should be self-contained and concise:
 

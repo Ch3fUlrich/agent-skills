@@ -68,13 +68,6 @@ mcp-servers/mem0-patched/benchmarks/
 # Generated JS source maps (reproducible from TypeScript)
 mcp-servers/superpowers/build/*.map
 
-# Removed from repo — clone on demand if needed
-mcp-servers/mem0-patched/
-repository-starters/html-working-documents/
-skills/html-working-documents/
-instructions/html-working-documents.md
-docs/agent-compatibility.md
-
 # Test files (not needed at runtime)
 mcp-servers/superpowers/src/prompts/register.test.ts
 mcp-servers/superpowers/src/resources/register.test.ts

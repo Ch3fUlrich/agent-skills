@@ -45,18 +45,5 @@
       "execute_timeout": 120,
       "disabled": false
     },
-    "filesystem": {
-      "command": "cmd",
-      "args": [
-        "/c",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "C:/Users/mauls/Documents/Code"
-      ],
-      "connect_timeout": 60,
-      "execute_timeout": 120,
-      "disabled": false
-    }
   }
 }
