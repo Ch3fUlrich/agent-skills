@@ -1,0 +1,97 @@
+# MCP Server Stack — Repository Starter
+
+Copy this directory into the root of any repository to enable the self-hosted
+MCP server stack for that repo. Two servers are active.
+
+## What Gets Installed
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Instructions for AGENTS.md-aware tools (Codex, Cursor, Copilot, etc.) |
+| `CLAUDE.md` | Instructions for Claude Code |
+| `README.md` | This file |
+
+A `.serena/project.yml` file is **auto-created** by Serena on first activation —
+you don't need to copy it manually. See setup steps below.
+
+## Prerequisites
+
+The MCP servers must be installed first. From the parent `mcp-servers/` directory:
+
+**Windows:**
+```powershell
+.\windows\setup.ps1       # One-time: installs uv, node deps, Qdrant, Ollama
+.\windows\start.ps1       # Each session: start Qdrant, pre-warm Ollama models
+```
+
+**Linux:**
+```bash
+./linux/setup.sh
+./linux/start.sh
+```
+
+## Per-Repository Setup (Agent Does This)
+
+When an agent first works in a new repo with this starter pack, it should:
+
+### 1. Activate the Serena project
+The agent calls `mcp_serena_activate_project(project=".")`.
+This auto-detects the language, creates `.serena/project.yml`, and indexes
+the codebase. No manual config needed.
+
+### 2. Run onboarding
+The agent calls `mcp_serena_onboarding()`.
+This analyzes the project structure (build system, test framework, entry
+points, dependencies) and stores the findings as Serena memories.
+
+### 3. Verify
+The agent confirms Serena is working:
+```
+mcp_serena_find_symbol(name_path_pattern="main")
+mcp_serena_get_symbols_overview(relative_path="src")
+```
+
+After these three steps (under 60 seconds total), the repo is fully
+configured. Future sessions auto-activate via `--project-from-cwd` in the
+MCP server config — no repeated setup.
+
+## What Agents Get
+
+Once set up, agents can:
+
+- **Navigate code semantically** — Find symbols, references, declarations,
+  and file structure without reading entire files (Serena, ~40-60% token savings)
+- **Refactor safely** — Rename, replace, insert, or delete symbols with
+  automatic reference updates (Serena)
+- **Remember across sessions** — Store architecture decisions, build patterns,
+  and code conventions in project memory (Serena memories)
+- **Use disciplined workflows** — TDD, systematic debugging, structured
+  planning, code review, and brainstorming (Superpowers, 14 skills)
+
+## Multi-Repo Setup
+
+Serena auto-detects which repository you're working in via `--project-from-cwd`
+in the MCP config. No per-repo configuration needed beyond the one-time
+activation and onboarding.
+
+For cross-repo code references, add paths to `.serena/project.yml`:
+```yaml
+additional_workspace_folders:
+  - ../../DeepLabCut
+  - ../../AnimalClass
+```
+
+## Servers
+
+| Server | Transport | Status |
+|---|---|---|
+| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | ✅ Active — LSP code navigation, refactoring, memory |
+| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | ✅ Active — workflow skills |
+| ~~Filesystem~~ | ~~stdio~~ | ❌ Disabled — redundant with CodeWhale built-ins |
+| ~~Mem0~~ | ~~stdio~~ | ❌ Disabled — CodeWhale hardcoded MCP timeout |
+
+## Infrastructure (Retained for Future Use)
+
+- Qdrant (vector DB): `http://localhost:6333`
+- Ollama (embeddings + LLM): `http://localhost:11434`
+- Models: `bge-m3:latest`, `qwen2.5:1.5b`
