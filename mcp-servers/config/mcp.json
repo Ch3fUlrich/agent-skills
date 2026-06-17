@@ -34,7 +34,7 @@
       },
       "connect_timeout": 60,
       "execute_timeout": 120,
-      "disabled": false
+      "disabled": true
     },
     "superpowers": {
       "command": "node",
