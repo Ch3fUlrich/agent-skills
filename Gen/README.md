@@ -1,0 +1,2 @@
+# Generating spec.md from a Repository
+This Markdown file serves as a complete, self-contained prompt for an AI agent (e.g., GitHub Copilot, Claude, or spec-kit) to autonomously generate a spec.md from any repository. Paste it directly into agents.md, a prompt template, or agent config, replacing [REPO_PATH] with the actual repo path or context. The agent will scan the repo, infer details precisely, and output an editable first draft.
