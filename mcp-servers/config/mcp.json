@@ -1,39 +1,16 @@
 {
-  "timeouts": {
-    "connect_timeout": 30,
-    "execute_timeout": 300,
-    "read_timeout": 300
-  },
   "servers": {
     "serena": {
       "command": "uvx",
-      "args": [
-        "--from",
-        "serena-agent",
-        "serena",
-        "start-mcp-server",
-        "--project-from-cwd",
-        "--open-web-dashboard",
-        "false",
-        "--enable-gui-log-window",
-        "false"
-      ],
-      "env": {
-        "SERENA_HOME": "C:\\Users\\mauls\\.serena"
-      },
+      "args": ["--from","serena-agent","serena","start-mcp-server","--open-web-dashboard","false","--enable-gui-log-window","false"],
+      "env": {"SERENA_HOME": "C:/Users/mauls/.serena"},
       "connect_timeout": 120,
       "execute_timeout": 240,
       "disabled": false
     },
     "mem0": {
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\mem0-patched\\run-mem0.ps1"
-      ],
+      "command": "uvx",
+      "args": ["--from","git+https://github.com/elvismdev/mem0-mcp-selfhosted","mem0-mcp-selfhosted"],
       "env": {
         "MEM0_PROVIDER": "ollama",
         "MEM0_LLM_MODEL": "qwen2.5:1.5b",
@@ -44,30 +21,20 @@
         "MEM0_EMBEDDING_MODEL": "bge-m3:latest",
         "MEM0_TRANSPORT": "stdio"
       },
-      "connect_timeout": 60,
-      "execute_timeout": 120,
+      "connect_timeout": 120,
+      "execute_timeout": 600,
       "disabled": false
     },
     "superpowers": {
       "command": "node",
-      "args": [
-        "C:\\Users\\mauls\\Documents\\Code\\agent-skills\\mcp-servers\\superpowers\\build\\index.js"
-      ],
-      "env": {},
+      "args": ["C:/Users/mauls/Documents/Code/agent-skills/mcp-servers/superpowers/build/index.js"],
       "connect_timeout": 60,
       "execute_timeout": 120,
       "disabled": false
     },
     "filesystem": {
       "command": "cmd",
-      "args": [
-        "/c",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "C:\\Users\\mauls\\Documents\\Code"
-      ],
-      "env": {},
+      "args": ["/c","npx","-y","@modelcontextprotocol/server-filesystem","C:/Users/mauls/Documents/Code"],
       "connect_timeout": 60,
       "execute_timeout": 120,
       "disabled": false
