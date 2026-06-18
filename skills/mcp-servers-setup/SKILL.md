@@ -8,6 +8,20 @@ description: Configure and use the self-hosted MCP server stack (Serena, Superpo
 This skill ensures proper configuration and usage of the self-hosted MCP server
 stack across all repositories in `C:\Users\mauls\Documents\Code`.
 
+## First Action — Always
+
+**On every session start (first prompt), activate the Serena MCP server and read project memories:**
+
+```
+mcp_serena_activate_project → (current project name or path)
+mcp_serena_read_memory → "core"
+```
+
+This loads the full project context: module inventory, test counts, tech stack,
+commands, constraints, and references to domain memories (e.g. `mem:architecture`,
+`mem:api_design`). Do this before any code changes — the memories are the ground
+truth for what exists and how it works.
+
 ## Active MCP Servers (3)
 
 ### Serena — Semantic Code Navigation (51 tools)
@@ -62,18 +76,6 @@ mcp_superpowers_compose_workflow(goal="add error handling to pipeline")
 | `mcp_filesystem_read_multiple_files` | Batch file reads |
 | `mcp_filesystem_search_files` | Glob search |
 | `mcp_filesystem_get_file_info` | File metadata |
-
-## Disabled Server
-
-### Mem0 — Persistent Memory ❌
-
-**Disabled** because CodeWhale has a hardcoded 120s MCP timeout that overrides
-any `execute_timeout` value in `mcp.json` or `config.toml`. The mem0 binary
-works correctly (26.5s after model pre-warm), but CodeWhale's stdio transport
-always times out at exactly 120s regardless of per-server configuration.
-
-The infrastructure (Qdrant, Ollama, patched binary) remains in place for when
-CodeWhale supports per-server timeouts.
 
 ## Infrastructure
 

@@ -1,0 +1,4 @@
+# Mem0 Docker data (auto-generated, never commit)
+mcp-servers/data/
+mcp-servers/.env
+mcp-servers/servers/mem0-mcp/__pycache__/

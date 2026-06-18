@@ -60,10 +60,8 @@ mcp-servers/superpowers/.github/
 mcp-servers/superpowers/.gitignore
 mcp-servers/superpowers/tsconfig.json
 
-# Mem0 patched server (generated/reproducible)
-mcp-servers/mem0-patched/.venv/
-mcp-servers/mem0-patched/uv.lock
-mcp-servers/mem0-patched/benchmarks/
+# Mem0 MCP bridge (generated/reproducible)
+mcp-servers/servers/mem0-mcp/__pycache__/
 
 # Generated JS source maps (reproducible from TypeScript)
 mcp-servers/superpowers/build/*.map

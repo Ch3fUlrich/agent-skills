@@ -1,78 +1,108 @@
-# MCP Server Stack — Self-Hosted, No API Keys
+# MCP Server Stack — Self-Hosted
 
 A combined MCP server stack for CodeWhale that reduces token usage by
 40–60% on code-heavy tasks through semantic navigation, disciplined
-coding workflows.
+coding workflows, and persistent cross-session memory.
 
-All servers are **fully self-hosted** — no cloud API keys, no external services.
-Runs on your own hardware with Docker + uv + Node.js.
+Runs on your own hardware with Docker + uv + Node.js. Mem0 uses
+**DeepSeek V4** for fact extraction and **Ollama with bge-m3** for
+embeddings — no OpenAI API key required.
 
 ## Quick Start
 
 ```powershell
 cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
+# 1. Edit .env — set DEEPSEEK_API_KEY + POSTGRES_PASSWORD
+# 2. Run setup
 .\scripts\windows\setup.ps1
 .\scripts\windows\init-serena-projects.ps1   # Pre-index all repos (one-time)
-# Restart CodeWhale
+# 3. Restart CodeWhale
 ```
 
-Then run `.\scripts\windows\start.ps1` each session or after reboot to start Qdrant
-and pre-warm Ollama models.
+Then run `.\scripts\windows\start.ps1` each session or after reboot to start the
+Mem0 Docker stack.
 
-See [INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup.
+See [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup.
 
-## Active Servers (2 of 4)
+## Active Servers (4 of 5)
 
 | MCP Server | Transport | Purpose | Token Savings | Status |
 |-----------|-----------|---------|:---:|:------:|
-| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation — find symbols, references, structure without reading files | ~40–60% | ✅ Working |
-| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | ✅ Working |
-| ~~[Filesystem](https://github.com/modelcontextprotocol/servers)~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | ❌ Disabled — all 14 tools redundant with CodeWhale built-ins |
-| **Mem0** ([elvismdev](https://github.com/elvismdev/mem0-mcp-selfhosted)) | stdio | Persistent cross-session memory — store and recall facts across sessions | Context reuse | ❌ Disabled |
+| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation | ~40–60% | Working |
+| [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation — navigate, click, type, screenshots | Browser | Working |
+| **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector + MCP bridge | Context reuse | Working |
+| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | Working |
+| ~~Filesystem~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | Disabled — redundant with CodeWhale built-ins |
 
-## ❌ Mem0 — Disabled: CodeWhale Hardcoded Timeout
+## Mem0 — Official Self-Hosted Docker Stack
 
-### The Problem
+Mem0 runs as a three-container Docker stack using the official `mem0/mem0-api-server`
+image, PostgreSQL with pgvector for embeddings, and a custom MCP SSE bridge that lets
+CodeWhale and Claude Code connect without the stdio timeout issue.
 
-CodeWhale has a **hardcoded 120-second MCP stdio timeout** that cannot be
-overridden by `execute_timeout` in `mcp.json` or `[mcp]` timeouts in
-`config.toml`. Every `tools/call` for mem0 times out at exactly 120s
-regardless of the configured value (tried 300s, 600s, and 999s).
+### Architecture
 
-The binary itself works perfectly — CLI tests confirm `add_memory` completes
-in 26.5s (with pre-warmed models) or 110.7s (cold start), both within the
-120s window. But CodeWhale's stdio transport never receives the response.
+```
+CodeWhale / Claude Code
+  │
+  │ SSE (http://localhost:8001/sse)
+  ▼
+┌──────────────────┐
+│  mem0-mcp bridge │  ← Custom Python MCP server (Docker, port 8001)
+│  (FastMCP + SSE) │    Translates MCP tools ↔ REST API calls
+└────────┬─────────┘
+         │ HTTP (internal Docker network)
+         ▼
+┌──────────────────┐
+│  mem0 REST API   │  ← Official mem0/mem0-api-server (Docker, port 8888)
+│  (FastAPI)       │    Fact extraction, embedding, memory CRUD
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  PostgreSQL 17   │  ← pgvector/pgvector:pg17 (Docker, port 5432)
+│  + pgvector      │    Vector embeddings + memory metadata
+└──────────────────┘
+```
 
-### All Attempted Fixes (None Worked)
+### Why This Fixes the Old Problem
 
-| # | Attempt | Result |
-|---|---------|--------|
-| 1 | Increase `execute_timeout` to 300s, 600s, 999s | Still times out at 120s — hardcoded |
-| 2 | Set `[mcp]` global timeouts in `config.toml` | Still times out at 120s — ignored |
-| 3 | Set `PYTHONUNBUFFERED=1` (Python stdout buffering theory) | Still times out |
-| 4 | Use `uvx --from local-patched` instead of installed binary | Still times out |
-| 5 | Use `uvx --from git+https://...` (original unpatched) | Still times out |
-| 6 | Switch to Streamable HTTP transport (persistent daemon) | Server crashes on connection |
-| 7 | PowerShell wrapper with baked-in env vars | Still times out |
-| 8 | Set all `MEM0_*` env vars at Windows User level | Still times out |
-| 9 | Pre-warm Ollama models (bge-m3 + qwen2.5:1.5b) | Faster binary (26.5s) but still times out |
-| 10 | Rebuild corrupted Qdrant collection | Collection healthy, still times out |
-| 11 | Try alternative mem0 MCP server (olk/mem0-mcp, AsyncMemory) | Installed but returns empty response |
-| 12 | Try ChromaDB+SQLite alternative (syyunn/mcp-memory-toolkit) | Repository deleted/not found |
-| 13 | Kill stale process, force respawn | Process alive, times out anyway |
+The previous setup used a third-party MCP server (`mem0-mcp-selfhosted` by elvismdev)
+over stdio transport. CodeWhale's hardcoded 120-second MCP stdio timeout killed every
+`tools/call` before mem0 could respond. The new approach:
 
-**All diagnostic files preserved in `.aitk/` for investigation.**
+- **SSE transport** — the MCP bridge runs as a persistent Docker service with an HTTP
+  SSE endpoint. No stdio timeout applies.
+- **Official images** — uses `mem0/mem0-api-server:latest` and `pgvector/pgvector:pg17`,
+  the same stack documented at docs.mem0.ai.
+- **Separation of concerns** — the mem0 REST API handles fact extraction and vector
+  storage; the MCP bridge only translates tool calls. If the API is slow, the bridge
+  waits (no 120s deadline).
 
-### Infrastructure Retained
+### Available MCP Tools
 
-All Mem0 infrastructure is fully installed and working at the binary level,
-ready to activate the moment CodeWhale fixes the timeout:
+| Tool | Description |
+|------|-------------|
+| `add_memory` | Store text or conversation as a memory |
+| `search_memories` | Semantic search across memories with scores |
+| `get_memories` | List all memories for a user |
+| `delete_memory` | Delete a memory by ID |
+| `health` | Check bridge and API health |
 
-- ✅ **Qdrant** (Docker) — vector database on `localhost:6333`
-- ✅ **Ollama** — running `bge-m3:latest` (567M, embeddings) + `qwen2.5:1.5b` (986M, LLM)
-- ✅ **Patched source** — `servers/mem0-patched/` with fixes for mem0ai v2.x API
-- ✅ **MCP config** — ready in `config/mcp.json` (commented out)
-- ✅ **Bootstrap memory** — pre-loaded `data/mem0/` with starter memories
+### Quick Verification
+
+```powershell
+# Check the REST API
+curl http://localhost:8888/health
+
+# Check the MCP bridge
+curl http://localhost:8001/sse
+
+# Add a test memory
+curl -X POST http://localhost:8888/memories `
+  -H "Content-Type: application/json" `
+  -d '{"messages":[{"role":"user","content":"Test memory"}],"user_id":"mauls"}'
+```
 
 ## Server Architecture
 
@@ -85,6 +115,9 @@ CodeWhale Agent
   │     ├── LSP servers (per-language) ──► Project source code
   │     └── Memories (JSON, local disk) ──► ~/.serena/memories/
   │
+  ├── Mem0 (Docker, SSE)
+  │     └── mem0-mcp bridge ──► mem0 REST API ──► PostgreSQL + pgvector
+  │
   └── Superpowers (Node.js, stdio)
         └── Skills (discovered from Claude Code cache)
               ├── brainstorming
@@ -94,38 +127,105 @@ CodeWhale Agent
               └── ... 14 skills total
 ```
 
-### Infrastructure Stack (Retained for Future Mem0)
+### Docker Stack
 
 ```
-Qdrant (vector DB)          ← Docker, port 6333
-  │
-Ollama                      ← Local, port 11434
-  ├── bge-m3:latest          (embeddings)
-  └── qwen2.5:1.5b           (LLM)
-  │
-Mem0 Python library         ← pip/uv, local
-  │
-sqlite3                     ← Memory metadata, local disk
+docker compose ps
+NAME              STATUS                    PORTS
+mem0-postgres     running (healthy)         127.0.0.1:5433→5432
+mem0-api          running (healthy)         127.0.0.1:8888→8000
+mem0-mcp          running (healthy)         127.0.0.1:8001→8001
 ```
+
+## MCP Endpoints
+
+| Server | Access URL / Method |
+|--------|--------------------|
+| **Serena** | `uvx` stdio — no web UI |
+| **Playwright** | `npx` stdio — headed browser, no API key needed ([docs](https://playwright.dev/docs/getting-started-mcp)) |
+| **Mem0 REST API** | [http://localhost:8888/docs](http://localhost:8888/docs) (OpenAPI), `/health` |
+| **Mem0 MCP Bridge** | [http://localhost:8001/sse](http://localhost:8001/sse) (SSE), `/health` |
+| **Superpowers** | `node` stdio — no web UI |
+| **PostgreSQL** | `localhost:5433` (pgvector, credentials in `.env`) |
+
+## Playwright — Browser Automation for DeepSeek
+
+DeepSeek cannot browse the web. [Playwright MCP](https://github.com/microsoft/playwright-mcp)
+(34k+ stars, Microsoft) gives the agent full browser automation — navigate pages,
+click elements, type text, take screenshots, mock APIs, and run arbitrary
+Playwright scripts. No API key required.
+
+**Why Playwright over search-only MCPs:**
+- **Real browser** — renders JavaScript, handles logins, submits forms
+- **Accessibility snapshots** — understands page structure without vision models
+- **Network monitoring** — inspect and mock API responses
+- **Storage state** — persists cookies/localStorage across sessions
+- **Multi-browser** — Chrome, Firefox, WebKit, Edge
+- **No rate limits** — no API key, no quota, runs locally
+
+**Setup:**
+1. Playwright MCP auto-installs on first `npx` run. No manual steps needed.
+2. Restart CodeWhale — tools appear as `mcp_playwright_*` (40+ tools).
+3. Try: *"Go to example.com, take a screenshot, and describe what you see."*
+
+**Configuration options** (add to `args` in `mcp.json`):
+- `--headless` — run without visible browser window
+- `--browser=firefox` — use Firefox instead of Chromium
+- `--port 8931` — run as standalone HTTP server
+- `--isolated` — fresh session each time (no persistent cookies)
+
+## Mem0 Dashboard — Web UI
+
+The self-hosted dashboard runs at **[http://localhost:3000](http://localhost:3000)**.
+
+### Authentication
+
+| Mode | When | How |
+|------|------|-----|
+| **Open access** (current) | `AUTH_DISABLED=true` in `docker-compose.yml` | Dashboard loads without login. All API endpoints are open. Production: set to `false`. |
+| **Authentication enabled** | `AUTH_DISABLED=false` | Visit `/setup` to create the first admin account, then log in with email + password. |
+
+### Enabling auth (production)
+
+1. Set in `.env`:
+   ```
+   ADMIN_API_KEY=<random-string-16+-chars>
+   JWT_SECRET=<openssl-rand-base64-48>
+   ```
+2. Change `AUTH_DISABLED=false` in `docker-compose.yml` (mem0 service `environment:` block)
+3. Rebuild: `docker compose up -d --build mem0`
+4. Visit `http://localhost:3000/setup` → create admin account
+5. Use `X-API-Key: <ADMIN_API_KEY>` header for admin API operations
+
+### Creating API keys for agents
+
+Once auth is enabled:
+1. Log into the dashboard
+2. Go to **API Keys** → **Create Key**
+3. Give it a label (e.g. "CodeWhale")
+4. Copy the generated key
+5. Pass it to the MCP bridge or REST API calls as `X-API-Key` header
+
+### Default credentials
+
+There are **no default credentials**. The setup wizard at `/setup` creates the first admin account. Until then, with `AUTH_DISABLED=true`, the dashboard is open.
 
 ## Directory Structure
 
 ```
 mcp-servers/
 ├── config/                              # CodeWhale MCP configs
-│   ├── mcp.json                         # Production config (Serena + Superpowers, no Mem0)
-│   ├── mcp-claude-code.json             # Claude Code equivalent config (not used)
-│   ├── mem0-config.yaml                 # Mem0 server config (retained, models + providers)
+│   ├── mcp.json                         # Production config (Serena + Mem0 + Superpowers)
+│   ├── mcp-claude-code.json             # Claude Code equivalent config
 │   └── serena-project.yml               # Per-repo template for Serena
 │
 ├── scripts/                             # Platform scripts
 │   ├── windows/                         # PowerShell scripts for Windows
-│   │   ├── setup.ps1                    # One-time: install tools, start Docker, set env vars,
-│   │   │                                #   pull Ollama models, configure CodeWhale
-│   │   ├── start.ps1                    # Daily: start Qdrant, pre-warm Ollama models,
-│   │   │                                #   initialize new Serena repos
+│   │   ├── setup.ps1                    # One-time: install tools, validate .env,
+│   │   │                                #   pull Docker images, start stack
+│   │   ├── start.ps1                    # Daily: start Docker stack, verify health
 │   │   ├── stop.ps1                     # Stop Docker services, preserve data
-│   │   ├── test.ps1                     # Full test suite: 5 tests covering all components
+│   │   ├── test.ps1                     # Full test suite: 4 tests covering all components
 │   │   ├── init-serena-projects.ps1     # Pre-index all repos with Serena
 │   │   └── migrate.ps1                  # Migrate data from Claude Code plugins
 │   └── linux/                           # Bash scripts for Linux/macOS
@@ -133,38 +233,30 @@ mcp-servers/
 │       └── init-serena-projects.sh, migrate.sh
 │
 ├── servers/                             # MCP server source packages
-│   ├── mem0-patched/                    # Patched mem0-mcp-selfhosted source (retained)
-│   │   ├── patch.py                     # Fixes search_memories + get_memories for mem0ai v2.x
-│   │   ├── src/mem0_mcp_selfhosted/     # Patched source code
-│   │   │   ├── server.py                # Main MCP server (patched: user_id/agent_id in filters)
-│   │   │   ├── config.py                # Env-var based configuration
-│   │   │   ├── helpers.py               # Utility functions (list_entities, safe_bulk_delete)
-│   │   │   └── env.py                   # Env var reader
-│   │   └── pyproject.toml               # uv project definition
+│   ├── mem0-mcp/                        # MCP SSE bridge for mem0 REST API
+│   │   ├── server.py                    # FastMCP bridge (5 memory tools)
+│   │   ├── Dockerfile                   # Python 3.12 slim image
+│   │   └── requirements.txt            # mcp>=1.6.0
 │   │
 │   └── superpowers/                     # Node.js MCP server for coding workflows
-│       ├── build/index.js               # Compiled server binary (CodeWhale spawns this)
-│       │                                 # Discovers 14 skills from Claude Code cache
-│       ├── src/                         # TypeScript source (read-only reference)
-│       ├── package.json                 # v0.1.0, MIT license
-│       └── node_modules/                # Node.js dependencies (not tracked in git)
+│       ├── build/index.js               # Compiled server binary
+│       ├── src/                         # TypeScript source
+│       ├── package.json
+│       └── node_modules/
 │
 ├── docs/
-│   ├── ARCHITECTURE.md                  # Full system architecture: data flow, component
-│   │                                    # details, security model
-│   ├── TOKEN_SAVINGS.md                 # Detailed analysis: ~50% reduction, before/after
-│   │                                    # examples for common coding tasks
-│   ├── TROUBLESHOOTING.md               # All known issues: port conflicts, PATH problems,
-│   │                                    # timeout fixes, GPU detection, reset procedures
-│   └── INSTALL-GUIDE.md                 # Manual step-by-step setup for humans
+│   ├── ARCHITECTURE.md                  # Full system architecture
+│   ├── TOKEN_SAVINGS.md                 # Detailed token savings analysis
+│   ├── TROUBLESHOOTING.md               # Known issues and fixes
+│   └── INSTALL-GUIDE.md                 # Manual step-by-step setup
 │
-├── data/                                # Persistent runtime data (auto-created, not in git)
-│   ├── qdrant/                          # Qdrant vector database (retained for future mem0)
-│   └── mem0/                            # Mem0 SQLite history + bootstrap memory files
+├── data/                                # Persistent runtime data (auto-created)
+│   ├── postgres/                        # PostgreSQL data (pgvector embeddings)
+│   └── mem0-history/                    # Mem0 request history
 │
-├── docker-compose.yml
-├── .env.example
-├── TODO.md
+├── docker-compose.yml                   # Mem0 stack (postgres + mem0 API + MCP bridge)
+├── .env                                 # Secrets (DEEPSEEK_API_KEY, POSTGRES_PASSWORD, etc.)
+├── .env.example                         # Template (safe to commit)
 └── README.md                            # This file
 ```
 

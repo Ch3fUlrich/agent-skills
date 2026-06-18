@@ -1,6 +1,6 @@
 # MCP Server Stack — Stop Docker Services
 # ============================================================================
-# Stops Qdrant and Ollama containers, preserving data.
+# Stops the mem0 Docker stack, preserving data.
 #
 # Usage: .\scripts\stop.ps1
 # ============================================================================

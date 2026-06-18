@@ -19,34 +19,31 @@ skills/<skill-name>/
 
 ## Adding a Starter Pack
 
-Some skills benefit from a starter pack that installs agent-specific entrypoints into a target repository. These live under `starters/<skill-name>/`:
+Some skills benefit from a starter pack — a short README that points users to
+the full skill and explains the convention. These live under
+`starters/<skill-name>/`:
 
 ```
 starters/<skill-name>/
-├── README.md             # What gets installed and how to use
-├── AGENTS.md             # Instructions for AGENTS.md-aware tools
-├── CLAUDE.md             # Instructions for Claude Code
-├── GEMINI.md             # Instructions for Gemini CLI
-├── .github/              # GitHub Copilot instructions
-├── .codex/skills/        # Codex skill-style installation
-├── .cursor/rules/        # Cursor rules
-├── .clinerules/          # Cline rules
-├── .continue/rules/      # Continue rules
-├── .roo/rules/           # Roo Code rules
-└── .windsurf/rules/      # Windsurf rules
+└── README.md             # What the skill does and how to reference it
 ```
 
-Each adapter file should be short — a few sentences directing the agent to the full skill. Keep the adapter generic and reference the skill by name, not by tool-specific commands.
+The README should be short — a few sentences directing the user to the full
+skill. Reference the skill by path, not by tool-specific commands.
+
+If additional agent-specific instruction files are genuinely needed (different
+content per agent, not just different filenames), add them alongside the README.
+See `docs/agent-compatibility.md` for the native format each agent expects.
 
 ## When a Starter Pack Is Needed
 
 Create a starter pack when:
 
-- The skill requires per-project configuration or context.
-- The user should install it by copying files into their repo root.
-- Multiple agents need instructions in their native format (`.cursor/rules/*.mdc`, `.github/copilot-instructions.md`, etc.).
+- The skill requires per-project context or convention explanation.
+- Users need a quick reference for how to wire the skill into their project.
 
-If the skill is self-contained and the agent will load it from a skill library, a starter pack is not needed.
+If the skill is self-contained and the agent will load it from a skill library,
+a starter pack is not needed.
 
 ## Compatibility Goal
 

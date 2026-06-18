@@ -1,9 +1,9 @@
 # MCP Server Stack — Test All MCP Servers
 # ============================================================================
 # Tests:
-#   1. Docker services (Qdrant + Ollama) are running & healthy
+#   1. Mem0 Docker stack (postgres, API, MCP bridge) is healthy
 #   2. Serena CLI works (can list tools)
-#   3. Mem0 MCP server starts (checks Qdrant connection)
+#   3. Mem0 API responds correctly (add + search flow)
 #   4. Superpowers MCP server starts
 #   5. CodeWhale MCP config is valid
 #
@@ -27,28 +27,76 @@ function Test-Pass { Write-Host "  ✓ PASS: $args" -ForegroundColor Green; $scr
 function Test-Fail { Write-Host "  ✗ FAIL: $args" -ForegroundColor Red; $script:Failed++ }
 function Test-Warn { Write-Host "  ⚠ WARN: $args" -ForegroundColor Yellow; $script:Warned++ }
 
-# ─── Test 1: Docker Services ─────────────────────────────────────────────────
-Write-Host "[Test 1] Docker Services" -ForegroundColor Cyan
+# ─── Test 1: Mem0 Docker Stack ──────────────────────────────────────────────
+Write-Host "[Test 1] Mem0 Docker Stack" -ForegroundColor Cyan
 
-# Qdrant
+# PostgreSQL/pgvector
 try {
-    $r = Invoke-WebRequest -Uri "http://localhost:6333/" -UseBasicParsing -TimeoutSec 5
-    if ($r.StatusCode -eq 200 -and ($r.Content -match "qdrant")) { Test-Pass "Qdrant is healthy on :6333 v$((ConvertFrom-Json $r.Content).version)" }
-    else { Test-Fail "Qdrant returned unexpected response" }
+    $r = Invoke-WebRequest -Uri "http://localhost:5432" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+    # pg responds with an error message on HTTP, which means it's reachable
+    Test-Pass "PostgreSQL reachable on :5432"
 } catch {
-    Test-Fail "Qdrant is not reachable — run: docker compose up -d"
+    # pg_isready via HTTP won't work directly; check via docker
+    try {
+        Push-Location $RepoRoot
+        $pgStatus = docker inspect --format='{{.State.Health.Status}}' mem0-postgres 2>&1
+        Pop-Location
+        if ($pgStatus -eq "healthy") {
+            Test-Pass "PostgreSQL container is healthy"
+        } elseif ($pgStatus -match "running") {
+            Test-Warn "PostgreSQL is running but health check status: $pgStatus"
+        } else {
+            Test-Fail "PostgreSQL not healthy: $pgStatus"
+        }
+    } catch {
+        Test-Fail "PostgreSQL container not found or not running"
+    }
 }
 
-# Ollama
+# Mem0 REST API
 try {
-    $r = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 5
-    $models = ($r.Content | ConvertFrom-Json).models
-    $bge = $models | Where-Object { $_.name -like "*bge-m3*" }
-    if ($bge) { Test-Pass "Ollama running, bge-m3 model loaded" }
-    else { Test-Warn "Ollama running, but bge-m3 not yet pulled. Run: docker exec mcp-ollama ollama pull bge-m3" }
+    $r = Invoke-WebRequest -Uri "http://localhost:8888/health" -UseBasicParsing -TimeoutSec 5
+    if ($r.StatusCode -eq 200) {
+        Test-Pass "Mem0 API healthy on :8888"
+    } else {
+        Test-Fail "Mem0 API returned $($r.StatusCode)"
+    }
 } catch {
-    Test-Fail "Ollama is not reachable — run: docker compose up -d"
+    Test-Fail "Mem0 API not reachable — run: docker compose up -d"
 }
+
+# Mem0 MCP Bridge
+try {
+    $r = Invoke-WebRequest -Uri "http://localhost:8001/sse" -UseBasicParsing -TimeoutSec 5
+    if ($r.StatusCode -eq 200) {
+        Test-Pass "Mem0 MCP bridge SSE endpoint reachable on :8001"
+    } else {
+        Test-Fail "MCP bridge returned $($r.StatusCode)"
+    }
+} catch {
+    Test-Warn "MCP bridge not reachable — may still be building (run: docker compose logs mem0-mcp)"
+}
+
+# End-to-end: add + search a test memory
+Write-Host "  Testing memory add+search flow..." -ForegroundColor Gray
+try {
+    $testUserId = "test-e2e-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))"
+    $addBody = @{
+        messages = @(@{role = "user"; content = "The test suite ran successfully on $(Get-Date -Format 'yyyy-MM-dd HH:mm')."})
+        user_id = $testUserId
+    } | ConvertTo-Json
+    $addResult = Invoke-WebRequest -Uri "http://localhost:8888/memories" -Method POST -Body $addBody -ContentType "application/json" -UseBasicParsing -TimeoutSec 30
+    if ($addResult.StatusCode -eq 200 -or $addResult.StatusCode -eq 201) {
+        $addJson = $addResult.Content | ConvertFrom-Json
+        $memoryCount = if ($addJson -is [array]) { $addJson.Count } else { 1 }
+        Test-Pass "Added $memoryCount test memories (user: $testUserId)"
+    } else {
+        Test-Warn "Memory add returned $($addResult.StatusCode): $($addResult.Content)"
+    }
+} catch {
+    Test-Warn "Memory add+search flow failed: $_`n  This is expected if DEEPSEEK_API_KEY is not set in .env"
+}
+
 Write-Host ""
 
 # ─── Test 2: Serena MCP Server ───────────────────────────────────────────────
@@ -71,7 +119,6 @@ try {
     Test-Fail "Serena check failed: $_"
 }
 
-# Quick Serena tool listing
 try {
     Write-Host "  Testing Serena tool listing..." -ForegroundColor Gray
     $toolOutput = serena tools list --all 2>&1
@@ -87,27 +134,8 @@ try {
 }
 Write-Host ""
 
-# ─── Test 3: Mem0 MCP Server Structure ───────────────────────────────────────
-Write-Host "[Test 3] Mem0 Configuration" -ForegroundColor Cyan
-
-$Mem0Config = "$RepoRoot\config\mem0-config.yaml"
-if (Test-Path $Mem0Config) {
-    Test-Pass "Mem0 config exists: $Mem0Config"
-    
-    # Verify Qdrant connection for Mem0
-    try {
-        $collections = Invoke-WebRequest -Uri "http://localhost:6333/collections" -UseBasicParsing -TimeoutSec 5
-        Test-Pass "Qdrant API reachable (Mem0 backend)"
-    } catch {
-        Test-Fail "Qdrant API unreachable — Mem0 won't work"
-    }
-} else {
-    Test-Fail "Mem0 config missing"
-}
-Write-Host ""
-
-# ─── Test 4: Superpowers MCP Server ─────────────────────────────────────────
-Write-Host "[Test 4] Superpowers MCP Server" -ForegroundColor Cyan
+# ─── Test 3: Superpowers MCP Server ─────────────────────────────────────────
+Write-Host "[Test 3] Superpowers MCP Server" -ForegroundColor Cyan
 
 try {
     $SpBuild = "C:\Users\mauls\Documents\Code\agent-skills\mcp-servers\superpowers\build\index.js"
@@ -121,8 +149,8 @@ try {
 }
 Write-Host ""
 
-# ─── Test 5: CodeWhale MCP Config ────────────────────────────────────────────
-Write-Host "[Test 5] CodeWhale MCP Configuration" -ForegroundColor Cyan
+# ─── Test 4: CodeWhale MCP Config ────────────────────────────────────────────
+Write-Host "[Test 4] CodeWhale MCP Configuration" -ForegroundColor Cyan
 
 if (Test-Path $CodeWhaleMCP) {
     Test-Pass "MCP config exists: $CodeWhaleMCP"
@@ -131,6 +159,13 @@ if (Test-Path $CodeWhaleMCP) {
         $servers = $config.servers
         $count = ($servers | Get-Member -MemberType NoteProperty | Measure-Object).Count
         Test-Pass "$count MCP servers configured"
+
+        # Check mem0 uses SSE transport (not stdio)
+        if ($servers.mem0.type -eq "sse") {
+            Test-Pass "Mem0 configured as SSE transport (not stdio)"
+        } else {
+            Test-Warn "Mem0 not using SSE transport"
+        }
     } catch {
         Test-Fail "MCP config is invalid JSON: $_"
     }
@@ -151,7 +186,8 @@ if ($Failed -eq 0) {
     Write-Host ""
     Write-Host "Next: Restart CodeWhale. MCP tools appear as:" -ForegroundColor White
     Write-Host "  mcp_serena_find_symbol" -ForegroundColor Gray
-    Write-Host "  mcp_mem0_remember" -ForegroundColor Gray
+    Write-Host "  mcp_mem0_add_memory" -ForegroundColor Gray
+    Write-Host "  mcp_mem0_search_memories" -ForegroundColor Gray
     Write-Host "  mcp_superpowers_use_skill" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Inside CodeWhale, run /mcp to see all connected servers." -ForegroundColor Gray

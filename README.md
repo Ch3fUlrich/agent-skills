@@ -13,7 +13,7 @@ The goal is not to turn every note into HTML. The goal is to give future agents 
 ## Repository Layout
 
 ```text
-skills/                        # Skill library — copy into .codex/skills/ or $CODEX_HOME/skills/
+skills/                        # Skill library
   html-working-documents/
     SKILL.md
     agents/openai.yaml
@@ -21,19 +21,9 @@ skills/                        # Skill library — copy into .codex/skills/ or $
   mcp-servers-setup/
     SKILL.md
 
-starters/                      # Starter packs — copy into target repo root
+starters/                      # Starter packs — light pointers to the full skills
   html-working-documents/
-    AGENTS.md
-    CLAUDE.md
-    GEMINI.md
     README.md
-    .github/copilot-instructions.md
-    .codex/skills/html-working-documents/
-    .cursor/rules/html-working-documents.mdc
-    .clinerules/html-working-documents.md
-    .continue/rules/html-working-documents.md
-    .roo/rules/html-working-documents.md
-    .windsurf/rules/html-working-documents.md
   mcp-servers/
     AGENTS.md
     CLAUDE.md
@@ -55,34 +45,18 @@ docs/
 
 ## Use In An Existing Repository
 
-Copy the contents of:
+Add a short pointer to your project's agent instruction file (`AGENTS.md`,
+`CLAUDE.md`, `GEMINI.md`, or equivalent):
 
-```text
-starters/html-working-documents/
+```markdown
+## HTML Working Documents
+
+For long planning, research, review, report, diagram, prototype, and handoff
+work, follow the skill at `skills/html-working-documents/SKILL.md`.
 ```
 
-into the root of your target repository.
-
-That installs:
-
-- Cross-agent instruction files for Codex, Claude Code, Cursor, VS Code/GitHub Copilot, Roo Code, Cline, Continue, Windsurf, and Gemini CLI.
-- `.codex/skills/html-working-documents/`, which contains the full skill for agents that support skill-style workflows.
-
-## Supported Agent Entrypoints
-
-| Agent/tool | Installed file or folder |
-| --- | --- |
-| OpenAI Codex and other AGENTS.md-aware tools | `AGENTS.md` |
-| Claude Code | `CLAUDE.md` |
-| Cursor | `.cursor/rules/html-working-documents.mdc` |
-| VS Code / GitHub Copilot | `.github/copilot-instructions.md` |
-| Roo Code | `.roo/rules/html-working-documents.md` |
-| Cline | `.clinerules/html-working-documents.md` |
-| Continue | `.continue/rules/html-working-documents.md` |
-| Windsurf | `.windsurf/rules/html-working-documents.md` and `.windsurfrules` |
-| Gemini CLI | `GEMINI.md` |
-
-See `docs/agent-compatibility.md` for notes and source links behind these entrypoints.
+See `docs/agent-compatibility.md` for the native instruction file format each
+agent expects.
 
 ## Use As A Skill Library
 
