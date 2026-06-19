@@ -104,6 +104,16 @@ curl -X POST http://localhost:8888/memories `
   -d '{"messages":[{"role":"user","content":"Test memory"}],"user_id":"mauls"}'
 ```
 
+### Why Mem0 over Serena for Memory?
+
+While Serena includes basic local memory capabilities, **Mem0 is the designated single source of truth for all cross-session memory in this stack.** 
+
+1. **Intelligence:** Mem0 automatically extracts entities, handles summarization, and uses vector search natively. It removes the cognitive overhead of manually formatting knowledge graphs.
+2. **Project Isolation:** Mem0 supports strict project isolation natively via the `user_id` parameter (mapping to your repository folder name), which is crucial for preventing memory spillover across different projects.
+3. **Reliability:** Mem0 is a production-grade infrastructure layer that reliably persists data and scales.
+
+To prevent agent confusion and overlapping functionality, Serena's memory tools (`write_memory`, `read_memory`, etc.) are explicitly **disabled** using the `excludeTools` configuration in all provided JSON setup files. Do not re-enable them.
+
 ## Server Architecture
 
 ### Data Flow

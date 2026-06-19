@@ -12,7 +12,20 @@
       ],
       "env": {
         "SERENA_HOME": "C:/Users/mauls/.serena"
-      }
+      },
+      "excludeTools": [
+        "activate_project",
+        "get_current_config",
+        "onboarding",
+        "open_dashboard",
+        "initial_instructions",
+        "write_memory",
+        "read_memory",
+        "list_memories",
+        "delete_memory",
+        "rename_memory",
+        "edit_memory"
+      ]
     },
     "playwright": {
       "command": "npx",
@@ -23,7 +36,10 @@
     },
     "mem0": {
       "type": "sse",
-      "url": "http://localhost:8001/sse"
+      "url": "http://localhost:8001/sse",
+      "excludeTools": [
+        "health"
+      ]
     },
     "superpowers": {
       "command": "node",
