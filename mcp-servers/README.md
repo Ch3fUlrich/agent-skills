@@ -279,9 +279,28 @@ See [TOKEN_SAVINGS.md](docs/TOKEN_SAVINGS.md) for detailed cases.
 
 To enable MCP servers in a new repository, copy the starter pack from the parent repository:
 
+
 ```
 starters/mcp-servers/
 ```
 
 This installs `AGENTS.md` and `CLAUDE.md` files that teach the agent how to activate
 Serena, run onboarding, and use semantic code navigation from the first turn.
+
+## Google Antigravity Setup
+
+For Google Antigravity, configuration is loaded from the global `mcp_config.json` file. A complete, optimized template is provided at [mcp-servers/config/mcp_antigravity.json](file:///c:/Users/mauls/Documents/Code/agent-skills/mcp-servers/config/mcp_antigravity.json).
+
+### 1. Configuration Location
+On Windows, Antigravity reads its config from:
+`C:\Users\<username>\.gemini\config\mcp_config.json` (which is symlinked to `C:\Users\<username>\.gemini\antigravity\mcp_config.json`).
+
+### 2. Transport Optimization
+While CodeWhale uses SSE transport for Mem0 to bypass its 120s stdio timeout, Antigravity has native SSE client issues that cause `Method Not Allowed` (405) errors. To resolve this, **Mem0 is run as a stdio process** for Antigravity using `uv run`, connecting to the same running Mem0 Docker containers on port `8888`.
+
+### 3. Tool Filtering (excludeTools)
+To prevent agent confusion and tool redundancy (e.g., memory tools exposed by both Serena and Mem0), we filter out unused/unneeded tools using the client-side `excludeTools` property:
+
+*   **Serena**: Memory tools (`write_memory`, `read_memory`, `list_memories`, `delete_memory`, `rename_memory`, `edit_memory`) and setup/GUI tools (`activate_project`, `get_current_config`, `onboarding`, `open_dashboard`, `initial_instructions`) are **excluded**. This leaves Serena strictly focused on LSP semantic search and refactoring.
+*   **Mem0**: The `health` check tool is **excluded**, leaving only the 4 core memory storage and search tools.
+*   **Superpowers**: All workflow tools are left active.
