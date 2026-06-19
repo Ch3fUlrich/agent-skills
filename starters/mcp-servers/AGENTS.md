@@ -1,16 +1,16 @@
 # MCP Server Stack — AGENTS.md
 
 This repository is configured with a self-hosted MCP server stack for AI coding
-agents. Two servers are active:
+agents. Three servers are active:
 
 | Server | Purpose |
 |---|---|
 | **Serena** | LSP-powered semantic code navigation, refactoring, and project memory |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
+| **Mem0** | Persistent cross-session memory (uses SSE transport to bypass timeouts) |
 
-> **Mem0** (persistent cross-session memory) is **disabled** due to a CodeWhale
-> hardcoded 120s MCP stdio timeout. Use Serena's `write_memory` / `read_memory`
-> for project-scoped persistence instead.
+> **IMPORTANT: Project Isolation for Mem0**
+> To prevent cross-project memory spillover, you **MUST** always specify the project's folder name as the `user_id` when calling any Mem0 tools (e.g. `user_id="MaxEnt"`, `user_id="SERBRA"`, etc.).
 
 ---
 

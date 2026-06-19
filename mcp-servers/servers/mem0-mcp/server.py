@@ -113,7 +113,10 @@ def delete_memory(
 # ─── Entrypoint ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print(f"mem0 MCP bridge starting on port {PORT}", file=sys.stderr)
+    transport = os.environ.get("MCP_TRANSPORT", "sse")
+    print(f"mem0 MCP bridge starting with transport: {transport}", file=sys.stderr)
     print(f"  MEM0_API_URL = {MEM0_API_URL}", file=sys.stderr)
     print(f"  MEM0_USER_ID = {MEM0_USER_ID}", file=sys.stderr)
-    mcp.run(transport="sse")
+    if transport == "sse":
+        print(f"  PORT = {PORT}", file=sys.stderr)
+    mcp.run(transport=transport)

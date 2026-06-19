@@ -15,7 +15,7 @@ Write-Host "  MCP Server Stack — Start Services                               
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ─── Step 1: Docker Desktop ─────────────────────────────────────────────────
+# --- Step 1: Docker Desktop ---
 Write-Host "[1/4] Docker Desktop" -ForegroundColor Yellow
 
 try {
@@ -71,7 +71,7 @@ try {
 
 Write-Host ""
 
-# ─── Step 2: Mem0 Docker Stack ──────────────────────────────────────────────
+# --- Step 2: Mem0 Docker Stack ---
 Write-Host "[2/4] Mem0 memory stack" -ForegroundColor Yellow
 
 Push-Location $RepoRoot
@@ -122,7 +122,7 @@ if ($mem0Retries -ge 30) {
 Pop-Location
 Write-Host ""
 
-# ─── Step 3: Ollama (for Serena) ────────────────────────────────────────────
+# --- Step 3: Ollama (for Serena) ---
 Write-Host "[3/4] Ollama (native)" -ForegroundColor Yellow
 
 try {
@@ -137,7 +137,7 @@ try {
 
 Write-Host ""
 
-# ─── Step 4: Serena Initialization ──────────────────────────────────────────
+# --- Step 4: Serena Initialization ---
 Write-Host "[4/4] Serena project initialization" -ForegroundColor Yellow
 
 try {

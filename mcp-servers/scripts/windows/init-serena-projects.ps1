@@ -1,9 +1,9 @@
-# MCP Server Stack — Serena Project Initialization (Windows)
+# MCP Server Stack - Serena Project Initialization (Windows)
 # Auto-answers "N" to language prompts, uses project.yml for detection
 $ErrorActionPreference = "Continue"
 $CodeRoot = "C:\Users\mauls\Documents\Code"
 Write-Host "======================================================================" -ForegroundColor Cyan
-Write-Host "  Serena — Initialize Project Indices" -ForegroundColor Cyan
+Write-Host "  Serena - Initialize Project Indices" -ForegroundColor Cyan
 Write-Host "======================================================================" -ForegroundColor Cyan
 $Repos = Get-ChildItem -Path $CodeRoot -Directory | Where-Object { Test-Path (Join-Path $_.FullName ".git") }
 Write-Host "Found $($Repos.Count) repos"
@@ -12,7 +12,7 @@ foreach ($Repo in $Repos) {
     $ProjectDir = $Repo.FullName
     $ProjectName = $Repo.Name
     Write-Host "[$($Count + $Skipped + $Errors + 1)/$($Repos.Count)] $ProjectName..." -ForegroundColor Yellow
-    $IndexFile = Join-Path $ProjectDir ".serena" "project.yml"
+    $IndexFile = "$ProjectDir\.serena\project.yml"
     if (Test-Path $IndexFile) {
         Write-Host "  Already indexed" -ForegroundColor Gray
         $Skipped++

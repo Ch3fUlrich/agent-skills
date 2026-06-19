@@ -17,7 +17,7 @@ Write-Host "  Serena + Superpowers + Mem0                                       
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ─── Prerequisites ────────────────────────────────────────────────────────────
+# --- Prerequisites ---
 Write-Host "[1/6] Prerequisites..." -ForegroundColor Yellow
 try { docker --version 2>&1 | Out-Null; Write-Host "  v Docker" -ForegroundColor Green } catch { Write-Host "  X Docker not found" -ForegroundColor Red; exit 1 }
 try { docker info 2>&1 | Out-Null; Write-Host "  v Docker running" -ForegroundColor Green } catch { Write-Host "  X Docker not running" -ForegroundColor Red; exit 1 }
@@ -26,14 +26,14 @@ try { node --version 2>&1 | Out-Null; Write-Host "  v Node.js" -ForegroundColor 
 try { $r = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 3; Write-Host "  v Native Ollama" -ForegroundColor Green } catch { Write-Host "  X Ollama not running" -ForegroundColor Red; exit 1 }
 Write-Host ""
 
-# ─── Data Dirs ────────────────────────────────────────────────────────────────
+# --- Data Dirs ---
 Write-Host "[2/6] Data directories..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "$RepoRoot\data\postgres" | Out-Null
 New-Item -ItemType Directory -Force -Path "$RepoRoot\data\mem0-history" | Out-Null
 Write-Host "  v Ready" -ForegroundColor Green
 Write-Host ""
 
-# ─── Mem0 Docker Stack ───────────────────────────────────────────────────────
+# --- Mem0 Docker Stack ---
 Write-Host "[3/6] Mem0 Docker stack..." -ForegroundColor Yellow
 
 # Check .env exists
@@ -91,14 +91,14 @@ if ($retries -ge 30) {
 Pop-Location
 Write-Host ""
 
-# ─── Serena Install ───────────────────────────────────────────────────────────
+# --- Serena Install ---
 Write-Host "[4/6] Installing Serena..." -ForegroundColor Yellow
 try { uv tool install serena-agent 2>&1 | Out-Null } catch { }
 $sv = serena --version 2>&1
 Write-Host "  v Serena $sv" -ForegroundColor Green
 Write-Host ""
 
-# ─── Superpowers Install ──────────────────────────────────────────────────────
+# --- Superpowers Install ---
 Write-Host "[5/6] Installing Superpowers..." -ForegroundColor Yellow
 $SpDir = "$RepoRoot\superpowers"
 if (-not (Test-Path "$SpDir\build\index.js")) {
@@ -109,7 +109,7 @@ if (-not (Test-Path "$SpDir\build\index.js")) {
 Write-Host "  v Superpowers ready" -ForegroundColor Green
 Write-Host ""
 
-# ─── CodeWhale Config ─────────────────────────────────────────────────────────
+# --- CodeWhale Config ---
 Write-Host "[6/6] Configuring CodeWhale..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codewhale" | Out-Null
 Copy-Item -Path "$RepoRoot\config\mcp.json" -Destination $CodeWhaleMCP -Force

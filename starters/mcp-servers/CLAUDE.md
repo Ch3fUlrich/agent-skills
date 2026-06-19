@@ -1,15 +1,16 @@
 # MCP Server Stack — CLAUDE.md
 
-This repository is configured with a self-hosted MCP server stack. Two
+This repository is configured with a self-hosted MCP server stack. Three
 servers are active when Claude Code connects:
 
 | Server | Purpose |
 |---|---|
 | **Serena** | LSP-powered semantic code navigation, refactoring, and project memory |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
+| **Mem0** | Persistent cross-session memory (uses SSE transport to bypass timeouts) |
 
-> **Mem0** is disabled (CodeWhale hardcoded MCP timeout). Use Serena's
-> `write_memory` / `read_memory` for persistence.
+> **IMPORTANT: Project Isolation for Mem0**
+> To prevent cross-project memory spillover, you **MUST** always specify the project's folder name as the `user_id` when calling any Mem0 tools (e.g. `user_id="MaxEnt"`, `user_id="SERBRA"`, etc.).
 
 ---
 

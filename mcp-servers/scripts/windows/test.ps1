@@ -14,20 +14,20 @@ $ErrorActionPreference = "Continue"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 $CodeWhaleMCP = "$env:USERPROFILE\.codewhale\mcp.json"
 
-Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║     MCP Server Stack — Test Suite                             ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "      MCP Server Stack - Test Suite                             " -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
 $Passed = 0
 $Failed = 0
 $Warned = 0
 
-function Test-Pass { Write-Host "  ✓ PASS: $args" -ForegroundColor Green; $script:Passed++ }
-function Test-Fail { Write-Host "  ✗ FAIL: $args" -ForegroundColor Red; $script:Failed++ }
-function Test-Warn { Write-Host "  ⚠ WARN: $args" -ForegroundColor Yellow; $script:Warned++ }
+function Test-Pass { Write-Host "  [PASS] $args" -ForegroundColor Green; $script:Passed++ }
+function Test-Fail { Write-Host "  [FAIL] $args" -ForegroundColor Red; $script:Failed++ }
+function Test-Warn { Write-Host "  [WARN] $args" -ForegroundColor Yellow; $script:Warned++ }
 
-# ─── Test 1: Mem0 Docker Stack ──────────────────────────────────────────────
+# --- Test 1: Mem0 Docker Stack ---
 Write-Host "[Test 1] Mem0 Docker Stack" -ForegroundColor Cyan
 
 # PostgreSQL/pgvector
@@ -62,19 +62,33 @@ try {
         Test-Fail "Mem0 API returned $($r.StatusCode)"
     }
 } catch {
-    Test-Fail "Mem0 API not reachable — run: docker compose up -d"
+    Test-Fail "Mem0 API not reachable - run: docker compose up -d"
 }
 
 # Mem0 MCP Bridge
 try {
-    $r = Invoke-WebRequest -Uri "http://localhost:8001/sse" -UseBasicParsing -TimeoutSec 5
-    if ($r.StatusCode -eq 200) {
-        Test-Pass "Mem0 MCP bridge SSE endpoint reachable on :8001"
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [System.TimeSpan]::FromSeconds(5)
+    $responseTask = $client.GetAsync("http://localhost:8001/sse", [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead)
+    if ($responseTask.Wait(5000)) {
+        $response = $responseTask.Result
+        if ($response.IsSuccessStatusCode) {
+            $contentType = $response.Content.Headers.ContentType.MediaType
+            if ($contentType -eq "text/event-stream") {
+                Test-Pass "Mem0 MCP bridge SSE endpoint reachable on :8001 (Content-Type: $contentType)"
+            } else {
+                Test-Warn "Mem0 MCP bridge responded, but content type was '$contentType' instead of 'text/event-stream'"
+            }
+        } else {
+            Test-Fail "MCP bridge returned status code $($response.StatusCode)"
+        }
+        $response.Dispose()
     } else {
-        Test-Fail "MCP bridge returned $($r.StatusCode)"
+        Test-Fail "MCP bridge connection timed out"
     }
+    $client.Dispose()
 } catch {
-    Test-Warn "MCP bridge not reachable — may still be building (run: docker compose logs mem0-mcp)"
+    Test-Warn "MCP bridge not reachable - may still be building (run: docker compose logs mem0-mcp). Error: $_"
 }
 
 # End-to-end: add + search a test memory
@@ -99,7 +113,7 @@ try {
 
 Write-Host ""
 
-# ─── Test 2: Serena MCP Server ───────────────────────────────────────────────
+# --- Test 2: Serena MCP Server ---
 Write-Host "[Test 2] Serena MCP Server" -ForegroundColor Cyan
 
 try {
@@ -134,11 +148,11 @@ try {
 }
 Write-Host ""
 
-# ─── Test 3: Superpowers MCP Server ─────────────────────────────────────────
+# --- Test 3: Superpowers MCP Server ---
 Write-Host "[Test 3] Superpowers MCP Server" -ForegroundColor Cyan
 
 try {
-    $SpBuild = "C:\Users\mauls\Documents\Code\agent-skills\mcp-servers\superpowers\build\index.js"
+    $SpBuild = "C:\Users\mauls\Documents\Code\agent-skills\mcp-servers\servers\superpowers\build\index.js"
     if (Test-Path $SpBuild) {
         Test-Pass "Superpowers built at: $SpBuild"
     } else {
@@ -149,7 +163,7 @@ try {
 }
 Write-Host ""
 
-# ─── Test 4: CodeWhale MCP Config ────────────────────────────────────────────
+# --- Test 4: CodeWhale MCP Config ---
 Write-Host "[Test 4] CodeWhale MCP Configuration" -ForegroundColor Cyan
 
 if (Test-Path $CodeWhaleMCP) {
@@ -175,10 +189,10 @@ if (Test-Path $CodeWhaleMCP) {
 }
 Write-Host ""
 
-# ─── Summary ─────────────────────────────────────────────────────────────────
-Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  Test Results: $Passed passed, $Failed failed, $Warned warnings                  ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+# --- Summary ---
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "   Test Results: $Passed passed, $Failed failed, $Warned warnings" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
 
 if ($Failed -eq 0) {
     Write-Host ""

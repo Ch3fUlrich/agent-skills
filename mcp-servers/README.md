@@ -220,12 +220,13 @@ mcp-servers/
 │   └── serena-project.yml               # Per-repo template for Serena
 │
 ├── scripts/                             # Platform scripts
+│   ├── test_mcp_tools.py                # Python tool-level test (via stdio client connection)
 │   ├── windows/                         # PowerShell scripts for Windows
 │   │   ├── setup.ps1                    # One-time: install tools, validate .env,
 │   │   │                                #   pull Docker images, start stack
 │   │   ├── start.ps1                    # Daily: start Docker stack, verify health
 │   │   ├── stop.ps1                     # Stop Docker services, preserve data
-│   │   ├── test.ps1                     # Full test suite: 4 tests covering all components
+│   │   ├── test.ps1                     # Health test suite (checks Docker containers + API ports)
 │   │   ├── init-serena-projects.ps1     # Pre-index all repos with Serena
 │   │   └── migrate.ps1                  # Migrate data from Claude Code plugins
 │   └── linux/                           # Bash scripts for Linux/macOS
@@ -244,7 +245,7 @@ mcp-servers/
 │       ├── package.json
 │       └── node_modules/
 │
-├── docs/
+├── docs/                                # Documentation files
 │   ├── ARCHITECTURE.md                  # Full system architecture
 │   ├── TOKEN_SAVINGS.md                 # Detailed token savings analysis
 │   ├── TROUBLESHOOTING.md               # Known issues and fixes
