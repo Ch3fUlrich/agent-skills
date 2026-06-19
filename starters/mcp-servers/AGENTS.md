@@ -5,9 +5,9 @@ agents. Three servers are active:
 
 | Server | Purpose |
 |---|---|
-| **Serena** | LSP-powered semantic code navigation, refactoring, and project memory |
+| **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
-| **Mem0** | Persistent cross-session memory (uses SSE transport to bypass timeouts) |
+| **Mem0** | Unified persistent cross-session memory (uses stdio transport for robustness) |
 
 > **IMPORTANT: Project Isolation for Mem0**
 > To prevent cross-project memory spillover, you **MUST** always specify the project's folder name as the `user_id` when calling any Mem0 tools (e.g. `user_id="MaxEnt"`, `user_id="SERBRA"`, etc.).
@@ -16,37 +16,23 @@ agents. Three servers are active:
 
 ## First-Time Setup (Per Repository)
 
-When you first start working in a new repository, Serena needs to be set up.
-Run these steps **once per repo**:
+When starting in a new repository, Serena automatically activates and indexes the workspace via the client's `--project-from-cwd` flag. No manual project creation or activation is required.
 
-### Step 1: Create the Serena project
+To verify Serena and Mem0 connection:
 ```
-mcp_serena_activate_project(project=".")
-```
-This auto-detects the language, creates `.serena/project.yml`, and indexes
-the codebase. If you need cross-repo references, edit `.serena/project.yml`
-to add `additional_workspace_folders`.
-
-### Step 2: Onboard Serena
-```
-mcp_serena_onboarding()
-```
-This analyzes the project structure (build system, test framework, entry
-points) and creates memories so future sessions can start immediately.
-
-### Step 3: Verify
-```
+# Verify Serena code navigation
 mcp_serena_find_symbol(name_path_pattern="main")
-mcp_serena_get_symbols_overview(relative_path="src")
+
+# Verify Mem0 connection
+mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
 ```
-If these return results, Serena is ready.
+If these return results, the stack is ready.
 
 ---
 
 ## Serena Tools — Semantic Code Navigation
 
-Use these **instead of reading entire files**. They return precise results
-with 10-100× fewer tokens.
+Use these **instead of reading entire files**. They return precise results with 10-100× fewer tokens.
 
 ### Finding and Understanding Code
 
@@ -59,9 +45,7 @@ with 10-100× fewer tokens.
 | `mcp_serena_find_implementations` | Find all implementations of an interface/abstract method |
 | `mcp_serena_get_diagnostics_for_file` | Get IDE-level errors/warnings for a file |
 
-**Pro tip**: Use `find_symbol` with `depth=1` to see a class's methods
-without reading the body. Use `include_body=True` only when you need
-the actual implementation.
+**Pro tip**: Use `find_symbol` with `depth=1` to see a class's methods without reading the body. Use `include_body=True` only when you need the actual implementation.
 
 ### Editing and Refactoring
 
@@ -73,18 +57,20 @@ the actual implementation.
 | `mcp_serena_insert_before_symbol` | Add new code before a symbol |
 | `mcp_serena_safe_delete_symbol` | Delete a symbol only if it has no remaining references |
 
-### Project Memory
+---
+
+## Mem0 Tools — Unified Persistent Memory
+
+Mem0 is the single source of truth for persistent repository and user memory.
 
 | Tool | What it does |
 |---|---|
-| `mcp_serena_write_memory` | Store a fact, pattern, or decision about the project |
-| `mcp_serena_read_memory` | Retrieve a stored memory by name |
-| `mcp_serena_list_memories` | List all stored memories |
-| `mcp_serena_edit_memory` | Update a memory (regex search/replace) |
-| `mcp_serena_delete_memory` | Remove a memory |
+| `mcp_mem0_add_memory` | Store a fact, pattern, or decision about the project |
+| `mcp_mem0_get_memories` | List all stored memories for this project |
+| `mcp_mem0_search_memories` | Retrieve stored memories by semantic search query |
+| `mcp_mem0_delete_memory` | Remove a memory by its ID |
 
-**Use memories for**: architecture decisions, build commands, test patterns,
-user preferences, known pitfalls. Memories persist across sessions and agents.
+**Use memories for**: architecture decisions, build commands, test patterns, user preferences, known pitfalls. Memories persist across sessions and agents.
 
 ---
 
@@ -101,19 +87,13 @@ Available skills: `brainstorming`, `test-driven-development`, `systematic-debugg
 `requesting-code-review`, `receiving-code-review`, `finishing-a-development-branch`,
 `dispatching-parallel-agents`, `verification-before-completion`, `using-git-worktrees`.
 
-**Rule**: For multi-step tasks, activate the relevant workflow first instead
-of improvising.
+**Rule**: For multi-step tasks, activate the relevant workflow first instead of improvising.
 
 ---
 
 ## Best Practices
 
-1. **Read less code** — Use Serena's `find_symbol` and `get_symbols_overview`
-   instead of reading entire files with `read_file`.
-2. **Store what you learn** — Every significant discovery goes into
-   `mcp_serena_write_memory`.
-3. **Use workflows** — Complex tasks benefit from structured approaches
-   via Superpowers.
-4. **Onboard once** — Run `mcp_serena_onboarding()` in every new repo.
-   It takes 30 seconds and saves hours of re-discovery.
-5. **Verify with evidence** — Tool results are ground truth; verify before acting.
+1. **Read less code** — Use Serena's `find_symbol` and `get_symbols_overview` instead of reading entire files with `read_file`.
+2. **Store what you learn** — Every significant discovery goes into `mcp_mem0_add_memory` (always specify the project name as `user_id`).
+3. **Use workflows** — Complex tasks benefit from structured approaches via Superpowers.
+4. **Verify with evidence** — Tool results are ground truth; verify before acting.

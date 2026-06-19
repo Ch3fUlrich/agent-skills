@@ -5,31 +5,28 @@ servers are active when Claude Code connects:
 
 | Server | Purpose |
 |---|---|
-| **Serena** | LSP-powered semantic code navigation, refactoring, and project memory |
+| **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
-| **Mem0** | Persistent cross-session memory (uses SSE transport to bypass timeouts) |
+| **Mem0** | Unified persistent cross-session memory (uses stdio transport for robustness) |
 
 > **IMPORTANT: Project Isolation for Mem0**
 > To prevent cross-project memory spillover, you **MUST** always specify the project's folder name as the `user_id` when calling any Mem0 tools (e.g. `user_id="MaxEnt"`, `user_id="SERBRA"`, etc.).
 
 ---
 
-## First-Time Setup (Per Repository)
+## Setup & Verification
 
-When Claude Code first works in a repo, Serena must be configured:
+Serena automatically activates and indexes the workspace via the client's `--project-from-cwd` flag. No manual configuration is required.
 
-1. **Activate the project**: Ask Claude to run `mcp_serena_activate_project`
-   with the current directory. This creates `.serena/project.yml` and indexes
-   the code.
+To verify Serena and Mem0 connection:
+```
+# Verify Serena code navigation
+mcp_serena_find_symbol(name_path_pattern="main")
 
-2. **Onboard**: Ask Claude to run `mcp_serena_onboarding()`. This analyzes
-   the project structure and creates memories.
-
-3. **Verify**: `mcp_serena_find_symbol(name_path_pattern="main")` should
-   return results.
-
-After setup, Serena auto-activates on future sessions via `--project-from-cwd`
-in the MCP config — no manual activation needed.
+# Verify Mem0 connection
+mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
+```
+If these return results, the stack is ready.
 
 ---
 
@@ -56,13 +53,17 @@ list a class's methods; add `include_body=True` only when you need code.
 - `mcp_serena_insert_before_symbol` — Add code before a symbol
 - `mcp_serena_safe_delete_symbol` — Delete only if no remaining references
 
-### Project Memory (persists across sessions)
+---
 
-- `mcp_serena_write_memory` / `mcp_serena_read_memory`
-- `mcp_serena_list_memories` / `mcp_serena_edit_memory` / `mcp_serena_delete_memory`
+## Mem0 Tools (Unified Memory)
+
+- `mcp_mem0_add_memory` — Store a fact, pattern, or decision
+- `mcp_mem0_get_memories` — List all memories for this project
+- `mcp_mem0_search_memories` — Retrieve memories by semantic query
+- `mcp_mem0_delete_memory` — Remove a memory by its ID
 
 **Rule**: After learning anything reusable (architecture, preferences,
-patterns, build commands, test frameworks), store it with `write_memory`.
+patterns, build commands, test frameworks), store it with `mcp_mem0_add_memory` (always specify the project name as `user_id`).
 
 ---
 

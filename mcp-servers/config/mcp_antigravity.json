@@ -1,0 +1,57 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "serena-agent",
+        "serena",
+        "start-mcp-server",
+        "--project-from-cwd",
+        "--open-web-dashboard",
+        "false",
+        "--enable-gui-log-window",
+        "false"
+      ],
+      "env": {
+        "SERENA_HOME": "C:/Users/mauls/.serena"
+      },
+      "excludeTools": [
+        "activate_project",
+        "get_current_config",
+        "onboarding",
+        "open_dashboard",
+        "initial_instructions",
+        "write_memory",
+        "read_memory",
+        "list_memories",
+        "delete_memory",
+        "rename_memory",
+        "edit_memory"
+      ]
+    },
+    "mem0": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp>=1.6.0",
+        "C:/Users/mauls/Documents/Code/agent-skills/mcp-servers/servers/mem0-mcp/server.py"
+      ],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "MEM0_API_URL": "http://localhost:8888",
+        "MEM0_USER_ID": "mauls"
+      },
+      "excludeTools": [
+        "health"
+      ]
+    },
+    "superpowers": {
+      "command": "node",
+      "args": [
+        "C:/Users/mauls/Documents/Code/agent-skills/mcp-servers/servers/superpowers/build/index.js"
+      ]
+    }
+  }
+}
