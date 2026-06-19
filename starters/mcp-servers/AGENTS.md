@@ -93,7 +93,12 @@ Available skills: `brainstorming`, `test-driven-development`, `systematic-debugg
 
 ## Best Practices
 
-1. **Read less code** — Use Serena's `find_symbol` and `get_symbols_overview` instead of reading entire files with `read_file`.
-2. **Store what you learn** — Every significant discovery goes into `mcp_mem0_add_memory` (always specify the project name as `user_id`).
+1. **Read less code, use Serena** — You **MUST** use Serena's `find_symbol` and `get_symbols_overview` instead of `read_file` or `grep_search` to understand codebase structure. Use `replace_symbol_body` and other Serena refactoring tools for code updates instead of generic file editing tools where possible.
+2. **Store what you learn** — Every significant discovery, architecture pattern, or decision **MUST** go into `mcp_mem0_add_memory` (always specify the project name as `user_id`). Rely on Mem0 instead of keeping track in your scratchpad.
 3. **Use workflows** — Complex tasks benefit from structured approaches via Superpowers.
 4. **Verify with evidence** — Tool results are ground truth; verify before acting.
+
+## Architecture and Implementation Rules
+
+1. **Generalized Batch Processing** — When writing batch processing logic that iterates over a dataset (like sessions, animals, or subjects), use a generalized batch function that accepts a callable/function and parameters. This prevents duplicating nested loops and cleanly separates single-item logic from bulk processing boilerplate.
+2. **Testing Importance** — Testing is strictly required. You must add tests when defining new functions, and you must rerun tests when updating existing functions. Test on both simulated data and against known baselines (if migrating code). Test coverage for modified modules should be nearly 100%.

@@ -47,6 +47,7 @@ htmlcov/
 
 # Serena per-project data (auto-generated, not tracked)
 .serena/
+!starters/mcp-servers/.serena/
 
 # MCP server data (persistent, machine-local)
 mcp-servers/data/

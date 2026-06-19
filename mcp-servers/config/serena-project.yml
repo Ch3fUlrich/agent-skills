@@ -11,7 +11,7 @@
 
 # Core project settings
 project_name: ""              # Auto-detected from directory name if empty
-language: auto                # Auto-detect from file types (or specify: python, rust, typescript, etc.)
+languages: ["python", "html", "typescript", "markdown", "scss", "yaml", "csharp", "bash", "powershell", "json", "toml", "rust", "cpp", "go"] # Primary programming language(s)
 
 # Additional workspaces for cross-repo code references.
 # When you need to read code from another repo while working,

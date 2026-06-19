@@ -18,7 +18,7 @@ foreach ($Repo in $Repos) {
         $Skipped++
     } else {
         try {
-            ("N`n" * 10) | serena project create "$ProjectDir" --index 2>&1 | Out-Null
+            ("N`n" * 10) | serena project create "$ProjectDir" --language python --language html --language javascript --language typescript --language css --language scss --language markdown --language yaml --language csharp --language bash --language powershell --language json --language toml --language rust --language cpp --language go --index 2>&1 | Out-Null
             Write-Host "  v Created + indexed" -ForegroundColor Green
             $Count++
         } catch {

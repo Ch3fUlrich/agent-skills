@@ -9,10 +9,9 @@ MCP server stack for that repo. Two servers are active.
 |---|---|
 | `AGENTS.md` | Instructions for AGENTS.md-aware tools (Codex, Cursor, Copilot, etc.) |
 | `CLAUDE.md` | Instructions for Claude Code |
+| `.serena/project.yml` | Serena project configuration pre-configured for Python |
 | `README.md` | This file |
 
-A `.serena/project.yml` file is **auto-created** by Serena on first activation —
-you don't need to copy it manually. See setup steps below.
 
 ## Prerequisites
 
@@ -36,8 +35,7 @@ When an agent first works in a new repo with this starter pack, it should:
 
 ### 1. Activate the Serena project
 The agent calls `mcp_serena_activate_project(project=".")`.
-This auto-detects the language, creates `.serena/project.yml`, and indexes
-the codebase. No manual config needed.
+This uses the pre-configured `.serena/project.yml` file and indexes the codebase.
 
 ### 2. Run onboarding
 The agent calls `mcp_serena_onboarding()`.
@@ -85,10 +83,9 @@ additional_workspace_folders:
 
 | Server | Transport | Status |
 |---|---|---|
-| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | ✅ Active — LSP code navigation, refactoring, memory |
+| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | ✅ Active — LSP code navigation, refactoring |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | ✅ Active — workflow skills |
-| ~~Filesystem~~ | ~~stdio~~ | ❌ Disabled — redundant with CodeWhale built-ins |
-| ~~Mem0~~ | ~~stdio~~ | ❌ Disabled — CodeWhale hardcoded MCP timeout |
+| **Mem0** | SSE / stdio | ✅ Active — unified cross-session memory |
 
 ## Infrastructure (Retained for Future Use)
 

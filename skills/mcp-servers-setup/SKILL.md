@@ -1,6 +1,6 @@
 ---
 name: mcp-servers-setup
-description: Configure and use the self-hosted MCP server stack (Serena, Superpowers, Filesystem) for token-efficient coding. Mem0 is disabled due to CodeWhale timeout limitation.
+description: Configure and use the self-hosted MCP server stack (Serena, Superpowers, Mem0) for token-efficient coding.
 ---
 
 # MCP Servers Setup
@@ -10,44 +10,50 @@ stack across all repositories in `C:\Users\mauls\Documents\Code`.
 
 ## First Action — Always
 
-**On every session start (first prompt), activate the Serena MCP server and read project memories:**
+**On every session start (first prompt), activate the Serena MCP server and retrieve project memories from Mem0:**
 
 ```
 mcp_serena_activate_project → (current project name or path)
-mcp_serena_read_memory → "core"
+mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
 ```
 
-This loads the full project context: module inventory, test counts, tech stack,
-commands, constraints, and references to domain memories (e.g. `mem:architecture`,
-`mem:api_design`). Do this before any code changes — the memories are the ground
-truth for what exists and how it works.
+This loads the full project context: module structure, recent decisions, commands, and constraints. Do this before any code changes — the memories are the ground truth for what exists and how it works.
 
 ## Active MCP Servers (3)
 
-### Serena — Semantic Code Navigation (51 tools)
+### Serena — Semantic Code Navigation (LSP)
 
 | Tool | Purpose | Token Savings |
 |------|---------|:---:|
 | `mcp_serena_find_symbol` | Find definitions | 90%+ vs file read |
-| `mcp_serena_find_references` | Find all call sites | 80%+ vs multi-file read |
+| `mcp_serena_find_referencing_symbols` | Find all call sites | 80%+ vs multi-file read |
 | `mcp_serena_get_symbols_overview` | Module structure | 95%+ vs full file read |
-| `mcp_serena_search_for_pattern` | Regex search | 50%+ vs grep+read |
-| `mcp_serena_write_memory` | Project-scoped notes | N/A |
-| `mcp_serena_read_memory` | Read project notes | N/A |
+| `mcp_serena_find_declaration` | Find where symbol is defined | 90%+ vs file read |
 
 **Usage**: Always activate the project first, then use symbolic tools:
 ```
 mcp_serena_activate_project(project="agent-skills")
 mcp_serena_find_symbol(name_path_pattern="function_name")
-mcp_serena_find_references(name_path_pattern="ClassName", relative_path="src/")
 ```
 
-**Project isolation**: Automatic via `.serena/project.yml` per repo.
-Each repo gets its own language server indices.
+**Project isolation & settings**: Automatic via `.serena/project.yml` per repo. If language detection fails, ensure `languages: ["python", "html", "typescript", "markdown", "scss", "yaml"]` is specified.
 
-**Serena memories** (`write_memory` / `read_memory`): Project-scoped notes
-that persist within the project. Use these as a lightweight alternative to
-Mem0 for storing architecture decisions, coding conventions, etc.
+**Note**: Serena memory tools are disabled. Use Mem0 for all persistent memory instead.
+
+### Mem0 — Persistent Cross-Session Memory
+
+| Tool | Purpose |
+|------|---------|
+| `mcp_mem0_add_memory` | Store fact, design decision, preference |
+| `mcp_mem0_get_memories` | Retrieve all memories for this repository |
+| `mcp_mem0_search_memories` | Search memories semantically |
+
+**Usage**:
+```
+mcp_mem0_add_memory(messages=[{"role": "user", "content": "Memory to store"}], user_id="basic-analysis")
+mcp_mem0_get_memories(user_id="basic-analysis")
+```
+*Crucial*: Always use the folder name of the current repository as the `user_id` to maintain project isolation.
 
 ### Superpowers — Workflow Skills (14 skills)
 
@@ -65,17 +71,7 @@ Mem0 for storing architecture decisions, coding conventions, etc.
 ```
 mcp_superpowers_use_skill(name="systematic-debugging")
 mcp_superpowers_recommend_skills(task="debug a timeout issue")
-mcp_superpowers_compose_workflow(goal="add error handling to pipeline")
 ```
-
-### Filesystem — Directory Operations (14 tools)
-
-| Tool | Purpose |
-|------|---------|
-| `mcp_filesystem_directory_tree` | Recursive JSON tree (NOT in built-in tools) |
-| `mcp_filesystem_read_multiple_files` | Batch file reads |
-| `mcp_filesystem_search_files` | Glob search |
-| `mcp_filesystem_get_file_info` | File metadata |
 
 ## Infrastructure
 
@@ -95,10 +91,11 @@ cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
 
 ## Recommended Workflow
 
-1. Run `.\windows\start.ps1` to start services and pre-warm models
+1. Run `.\windows\start.ps1` to start services and pre-warm models (Docker and Ollama)
 2. Activate Serena project: `mcp_serena_activate_project(project="repo-name")`
-3. Use Serena for navigation, Superpowers for workflows, Filesystem for directory ops
-4. End session: services keep running
+3. Retrieve memories: `mcp_mem0_get_memories(user_id="repo-name")`
+4. Use Serena for navigation, Mem0 for memories, and Superpowers for workflows
+5. End session: services keep running
 
 ## Troubleshooting
 
