@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  omni-remote-chat:
+    build: .
+    container_name: omni-antigravity-remote-chat
+    restart: unless-stopped
+    # Using host network mode allows the container to easily connect to the 
+    # Antigravity CDP debugging port (7800) running on the host machine.
+    # It also naturally exposes port 4747 on all network interfaces for your reverse proxy.
+    network_mode: "host"
+    environment:
+      # You can optionally set your custom password here.
+      # If omitted, it defaults to 'antigravity'
+      - APP_PASSWORD=antigravity
+      # If you wish to use Telegram notifications, set these:
+      # - TELEGRAM_BOT_TOKEN=your_bot_token
+      # - TELEGRAM_CHAT_ID=your_chat_id

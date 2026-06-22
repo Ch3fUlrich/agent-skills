@@ -31,13 +31,25 @@ starters/                      # Starter packs — light pointers to the full sk
 
 mcp-servers/                   # Self-hosted MCP server stack
   config/
-  docs/
+  antigravity-remote-ui/         # Setup scripts for Omni Remote Chat UI
+  start-remote-session.ps1
+  start-remote-session.sh
+  Dockerfile
+  docker-compose.yml
+
+docs/
   scripts/
     linux/
     windows/
   servers/
     mem0-patched/
     superpowers/
+
+antigravity-remote-ui/         # Setup scripts for Omni Remote Chat UI
+  start-remote-session.ps1
+  start-remote-session.sh
+  Dockerfile
+  docker-compose.yml
 
 docs/
   agent-compatibility.md
@@ -55,7 +67,13 @@ For long planning, research, review, report, diagram, prototype, and handoff
 work, follow the skill at `skills/html-working-documents/SKILL.md`.
 ```
 
-See `docs/agent-compatibility.md` for the native instruction file format each
+See `antigravity-remote-ui/         # Setup scripts for Omni Remote Chat UI
+  start-remote-session.ps1
+  start-remote-session.sh
+  Dockerfile
+  docker-compose.yml
+
+docs/agent-compatibility.md` for the native instruction file format each
 agent expects.
 
 ## Use As A Skill Library
@@ -78,7 +96,8 @@ Repo-local installation is better when the workflow is part of a project convent
 | Skill | Purpose |
 | --- | --- |
 | `html-working-documents` | Create self-contained HTML artifacts for planning, review, research, diagrams, reports, prototypes, and handoff. |
-| `mcp-servers-setup` | Configure and use the self-hosted MCP server stack for token-efficient coding. |
+| mcp-servers-setup | Configure and use the self-hosted MCP server stack for token-efficient coding. |
+| ntigravity-remote-ui | Automated scripts and Docker configuration to set up a remote chat session for Antigravity AI, allowing you to seamlessly continue your work from your phone. |
 
 ## Adding More Skills
 
@@ -91,3 +110,4 @@ Each skill should be self-contained and concise:
 - Optional: `references/`, `scripts/`, and `assets/`
 
 Keep reusable detail in `references/` and keep `SKILL.md` focused on when to use the skill and how to execute the workflow.
+
