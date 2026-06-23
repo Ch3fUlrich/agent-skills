@@ -12,6 +12,19 @@ import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+# ─── Fix .env Encoding ───────────────────────────────────────────────────────
+# Ensure .env is UTF-8 encoded to prevent Pydantic crashes on Windows CP1252
+_env_path = ".env"
+if os.path.exists(_env_path):
+    try:
+        with open(_env_path, "rb") as f:
+            _content = f.read()
+        _content.decode("utf-8")
+    except UnicodeDecodeError:
+        print("Fixing .env file encoding to UTF-8", file=sys.stderr)
+        with open(_env_path, "wb") as f:
+            f.write(_content.decode("cp1252", errors="replace").encode("utf-8"))
+
 from mcp.server.fastmcp import FastMCP
 
 # ─── Config ──────────────────────────────────────────────────────────────────

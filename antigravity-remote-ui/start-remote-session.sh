@@ -55,6 +55,10 @@ IS_RUNNING=false
 # Find running antigravity processes
 while read -r pid cmd; do
     if [ -n "$pid" ]; then
+        if [[ "$cmd" =~ --type= ]]; then
+            continue
+        fi
+        
         IS_RUNNING=true
         EXE_PATH=$(readlink -f /proc/$pid/exe 2>/dev/null || echo "$cmd")
         if [[ "$cmd" =~ --remote-debugging-port=([0-9]+) ]]; then
@@ -62,7 +66,7 @@ while read -r pid cmd; do
             FOUND_PORT="${BASH_REMATCH[1]}"
         fi
     fi
-done <<< "$(ps -eo pid,cmd | grep -i '[a]ntigravity' | head -n 1)"
+done <<< "$(ps -eo pid,cmd | grep -i '[a]ntigravity')"
 
 if [ "$IS_RUNNING" = true ]; then
     echo -e "\e[32mAntigravity is running.\e[0m"
