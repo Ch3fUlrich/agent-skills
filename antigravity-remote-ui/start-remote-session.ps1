@@ -60,6 +60,10 @@ $foundPort = ""
 $isRunning = ($null -ne $antigravityProcs) -and ($antigravityProcs.Count -gt 0 -or $antigravityProcs.Name -eq 'Antigravity.exe')
 
 foreach ($proc in $antigravityProcs) {
+    if ($proc.CommandLine -match "--type=") {
+        continue
+    }
+
     if ($proc.CommandLine -match "--remote-debugging-port=(\d+)") {
         $hasDebugPort = $true
         $foundPort = $matches[1]
