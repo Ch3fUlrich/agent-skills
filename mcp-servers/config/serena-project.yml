@@ -8,10 +8,37 @@
 #
 # Without this file, Serena auto-detects the project from .git and
 # works with sensible defaults -- no configuration needed.
+#
+# If you add an `excluded_tools:` list to this file, never include
+# activate_project or get_current_config. Serena fixes a session's active
+# toolset at the moment a project is activated, so excluding those two here
+# strands any multi-project session on this repo for the rest of the
+# session -- there is no tool-based way back to another project, only a
+# client restart. See docs/TROUBLESHOOTING.md.
 
 # Core project settings
 project_name: ""              # Auto-detected from directory name if empty
-languages: ["python", "html", "typescript", "markdown", "scss", "yaml", "csharp", "bash", "powershell", "json", "toml", "rust", "cpp", "go"] # Primary programming language(s)
+
+# Languages for which to start LSP servers. List ONLY the languages actually
+# present in this repo. Extra languages make Serena try to start (and fail)
+# language servers whose toolchains are not installed -- e.g. a Go or C# LSP
+# crashing on startup inside a pure-Python repo.
+#
+# RECOMMENDED: don't hand-maintain this list. Let it be autodetected:
+#   pwsh scripts/windows/init-serena-projects.ps1            # from mcp-servers/, current repo
+#   pwsh scripts/windows/init-serena-projects.ps1 -DryRun    # preview only
+# or let Serena infer it directly (no --language flags):
+#   serena project create . --index
+#
+# The line below is just an example for a Python project with docs/config:
+languages: ["python", "markdown", "yaml", "toml", "json"] # only what's present
+#
+# Python backend choice: use "python" (Pyright), not "python_jedi". Serena
+# bootstraps Pyright itself via uvx on first use -- nothing to install. The
+# jedi backend does a bare PATH lookup for `jedi-language-server` with no
+# auto-install; if it's missing, LSP init fails hard for the WHOLE project
+# (not just Python), with an opaque "language server manager not initialized"
+# error. Only reach for python_jedi if Pyright itself is somehow unusable.
 
 # Additional workspaces for cross-repo code references.
 # When you need to read code from another repo while working,

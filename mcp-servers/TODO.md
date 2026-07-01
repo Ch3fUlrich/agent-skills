@@ -65,7 +65,7 @@ by switching.
   - Option A: Copy `config/mcp-claude-code.json` to `~/.claude/mcp.json`
   - Option B: Use Claude Code's `/mcp add` commands:
     ```
-    /mcp add serena uvx --from serena-agent serena start-mcp-server --project-from-cwd --context=claude-code
+    /mcp add serena uvx --from serena-agent serena start-mcp-server --context=claude-code
     /mcp add mem0 uvx --from git+https://github.com/elvismdev/mem0-mcp-selfhosted mem0-mcp-selfhosted
     /mcp add superpowers uvx --from git+https://github.com/erophames/superpowers-mcp superpowers-mcp
     ```

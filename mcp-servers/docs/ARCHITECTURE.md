@@ -56,9 +56,31 @@ needs to understand a codebase it hasn't seen before.
 **Installation**: `uv tool install serena-agent` — a single Python package
 that bundles all language server logic.
 
-**Multi-repo support**: `--project-from-cwd` auto-detects the active
-repository by walking up from the current directory and finding `.git`.
-Each repo gets its own language server instance.
+**Two setup modes** (see `config/mcp-claude-code.json` for the current default):
+
+- **Auto-pin (`--project-from-cwd`)**: Serena detects the repo from the
+  session's working directory at startup and pins to it for the whole
+  session. Simplest option, but it removes the `activate_project` and
+  `get_current_config` tools entirely (there is nothing to switch between),
+  so a session started in one repo cannot reach code in another.
+- **Multi-project (default here)**: drop `--project-from-cwd`. Serena starts
+  with no active project and exposes `activate_project`, so one session can
+  work across any number of registered repos by activating them in turn.
+  This is required for cross-repo work (e.g. migrating code from one repo
+  into another) and is what `config/mcp-claude-code.json`,
+  `config/mcp_antigravity.json` and `config/mcp.json` are set up for.
+
+**Claude Code has two places Serena can be registered** — the repo's own
+`.mcp.json` (project scope) and `~/.claude.json` (user scope, added via
+`/mcp add` or plugin onboarding). If both define a `serena` entry, keep
+their args in sync manually; whichever one is actually governing a given
+session may not match naive scope-precedence assumptions. After editing
+either file, a full Claude Code restart is needed -- reconnecting the MCP
+server alone can reuse the args resolved at session start rather than
+re-reading the file. See docs/TROUBLESHOOTING.md.
+
+Each repo gets its own language server instance, cached under that repo's
+own `.serena/` directory.
 
 ### Mem0 — Official Self-Hosted Docker Stack
 

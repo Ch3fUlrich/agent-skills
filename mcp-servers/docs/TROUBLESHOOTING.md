@@ -70,6 +70,57 @@ In `~/.codewhale/mcp.json`, increase `connect_timeout`:
 }
 ```
 
+### Serena language server crashes on activation
+
+**Symptom**: Activating a project succeeds, but any symbol query (e.g.
+`get_symbols_overview`) fails with `LanguageServerTerminatedException` /
+"language server manager is not initialized". Serena's own tool output
+tells you to stop and not attempt workarounds -- that's a real instruction,
+not boilerplate; report the exact error before retrying anything.
+
+**Root cause**: a language server binary the project's `languages:` list
+requires isn't installed. Some backends (Pyright for `python`, via `uvx`)
+are auto-bootstrapped by Serena and just work. Others (`jedi-language-server`
+for `python_jedi`) are a bare PATH lookup with no auto-install.
+
+```powershell
+# Confirm the binary is actually missing
+where jedi-language-server
+
+# Fix 1 (recommended): switch the repo's .serena/project.yml to `python`
+# instead of `python_jedi` -- Pyright needs no manual install.
+
+# Fix 2: install the missing binary directly
+uv tool install jedi-language-server
+```
+
+After either fix, the current session's language server instance for that
+repo is still in a failed state -- reactivate the project (or restart the
+client) to pick it up.
+
+### `activate_project` not available / session stuck on one repo
+
+**Symptom**: `activate_project` doesn't appear in the tool list, or a call
+to it fails with `Tool 'activate_project' is not active`.
+
+**Two distinct causes**:
+
+1. **Serena is running in `--project-from-cwd` auto-pin mode.** Check
+   *both* `.mcp.json` (project scope, in the repo root) and `~/.claude.json`
+   (Claude Code's user scope, under the top-level `mcpServers` key) for a
+   `serena` entry with `--project-from-cwd` in `args`. Both must be fixed
+   if both define the server -- whichever one is actually governing the
+   session may not match naive scope-precedence assumptions. **A full
+   client restart is required after editing** -- reconnecting the MCP
+   server alone can reuse the args resolved at session start.
+
+2. **The active repo's own `.serena/project.yml` excludes
+   `activate_project`/`get_current_config`.** This is fixed by editing that
+   repo's `excluded_tools` list, but the fix only applies on the *next*
+   activation -- the current session is already stranded and needs a
+   restart. See `config/serena-project.yml` and
+   docs/INSTALL-GUIDE.md#two-pitfalls-that-will-strand-a-session.
+
 ### Mem0 can't connect to Qdrant
 
 **Symptom**: Mem0 tools fail with connection errors.
