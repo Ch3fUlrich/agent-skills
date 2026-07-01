@@ -61,6 +61,9 @@ mcp-servers/superpowers/.github/
 mcp-servers/superpowers/.gitignore
 mcp-servers/superpowers/tsconfig.json
 
+# Antigravity remote UI local dependencies
+antigravity-remote-ui/node_modules/
+
 # Mem0 MCP bridge (generated/reproducible)
 mcp-servers/servers/mem0-mcp/__pycache__/
 
