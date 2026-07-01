@@ -1,11 +1,12 @@
 # MCP Server Stack — AGENTS.md
 
 This repository is configured with a self-hosted MCP server stack for AI coding
-agents. Three servers are active:
+agents. Four servers are active:
 
 | Server | Purpose |
 |---|---|
 | **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
+| **Graphify** | Queryable project graph for code, docs, and cross-file relationships |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
 | **Mem0** | Unified persistent cross-session memory (uses stdio transport for robustness) |
 
@@ -17,6 +18,8 @@ agents. Three servers are active:
 ## First-Time Setup (Per Repository)
 
 When starting in a new repository, Serena automatically activates and indexes the workspace via the client's `--project-from-cwd` flag. No manual project creation or activation is required.
+
+Graphify does not need activation, but it does need a graph build. Run the repo-scoped Graphify initializer after Serena onboarding so `graphify-out/graph.json` exists for later sessions.
 
 To verify Serena and Mem0 connection:
 ```
@@ -71,6 +74,19 @@ Mem0 is the single source of truth for persistent repository and user memory.
 | `mcp_mem0_delete_memory` | Remove a memory by its ID |
 
 **Use memories for**: architecture decisions, build commands, test patterns, user preferences, known pitfalls. Memories persist across sessions and agents.
+
+## Graphify Tooling — Project Graphs
+
+Use Graphify after Serena when you need relationship-level answers that span
+multiple files, docs, or code paths.
+
+| Tool | What it does |
+|---|---|
+| `graphify query` | Ask graph-level questions about the repo |
+| `graphify path` | Find a path between concepts or symbols |
+| `graphify explain` | Explain a node or cluster in graph terms |
+
+**Rule**: If a repo has `graphify-out/graph.json`, prefer Graphify for broad structure questions before falling back to raw file reads.
 
 ---
 

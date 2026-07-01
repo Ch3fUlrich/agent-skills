@@ -11,7 +11,7 @@ $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 $CodeRoot = "C:\Users\mauls\Documents\Code"
 
 Write-Host "======================================================================" -ForegroundColor Cyan
-Write-Host "  MCP Server Stack — Start Services                                  " -ForegroundColor Cyan
+Write-Host "  MCP Server Stack - Start Services                                  " -ForegroundColor Cyan
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -56,7 +56,9 @@ try {
             break
         } catch { }
         $dockerRetries++
-        if ($dockerRetries % 5 -eq 0) { Write-Host "    ...still waiting ($($dockerRetries * 2)s)" -ForegroundColor Gray }
+        if ($dockerRetries % 5 -eq 0) {
+            Write-Host ("    ...still waiting ({0} seconds)" -f ($dockerRetries * 2)) -ForegroundColor Gray
+        }
     }
 
     try {
@@ -76,11 +78,9 @@ Write-Host "[2/4] Mem0 memory stack" -ForegroundColor Yellow
 
 Push-Location $RepoRoot
 
-# Pull latest images (skip if we want fast startup)
 Write-Host "  Pulling latest images..." -ForegroundColor Gray
 docker compose pull postgres mem0 2>&1 | Out-Null
 
-# Start the stack
 Write-Host "  Starting mem0 services..." -ForegroundColor Gray
 docker compose up -d --build 2>&1 | Out-Null
 
@@ -91,7 +91,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Wait for mem0 API to become healthy
 Write-Host "  Waiting for mem0 API health check..." -ForegroundColor Gray
 $mem0Retries = 0
 while ($mem0Retries -lt 30) {
@@ -103,14 +102,15 @@ while ($mem0Retries -lt 30) {
         }
     } catch { }
     $mem0Retries++
-    if ($mem0Retries % 5 -eq 0) { Write-Host "    ...still waiting ($($mem0Retries * 3)s)" -ForegroundColor Gray }
+    if ($mem0Retries % 5 -eq 0) {
+        Write-Host ("    ...still waiting ({0} seconds)" -f ($mem0Retries * 3)) -ForegroundColor Gray
+    }
     Start-Sleep -Seconds 3
 }
 
 if ($mem0Retries -ge 30) {
-    Write-Host "  ! Mem0 API not healthy after 90s. Check: docker compose logs mem0" -ForegroundColor Yellow
+    Write-Host "  ! Mem0 API not healthy after 90 seconds. Check: docker compose logs mem0" -ForegroundColor Yellow
 } else {
-    # Check MCP bridge too
     try {
         $r = Invoke-WebRequest -Uri "http://localhost:8001/sse" -UseBasicParsing -TimeoutSec 3
         Write-Host "  v Mem0 MCP bridge ready on :8001" -ForegroundColor Green

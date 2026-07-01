@@ -1,11 +1,12 @@
 # MCP Server Stack — CLAUDE.md
 
-This repository is configured with a self-hosted MCP server stack. Three
+This repository is configured with a self-hosted MCP server stack. Four
 servers are active when Claude Code connects:
 
 | Server | Purpose |
 |---|---|
 | **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
+| **Graphify** | Queryable project graph for code, docs, and cross-file relationships |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
 | **Mem0** | Unified persistent cross-session memory (uses stdio transport for robustness) |
 
@@ -17,6 +18,8 @@ servers are active when Claude Code connects:
 ## Setup & Verification
 
 Serena automatically activates and indexes the workspace via the client's `--project-from-cwd` flag. No manual configuration is required.
+
+Graphify does not need activation, but the repo should have a built graph at `graphify-out/graph.json`. Use the Graphify initializer when onboarding a new repo or after significant code changes.
 
 To verify Serena and Mem0 connection:
 ```
@@ -83,3 +86,9 @@ patterns, build commands, test frameworks), store it with `mcp_mem0_add_memory` 
 This stack reduces token usage by 40-60% compared to raw file reading and
 session-from-scratch approaches. Serena's semantic tools return only the
 code you need; Superpowers provides structure that prevents rework.
+
+## Graphify
+
+Use Graphify for graph-level questions when the repo already has
+`graphify-out/graph.json`. It is especially useful for tracing relationships
+that span code, docs, and design notes.

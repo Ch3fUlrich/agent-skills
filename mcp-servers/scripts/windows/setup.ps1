@@ -1,6 +1,6 @@
-# MCP Server Stack — Full Automated Setup (Windows)
+# MCP Server Stack - Full Automated Setup (Windows)
 # ============================================================================
-# Installs: Serena, Mem0, Superpowers
+# Installs: Serena, Mem0, Superpowers, Graphify
 # Backend:  Mem0 Docker stack (PostgreSQL + pgvector, Mem0 REST API, MCP bridge)
 #           + native Ollama (for Serena)
 #
@@ -12,7 +12,7 @@ $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 $CodeWhaleMCP = "$env:USERPROFILE\.codewhale\mcp.json"
 
 Write-Host "======================================================================" -ForegroundColor Cyan
-Write-Host "  MCP Server Stack — Self-Hosted Setup (Windows)                      " -ForegroundColor Cyan
+Write-Host "  MCP Server Stack - Self-Hosted Setup (Windows)                      " -ForegroundColor Cyan
 Write-Host "  Serena + Superpowers + Mem0                                         " -ForegroundColor Cyan
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -38,7 +38,7 @@ Write-Host "[3/6] Mem0 Docker stack..." -ForegroundColor Yellow
 
 # Check .env exists
 if (-not (Test-Path "$RepoRoot\.env")) {
-    Write-Host "  Creating .env from .env.example — EDIT BEFORE CONTINUING!" -ForegroundColor Yellow
+    Write-Host "  Creating .env from .env.example -- EDIT BEFORE CONTINUING!" -ForegroundColor Yellow
     Copy-Item "$RepoRoot\.env.example" "$RepoRoot\.env"
     Write-Host "  X Edit .env and set DEEPSEEK_API_KEY + POSTGRES_PASSWORD, then re-run." -ForegroundColor Red
     exit 1
@@ -98,8 +98,19 @@ $sv = serena --version 2>&1
 Write-Host "  v Serena $sv" -ForegroundColor Green
 Write-Host ""
 
+# --- Graphify Install ---
+Write-Host "[5/7] Installing Graphify..." -ForegroundColor Yellow
+try { uv tool install graphifyy 2>&1 | Out-Null } catch { }
+try {
+    uvx --from graphifyy graphify --version 2>&1 | Out-Null
+    Write-Host "  v Graphify ready" -ForegroundColor Green
+} catch {
+    Write-Host "  ! Graphify install completed but version check failed" -ForegroundColor Yellow
+}
+Write-Host ""
+
 # --- Superpowers Install ---
-Write-Host "[5/6] Installing Superpowers..." -ForegroundColor Yellow
+Write-Host "[6/7] Installing Superpowers..." -ForegroundColor Yellow
 $SpDir = "$RepoRoot\superpowers"
 if (-not (Test-Path "$SpDir\build\index.js")) {
     Write-Host "  Cloning & building..." -ForegroundColor Gray
@@ -110,7 +121,7 @@ Write-Host "  v Superpowers ready" -ForegroundColor Green
 Write-Host ""
 
 # --- CodeWhale Config ---
-Write-Host "[6/6] Configuring CodeWhale..." -ForegroundColor Yellow
+Write-Host "[7/7] Configuring CodeWhale..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.codewhale" | Out-Null
 Copy-Item -Path "$RepoRoot\config\mcp.json" -Destination $CodeWhaleMCP -Force
 Write-Host "  v MCP config deployed" -ForegroundColor Green
@@ -123,8 +134,10 @@ Write-Host ""
 Write-Host "Services running:" -ForegroundColor White
 Write-Host "  Mem0 API:         http://localhost:8888/docs" -ForegroundColor Gray
 Write-Host "  Mem0 MCP bridge:  http://localhost:8001/sse" -ForegroundColor Gray
+Write-Host "  Graphify CLI:     uvx --from graphifyy graphify --version" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Next:" -ForegroundColor White
 Write-Host "  1. Initialize Serena projects: .\windows\init-serena-projects.ps1" -ForegroundColor Gray
-Write-Host "  2. Restart CodeWhale" -ForegroundColor Gray
+Write-Host "  2. Build Graphify graphs where needed: .\windows\init-graphify-projects.ps1" -ForegroundColor Gray
+Write-Host "  3. Restart CodeWhale" -ForegroundColor Gray
 Write-Host ""

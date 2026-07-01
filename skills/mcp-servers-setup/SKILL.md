@@ -1,6 +1,6 @@
 ---
 name: mcp-servers-setup
-description: Configure and use the self-hosted MCP server stack (Serena, Superpowers, Mem0) for token-efficient coding.
+description: Configure and use the self-hosted MCP server stack (Serena, Graphify, Superpowers, Mem0) for token-efficient coding.
 ---
 
 # MCP Servers Setup
@@ -10,16 +10,18 @@ stack across all repositories in `C:\Users\mauls\Documents\Code`.
 
 ## First Action — Always
 
-**On every session start (first prompt), activate the Serena MCP server and retrieve project memories from Mem0:**
+**On every session start (first prompt), activate the Serena MCP server, retrieve project memories from Mem0, and use Graphify when the repo already has a graph:**
 
 ```
 mcp_serena_activate_project → (current project name or path)
 mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
+
+# If graphify-out/graph.json exists, prefer graph queries for broad structure questions
 ```
 
 This loads the full project context: module structure, recent decisions, commands, and constraints. Do this before any code changes — the memories are the ground truth for what exists and how it works.
 
-## Active MCP Servers (3)
+## Active MCP Servers (4)
 
 ### Serena — Semantic Code Navigation (LSP)
 
@@ -54,6 +56,22 @@ mcp_mem0_add_memory(messages=[{"role": "user", "content": "Memory to store"}], u
 mcp_mem0_get_memories(user_id="basic-analysis")
 ```
 *Crucial*: Always use the folder name of the current repository as the `user_id` to maintain project isolation.
+
+### Graphify — Project Graphs
+
+| Tool | Purpose |
+|------|---------|
+| `graphify query` | Ask graph-level questions about the repo |
+| `graphify path` | Trace relationships between concepts |
+| `graphify explain` | Inspect a node or community in graph terms |
+
+**Usage**:
+```
+graphify query "what connects the CLI setup to the MCP config?"
+graphify path "setup.ps1" "mcp.json"
+```
+
+**Rule**: Graphify does not replace Serena. Use Serena for symbol-level navigation and Graphify for broader relationship questions when a graph exists.
 
 ### Superpowers — Workflow Skills (14 skills)
 
@@ -94,8 +112,9 @@ cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
 1. Run `.\windows\start.ps1` to start services and pre-warm models (Docker and Ollama)
 2. Activate Serena project: `mcp_serena_activate_project(project="repo-name")`
 3. Retrieve memories: `mcp_mem0_get_memories(user_id="repo-name")`
-4. Use Serena for navigation, Mem0 for memories, and Superpowers for workflows
-5. End session: services keep running
+4. Build or refresh Graphify graphs when the repo has a graph target
+5. Use Serena for navigation, Mem0 for memories, Graphify for graph queries, and Superpowers for workflows
+6. End session: services keep running
 
 ## Troubleshooting
 

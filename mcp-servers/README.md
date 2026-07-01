@@ -16,6 +16,7 @@ cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
 # 2. Run setup
 .\scripts\windows\setup.ps1
 .\scripts\windows\init-serena-projects.ps1   # Pre-index all repos (one-time)
+.\scripts\windows\init-graphify-projects.ps1  # Build repo graphs (one-time)
 # 3. Restart CodeWhale
 ```
 
@@ -24,12 +25,13 @@ Mem0 Docker stack.
 
 See [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup.
 
-## Active Servers (4 of 5)
+## Active Servers (5 of 6)
 
 | MCP Server | Transport | Purpose | Token Savings | Status |
 |-----------|-----------|---------|:---:|:------:|
 | [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation | ~40–60% | Working |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation — navigate, click, type, screenshots | Browser | Working |
+| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv`) | Queryable project graph for code, docs, and relationships | Graph reasoning | Working |
 | **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector + MCP bridge | Context reuse | Working |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | Working |
 | ~~Filesystem~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | Disabled — redundant with CodeWhale built-ins |
@@ -238,6 +240,7 @@ mcp-servers/
 │   │   ├── stop.ps1                     # Stop Docker services, preserve data
 │   │   ├── test.ps1                     # Health test suite (checks Docker containers + API ports)
 │   │   ├── init-serena-projects.ps1     # Pre-index all repos with Serena
+│   │   ├── init-graphify-projects.ps1    # Build or refresh repo graphs with Graphify
 │   │   └── migrate.ps1                  # Migrate data from Claude Code plugins
 │   └── linux/                           # Bash scripts for Linux/macOS
 │       ├── setup.sh, start.sh, stop.sh, test.sh
@@ -295,7 +298,7 @@ starters/mcp-servers/
 ```
 
 This installs `AGENTS.md` and `CLAUDE.md` files that teach the agent how to activate
-Serena, run onboarding, and use semantic code navigation from the first turn.
+Serena, run onboarding, build a Graphify graph, and use semantic code navigation from the first turn.
 
 ## Google Antigravity Setup
 
@@ -311,6 +314,6 @@ While CodeWhale uses SSE transport for Mem0 to bypass its 120s stdio timeout, An
 ### 3. Tool Filtering (excludeTools)
 To prevent agent confusion and tool redundancy (e.g., memory tools exposed by both Serena and Mem0), we filter out unused/unneeded tools using the client-side `excludeTools` property:
 
-*   **Serena**: Memory tools (`write_memory`, `read_memory`, `list_memories`, `delete_memory`, `rename_memory`, `edit_memory`) and setup/GUI tools (`activate_project`, `get_current_config`, `onboarding`, `open_dashboard`, `initial_instructions`) are **excluded**. This leaves Serena strictly focused on LSP semantic search and refactoring.
+*   **Serena**: Memory tools (`write_memory`, `read_memory`, `list_memories`, `delete_memory`, `rename_memory`, `edit_memory`) and GUI/setup tools (`onboarding`, `open_dashboard`, `initial_instructions`) are **excluded**, leaving Serena focused on LSP semantic search, refactoring, and project switching. `activate_project`/`get_current_config` are **kept** — Serena runs in multi-project mode (see `docs/ARCHITECTURE.md`), and excluding those two would strand a session on whichever repo activates first with no way to switch to another.
 *   **Mem0**: The `health` check tool is **excluded**, leaving only the 4 core memory storage and search tools.
 *   **Superpowers**: All workflow tools are left active.
