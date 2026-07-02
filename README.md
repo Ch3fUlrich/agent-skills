@@ -29,23 +29,13 @@ starters/                      # Starter packs — light pointers to the full sk
     CLAUDE.md
     README.md
 
-mcp-servers/                   # Self-hosted MCP server stack
-  config/
-  antigravity-remote-ui/         # Setup scripts for Omni Remote Chat UI
-  start-remote-session.ps1
-  start-remote-session.sh
-  Dockerfile
-  docker-compose.yml
-
-docs/
-  scripts/
-    linux/
-    windows/
+mcp-servers/                   # Self-hosted MCP server stack (Serena, Graphify,
+  config/                      # Mem0, Superpowers, Playwright) — see
+  scripts/                     # mcp-servers/README.md for setup and usage
   servers/
-    mem0-patched/
-    superpowers/
+  docs/
 
-antigravity-remote-ui/         # Setup scripts for Omni Remote Chat UI
+antigravity-remote-ui/         # Setup scripts for the Omni Remote Chat UI
   start-remote-session.ps1
   start-remote-session.sh
   Dockerfile
@@ -67,13 +57,7 @@ For long planning, research, review, report, diagram, prototype, and handoff
 work, follow the skill at `skills/html-working-documents/SKILL.md`.
 ```
 
-See `antigravity-remote-ui/         # Setup scripts for Omni Remote Chat UI
-  start-remote-session.ps1
-  start-remote-session.sh
-  Dockerfile
-  docker-compose.yml
-
-docs/agent-compatibility.md` for the native instruction file format each
+See `docs/agent-compatibility.md` for the native instruction file format each
 agent expects.
 
 ## Use As A Skill Library
@@ -91,13 +75,34 @@ to one of these locations:
 
 Repo-local installation is better when the workflow is part of a project convention. User-wide installation is better when you want the skill available everywhere.
 
+## MCP Server Stack
+
+`mcp-servers/` holds a self-hosted MCP server stack that reduces token usage on
+code-heavy tasks through semantic navigation, a queryable project graph, and
+persistent cross-session memory. It runs on your own hardware (Docker + uv +
+Node.js) and needs no OpenAI API key.
+
+| Server | Transport | Purpose |
+| --- | --- | --- |
+| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation — symbols, references, refactoring |
+| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv`) | Queryable project graph for code, docs, and relationships |
+| **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector |
+| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming |
+| [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation |
+
+Setup, configuration, and per-agent wiring (Claude Code, Antigravity, etc.)
+are documented in [mcp-servers/README.md](mcp-servers/README.md) and
+[mcp-servers/docs/INSTALL-GUIDE.md](mcp-servers/docs/INSTALL-GUIDE.md). To
+install the workflow instructions that teach an agent to use this stack in
+another repository, see `starters/mcp-servers/`.
+
 ## Current Skills
 
 | Skill | Purpose |
 | --- | --- |
 | `html-working-documents` | Create self-contained HTML artifacts for planning, review, research, diagrams, reports, prototypes, and handoff. |
 | mcp-servers-setup | Configure and use the self-hosted MCP server stack for token-efficient coding. |
-| ntigravity-remote-ui | Automated scripts and Docker configuration to set up a remote chat session for Antigravity AI, allowing you to seamlessly continue your work from your phone. |
+| antigravity-remote-ui | Automated scripts and Docker configuration to set up a remote chat session for Antigravity AI, allowing you to seamlessly continue your work from your phone. |
 
 ## Adding More Skills
 

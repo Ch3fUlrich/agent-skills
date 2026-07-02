@@ -17,7 +17,10 @@ cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
 .\scripts\windows\setup.ps1
 .\scripts\windows\init-serena-projects.ps1   # Pre-index all repos (one-time)
 .\scripts\windows\init-graphify-projects.ps1  # Build repo graphs (one-time)
-# 3. Restart CodeWhale
+# 3. Register servers into Claude Code's own config (per server, deliberately —
+#    see "Graphify + local Ollama - known gotchas" below for why this isn't automatic)
+.\scripts\windows\register-claude-code-mcp.ps1 -Server graphify
+# 4. Restart CodeWhale / Claude Code — MCP servers only load at session start
 ```
 
 Then run `.\scripts\windows\start.ps1` each session or after reboot to start the
@@ -35,6 +38,83 @@ See [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup
 | **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector + MCP bridge | Context reuse | Working |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | Working |
 | ~~Filesystem~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | Disabled — redundant with CodeWhale built-ins |
+
+## Graphify + Local Ollama — Known Gotchas
+
+Everything below was learned the hard way building graphs for three real
+repos on a local RTX 3060. `init-graphify-projects.ps1` and
+`patch-graphify-ollama-bugs.py` already encode all of this — read this
+section if something still goes wrong, or before changing those scripts.
+
+**The MCP server needs `graphifyy[mcp]`, not bare `graphifyy`.** The
+`config/mcp-claude-code.json` template used to omit the extra; the server
+would crash on the first request with `ModuleNotFoundError: No module named
+'mcp'`. Always test a graphify MCP server change with a raw handshake before
+trusting it:
+```powershell
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | uv run --with "graphifyy[mcp]" python -m graphify.serve graphify-out/graph.json
+```
+A working server replies with a `serverInfo` block on stdout, not silence
+or a traceback on stderr.
+
+**`extract --backend ollama` needs the `[ollama]` extra too** (`graphifyy[ollama]`,
+for the `openai` package it uses to talk to Ollama's OpenAI-compatible
+endpoint) — otherwise every chunk fails with *"the 'openai' package is
+required for this backend"*.
+
+**graphify's own ollama default model, `qwen2.5-coder:7b`, is not pulled by
+anything in this stack** and isn't code you actually want here anyway — it's
+a *coding* model, not a *structured-output* model, and the extraction schema
+graphify asks for is closer to a function-call/JSON-mode task. In testing,
+**`hermes3:8b`** (Nous Research, tuned for reliable tool-call/JSON output)
+produced noticeably fewer malformed responses than `qwen2.5-coder:7b` on
+identical repos, at a similar ~5GB VRAM footprint. `init-graphify-projects.ps1`
+defaults to it and auto-pulls it via the Ollama REST API if missing.
+
+**The default 5-minute client timeout is too short.** `docker logs ollama`
+will show `500 | 5m0s` entries for requests that were still legitimately
+generating — the client gives up and graphify retries with a smaller,
+bisected chunk, wasting the work already done. Use `--api-timeout 1200`
+(20 min) for local models; a healthy chunk usually finishes in 5-30s, but a
+handful of harder ones can run long even on a good model.
+
+**`--token-budget 6000 --max-concurrency 1`** keeps per-chunk requests small
+enough for an 8B-class model to stay coherent, and avoids queuing multiple
+requests against a single-GPU Ollama instance that can only serve one at a
+time anyway (`OLLAMA_NUM_PARALLEL` doesn't help if there's only one GPU).
+
+**Local models will still produce plenty of invalid JSON** — expect roughly
+30-40% of semantic chunks to get skipped or partially truncated even with a
+good model and the tuning above. graphify's adaptive bisection retries and
+keeps partial results, so the graph is usable (AST/code-structure data,
+which is deterministic, dominates the graph anyway) but not exhaustive on
+the LLM-derived semantic layer. Rebuild with a real API-backed model
+(`--backend openai`/`claude`/`gemini`/`deepseek` with a key) if you need
+higher recall.
+
+**`--force` bypasses graphify's semantic cache, not just the output file.**
+A `--force` rebuild always redoes the full LLM extraction pass (can be
+~1h per repo on a local 8B model), even if nothing changed. Don't add
+`-Force` to `init-graphify-projects.ps1` out of habit.
+
+**graphify v0.9.4 (latest on PyPI) crashes on its own malformed-response
+recovery path** in three places — a noisy local model occasionally returns
+`"nodes": "some string"` instead of a list of node objects, and graphify's
+`.extend()`/`.get()` calls don't guard against that, so the crash happens
+*after* a full ~1h extraction pass completes, right at the final write/merge
+step. `scripts/patch-graphify-ollama-bugs.py` patches all three sites
+defensively (skip non-dict entries, coerce IDs to `str`) directly in the uv
+cache; `init-graphify-projects.ps1` runs it automatically before every
+extraction. It's idempotent and safe to re-run. These are real upstream
+robustness gaps worth reporting to the graphify maintainer, not local-LLM-
+specific hacks — the patches don't change behavior for well-formed data.
+
+**uv may extract graphify into multiple different cache directories** — one
+per resolved environment, which can differ per target repo if it has its
+own `pyproject.toml`/lockfile. The patch script scans and patches every copy
+it finds (`uv cache dir` + `archive-v0/*/**/graphify/{__main__,ids}.py`), so
+this is handled automatically, but it's why you can't just patch "the"
+graphify install once and be done.
 
 ## Mem0 — Official Self-Hosted Docker Stack
 

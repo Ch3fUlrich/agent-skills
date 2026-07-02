@@ -49,7 +49,7 @@
       "args": [
         "run",
         "--with",
-        "graphifyy",
+        "graphifyy[mcp]",
         "python",
         "-m",
         "graphify.serve",

@@ -68,7 +68,18 @@ Recommended order for a new repo:
 
 1. Activate Serena and run onboarding.
 2. Build the Graphify graph.
-3. Use Serena for symbols and Graphify for broader relationship queries.
+3. Register the `graphify` server into Claude Code's own config:
+   `scripts/windows/register-claude-code-mcp.ps1 -Server graphify`, then
+   restart Claude Code (MCP servers only load at session start).
+4. Use Serena for symbols and Graphify for broader relationship queries.
+
+Building a graph against a local Ollama backend has several sharp edges
+(missing extras, a too-short default timeout, three graphify bugs triggered
+by noisy local-model JSON) that cost real debugging time to work out — see
+`../README.md#graphify--local-ollama--known-gotchas` before assuming
+something is broken. `init-graphify-projects.ps1` already applies every
+workaround; this is background for when you need to change that script or
+diagnose a new failure mode.
 
 ### Two Pitfalls That Will Strand a Session
 
