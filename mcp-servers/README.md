@@ -34,7 +34,7 @@ See [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup
 |-----------|-----------|---------|:---:|:------:|
 | [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation | ~40–60% | Working |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation — navigate, click, type, screenshots | Browser | Working |
-| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv`) | Queryable project graph for code, docs, and relationships | Graph reasoning | Working |
+| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv` or Docker) | Queryable project graph for code, docs, and relationships | Graph reasoning | Working |
 | **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector + MCP bridge | Context reuse | Working |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | Working |
 | ~~Filesystem~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | Disabled — redundant with CodeWhale built-ins |
@@ -44,6 +44,19 @@ Graphify provides built-in tools to visualize your project graph. After extracti
 - **Hierarchical Tree:** `uv run --with graphifyy[mcp] graphify tree` (generates `GRAPH_TREE.html`)
 - **Call-flow Diagrams:** `uv run --with graphifyy[mcp] graphify export callflow-html` (generates mermaid flowcharts)
 - **Custom Force-Directed Graphs:** Because the graph is exported as a standard `graph.json`, you can use standard Python libraries (like `networkx` or `vis.js` templates) to render interactive physics-based graphs.
+
+## Graphify as a Docker Container
+
+If you don't want a host-level `uv`/Python toolchain, `servers/graphify-mcp/`
+builds a Docker image with `graphifyy[mcp]` preinstalled and runs the same
+stdio server (`graphify.serve`) — see `servers/graphify-mcp/README.md` for
+build, graph-generation, handshake-testing, and registration instructions.
+It's registered in `config/mcp-claude-code.json` as `graphify-docker`
+alongside the default `uv`-based `graphify` entry (register whichever one
+you actually built/want with `register-claude-code-mcp.ps1 -Server
+graphify-docker`). Because `graphify.serve` is stdio-only, this is a
+`docker run -i --rm` subprocess per session, not a long-running compose
+service like `serena`/`mem0`.
 
 ## Graphify + Local Ollama — Known Gotchas
 

@@ -62,6 +62,17 @@
         "graphify.serve",
         "${workspaceFolder}/graphify-out/graph.json"
       ]
+    },
+    "graphify-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "${workspaceFolder}:/repo",
+        "graphify-mcp:latest"
+      ]
     }
   }
 }

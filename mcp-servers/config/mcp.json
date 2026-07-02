@@ -74,6 +74,20 @@
       "connect_timeout": 120,
       "execute_timeout": 240,
       "disabled": false
+    },
+    "graphify-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "C:/Users/mauls/Documents/Code/agent-skills:/repo",
+        "graphify-mcp:latest"
+      ],
+      "connect_timeout": 120,
+      "execute_timeout": 240,
+      "disabled": true
     }
   }
 }

@@ -56,6 +56,17 @@
         "graphify.serve",
         "graphify-out/graph.json"
       ]
+    },
+    "graphify-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "${AGENT_SKILLS_DIR}:/repo",
+        "graphify-mcp:latest"
+      ]
     }
   }
 }
