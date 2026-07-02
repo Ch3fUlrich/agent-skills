@@ -47,6 +47,7 @@
     "graphify": {
       "command": "uv",
       "args": [
+        "--quiet",
         "run",
         "--with",
         "graphifyy[mcp]",

@@ -1,4 +1,4 @@
-# OS/editor noise
+﻿# OS/editor noise
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -85,3 +85,5 @@ mcp-servers/superpowers/src/git.test.ts
 mcp-servers/superpowers/src/integration.test.ts
 mcp-servers/superpowers/src/server.test.ts
 mcp-servers/superpowers/src/update.test.ts
+graphify-out/
+GRAPH_*.html

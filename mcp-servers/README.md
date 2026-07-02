@@ -39,6 +39,12 @@ See [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | Working |
 | ~~Filesystem~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | Disabled — redundant with CodeWhale built-ins |
 
+## Graphify Visualizations
+Graphify provides built-in tools to visualize your project graph. After extraction, you can generate:
+- **Hierarchical Tree:** `uv run --with graphifyy[mcp] graphify tree` (generates `GRAPH_TREE.html`)
+- **Call-flow Diagrams:** `uv run --with graphifyy[mcp] graphify export callflow-html` (generates mermaid flowcharts)
+- **Custom Force-Directed Graphs:** Because the graph is exported as a standard `graph.json`, you can use standard Python libraries (like `networkx` or `vis.js` templates) to render interactive physics-based graphs.
+
 ## Graphify + Local Ollama — Known Gotchas
 
 Everything below was learned the hard way building graphs for three real

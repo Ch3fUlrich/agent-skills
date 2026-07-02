@@ -66,7 +66,7 @@ $PatchScript = Join-Path $PSScriptRoot '..\patch-graphify-ollama-bugs.py'
 # structured-output-tuned, and needs a manual `ollama pull` first since it's
 # not part of any base image. hermes3:8b is closer in size but noticeably
 # more reliable at emitting valid JSON for graphify's extraction schema.
-$DefaultOllamaModel = 'hermes3:8b'
+$DefaultOllamaModel = 'hermes3:8b-ctx8k'
 
 function Ensure-OllamaModel {
     param([string]$ModelName)
@@ -106,6 +106,14 @@ function Invoke-Graphify {
         if (Test-Path $PatchScript) {
             & python $PatchScript | Out-Null
         }
+        # Ensure graphify respects .gitignore and ignores its own output
+        $ignoreContent = @()
+        if (Test-Path '.gitignore') {
+            $ignoreContent += Get-Content '.gitignore'
+        }
+        $ignoreContent += 'graphify-out/'
+        $ignoreContent += 'GRAPH_*.html'
+        $ignoreContent | Out-File -FilePath '.graphifyignore' -Encoding utf8
 
         $withSpec = 'graphifyy'
         $extractArgs = @('run', '--with')
@@ -125,15 +133,24 @@ function Invoke-Graphify {
                 '--token-budget', '6000',
                 '--max-concurrency', '1',
                 '--api-timeout', '1200',
-                '--no-viz', '--force'
+                '--no-viz'
             )
+            if ($Force) { $extractArgs += '--force' }
         } else {
             $extractArgs += $withSpec
-            $extractArgs += @('graphify', 'extract', '.', '--backend', $Backend, '--no-viz', '--force')
+            $extractArgs += @('graphify', 'extract', '.', '--backend', $Backend, '--no-viz')
+            if ($Force) { $extractArgs += '--force' }
         }
         & uv @extractArgs
         if ($LASTEXITCODE -ne 0) {
             throw "graphify extract failed with exit code $LASTEXITCODE"
+        }
+
+        Write-Host "    Generating D3 collapsible tree HTML..." -ForegroundColor Gray
+        $treeArgs = @('run', '--with', 'graphifyy', 'graphify', 'tree', '--graph', $graphPath, '--output', (Join-Path $RepoPath 'graphify-out\GRAPH_TREE.html'))
+        & uv @treeArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "graphify tree failed with exit code $LASTEXITCODE"
         }
 
         if ($InstallHooks) {

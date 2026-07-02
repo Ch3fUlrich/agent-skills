@@ -62,9 +62,10 @@
     "graphify": {
       "command": "uv",
       "args": [
+        "--quiet",
         "run",
         "--with",
-        "graphifyy",
+        "graphifyy[mcp]",
         "python",
         "-m",
         "graphify.serve",

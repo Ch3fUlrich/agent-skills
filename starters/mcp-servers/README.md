@@ -65,6 +65,11 @@ After these four steps, the repo is fully configured. Serena continues to
 auto-activate via the MCP config, and Graphify serves the repo graph from
 `graphify-out/graph.json`.
 
+You can also use Graphify to generate visual artifacts:
+- **Hierarchical Tree:** `uv run --with graphifyy[mcp] graphify tree` (generates `GRAPH_TREE.html`)
+- **Call-flow Diagrams:** `uv run --with graphifyy[mcp] graphify export callflow-html` (generates mermaid flowcharts)
+- **Force-Directed Graphs:** The standard `graph.json` can be visualized using custom scripts (e.g. Vis.js physics networks).
+
 ## What Agents Get
 
 Once set up, agents can:
