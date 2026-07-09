@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Deployed the Omnigraph memory stack on coding.vm via the single-source
+  `Server/server/coding/mcp-servers/docker-compose.yml` (server + MinIO + viewer),
+  seeded, with real Ollama `nomic-embed-text` embeddings and working semantic
+  search. Read-only branch-aware memory **viewer** and `search_decisions` query.
+- `infra/mcp-servers/setup/`: client/server setup guide, `client-setup.sh`,
+  and `omnigraph-sync.sh` (+ systemd timer) for automatic device-branch sync.
 - `coding-principles` skill + starter: DRY, TDD, single responsibility,
   document-the-why, changelog/ADR backtracking, MCP-first navigation.
 - `structured-memory` skill: typed cross-project memory protocol on Omnigraph
