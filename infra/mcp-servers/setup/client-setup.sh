@@ -49,7 +49,7 @@ case "$mode" in
     echo "== offline-capable client: local stack + auto-sync =="
     echo "1) Bring up the local Omnigraph stack (reference compose):"
     echo "   cd $here/.. && cp .env.example .env  # set MINIO/OMNIGRAPH secrets"
-    echo "   docker compose up -d omnigraph-minio omnigraph-minio-init omnigraph-init omnigraph-server"
+    echo "   docker compose --env-file .env.shared --env-file .env.client -f docker-compose.client.yml --profile offline up -d"
     echo
     echo "2) Point the agent's omnigraph MCP at the LOCAL server:"
     register_mcp "http://127.0.0.1:8080" "\${LOCAL_OMNIGRAPH_TOKEN}"

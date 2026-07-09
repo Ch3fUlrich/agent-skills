@@ -39,7 +39,7 @@ Agent
 omnigraph-viewer :8090 ──► omnigraph-server (read-only web UI over the API)
 ```
 
-Default runtime = `docker compose up -d` (Omnigraph + MinIO + viewer). The Mem0
+Default runtime = the **server** compose (`-f docker-compose.server.yml`; Omnigraph + MinIO + viewer). The Mem0
 fallback starts only with `--profile mem0-fallback`. See
 `docs/decisions/0001-omnigraph-over-mem0.md`.
 

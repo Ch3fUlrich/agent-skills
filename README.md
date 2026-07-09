@@ -64,12 +64,20 @@ persistent, structured memory. Runs on your own hardware; no OpenAI key required
 | [Omnigraph viewer](infra/mcp-servers/servers/omnigraph-viewer/) | Read-only web UI for the memory graph (tabs, interactive graph, table, search) |
 | Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
 
-Quick start (local / reference):
+Quick start — two roles, connected by a shared env file
+([`infra/mcp-servers/`](infra/mcp-servers/)):
 
 ```bash
 cd infra/mcp-servers
-cp .env.example .env          # set MinIO creds, OMNIGRAPH_TOKEN, S3_BUCKET
-docker compose up -d          # Omnigraph + MinIO (+ viewer on :8090)
+cp .env.shared.example .env.shared     # OMNIGRAPH_TOKEN + S3_BUCKET (shared)
+cp .env.server.example .env.server     # MinIO creds, embeddings
+cp .env.client.example .env.client     # CODE_ROOT, OMNIGRAPH_URL
+
+# SERVER (always-on memory backend: omnigraph-server + minio + viewer)
+docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d
+
+# CLIENT (a dev machine's tools: serena; graphify image; offline-local omnigraph)
+docker compose --env-file .env.shared --env-file .env.client -f docker-compose.client.yml up -d
 ```
 
 Memory is **Omnigraph** by default: agents write typed `Decision / Rule /

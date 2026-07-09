@@ -19,7 +19,7 @@
 # MinIO console:  http://localhost:9001
 # (Mem0 fallback) API http://localhost:8888/docs · dashboard :3000 · MCP SSE :8001
 
-name: mcp-memory-stack
+name: mcp-server
 
 services:
   # ─── MinIO — S3-compatible object store (Omnigraph storage backend) ────────
