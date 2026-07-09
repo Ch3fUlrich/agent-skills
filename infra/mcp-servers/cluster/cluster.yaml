@@ -1,0 +1,22 @@
+# Omnigraph cluster — declared as code (versioned in git; state lives in S3/MinIO).
+# `omnigraph cluster apply --config .` converges this into the storage root below,
+# writing the state ledger the server boots from (`omnigraph-server --cluster <root>`).
+#
+# This is the MINIMAL bootable cluster. The full structured-memory schema
+# (Decision/Rule/Preference/… + edges + vector columns) is applied on top in a
+# later step — see skills/structured-memory/references/schema.md.
+version: 1
+metadata:
+  name: mcp-memory
+
+# Whole cluster (state ledger, lock, catalog, graph roots) lives on MinIO.
+# Credentials come from the standard AWS_* env contract, never from this file.
+storage: s3://omnigraph/cluster
+
+state:
+  backend: cluster
+  lock: true
+
+graphs:
+  memory:
+    schema: memory.pg
