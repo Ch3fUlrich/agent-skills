@@ -80,7 +80,7 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    entrypoint: ["sh", "-c", "omnigraph cluster import --config /cluster --yes && omnigraph cluster apply --config /cluster --yes"]
+    entrypoint: ["sh", "-c", "omnigraph cluster import --config /cluster --yes 2>/dev/null || true; omnigraph cluster apply --config /cluster --yes --as default"]
     environment:
       - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
