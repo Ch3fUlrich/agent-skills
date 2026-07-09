@@ -61,6 +61,17 @@ Memory writes are reviewable like code:
 Supersede, don't overwrite, an accepted `Decision`: write the new `Decision` and
 a `supersedes` edge to the old one; set the old one's `status` to `superseded`.
 
+## You do not manage device branches — sync is automatic
+
+Always read/write the memory server your client is configured with, on `main`.
+**Do not create or merge device branches yourself.** When your device is online
+it uses the central `main` directly; when it is offline it uses a local `main`,
+and a background service (`infra/mcp-servers/setup/omnigraph-sync.sh` on a timer)
+creates a `device/<host>` branch, merges it into central `main`, and reconciles
+back — resolving node conflicts by slug-keyed upsert. So just write durable
+memory to `main`; the automation handles branching, pushing, and merging. See
+`infra/mcp-servers/setup/README.md`.
+
 ## Cross-project model
 
 - One shared graph. Every project is a `Project` node; project-specific memory
