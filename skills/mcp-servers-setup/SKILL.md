@@ -1,27 +1,34 @@
 ---
 name: mcp-servers-setup
-description: Configure and use the self-hosted MCP server stack (Serena, Graphify, Superpowers, Mem0) for token-efficient coding.
+description: Configure and use the self-hosted MCP server stack (Serena, Graphify, Omnigraph memory, Superpowers, Playwright) for token-efficient coding.
 ---
 
 # MCP Servers Setup
 
 This skill ensures proper configuration and usage of the self-hosted MCP server
-stack across all repositories in `C:\Users\mauls\Documents\Code`.
+stack across all repositories under your `${CODE_ROOT}` (the parent directory of
+your projects).
 
 ## First Action — Always
 
-**On every session start (first prompt), activate the Serena MCP server, retrieve project memories from Mem0, and use Graphify when the repo already has a graph:**
+**On every session start (first prompt), activate the Serena MCP server, recall
+structured project memory from Omnigraph, and use Graphify when the repo already
+has a graph:**
 
 ```
 mcp_serena_activate_project → (current project name or path)
-mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
+# Recall typed memory (rules/decisions/preferences) for this project + global scope:
+#   follow skills/structured-memory/SKILL.md (Omnigraph queries)
 
 # If graphify-out/graph.json exists, prefer graph queries for broad structure questions
 ```
 
-This loads the full project context: module structure, recent decisions, commands, and constraints. Do this before any code changes — the memories are the ground truth for what exists and how it works.
+This loads the full project context: module structure, recent decisions,
+commands, and constraints. Do this before any code changes — the memory graph is
+the ground truth for what exists and how it works. Memory details:
+`skills/structured-memory/SKILL.md`.
 
-## Active MCP Servers (4)
+## Active MCP Servers
 
 ### Serena — Semantic Code Navigation (LSP)
 
@@ -40,22 +47,25 @@ mcp_serena_find_symbol(name_path_pattern="function_name")
 
 **Project isolation & settings**: Automatic via `.serena/project.yml` per repo. If language detection fails, ensure `languages: ["python", "html", "typescript", "markdown", "scss", "yaml"]` is specified.
 
-**Note**: Serena memory tools are disabled. Use Mem0 for all persistent memory instead.
+**Note**: Serena memory tools are disabled. Use Omnigraph (structured memory) for all persistent memory instead.
 
-### Mem0 — Persistent Cross-Session Memory
+### Omnigraph — Structured Cross-Project Memory
 
-| Tool | Purpose |
-|------|---------|
-| `mcp_mem0_add_memory` | Store fact, design decision, preference |
-| `mcp_mem0_get_memories` | Retrieve all memories for this repository |
-| `mcp_mem0_search_memories` | Search memories semantically |
+The default memory layer. Instead of unstructured blobs, write **typed** nodes
+(`Decision / Rule / Preference / Convention / Component / Task`) edged to a
+`Project`, and recall them via fused graph + vector + full-text queries. MCP tools:
+`schema / branches / queries / mutations / ingest`.
 
-**Usage**:
-```
-mcp_mem0_add_memory(messages=[{"role": "user", "content": "Memory to store"}], user_id="basic-analysis")
-mcp_mem0_get_memories(user_id="basic-analysis")
-```
-*Crucial*: Always use the folder name of the current repository as the `user_id` to maintain project isolation.
+| Action | How |
+|--------|-----|
+| Recall project memory | `queries` for rules/decisions/preferences edged to the project |
+| Persist a durable fact | `ingest`/`mutations` a typed node on a branch, then merge |
+| Global preferences | `Preference` nodes with `scope: global` (recalled everywhere) |
+
+Full protocol and schema: `skills/structured-memory/SKILL.md`. Project isolation
+is by `Project` edges and `scope`, not a per-call `user_id`. Mem0 remains
+available as an off-by-default fallback (`docker compose --profile mem0-fallback
+up -d`).
 
 ### Graphify — Project Graphs
 
@@ -101,20 +111,21 @@ mcp_superpowers_recommend_skills(task="debug a timeout issue")
 
 ## Project Initialization
 
-```powershell
-cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
-.\windows\start.ps1     # Start Qdrant, pre-warm Ollama models
-.\windows\test.ps1      # Verify all services
+```bash
+cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
+docker compose up -d          # Omnigraph + MinIO (default memory stack)
+./scripts/linux/start.sh      # or scripts/windows/start.ps1 on Windows
+./scripts/linux/test.sh       # verify all services
 ```
 
 ## Recommended Workflow
 
-1. Run `.\windows\start.ps1` to start services and pre-warm models (Docker and Ollama)
+1. Start services: `docker compose up -d` (Omnigraph + MinIO) and the platform `start` script
 2. Activate Serena project: `mcp_serena_activate_project(project="repo-name")`
-3. Retrieve memories: `mcp_mem0_get_memories(user_id="repo-name")`
+3. Recall memory from Omnigraph (see `skills/structured-memory/SKILL.md`)
 4. Build or refresh Graphify graphs when the repo has a graph target
-5. Use Serena for navigation, Mem0 for memories, Graphify for graph queries, and Superpowers for workflows
-6. End session: services keep running
+5. Use Serena for navigation, Omnigraph for memory, Graphify for graph queries, and Superpowers for workflows
+6. End session: persist durable decisions to Omnigraph; services keep running
 
 ## Troubleshooting
 

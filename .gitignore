@@ -49,11 +49,16 @@ htmlcov/
 .serena/
 !starters/mcp-servers/.serena/
 
-# Graphify data
+# Graphify data (generated — regenerable, never track)
 graphify-out/
 
 # MCP server data (persistent, machine-local)
 mcp-servers/data/
+infra/mcp-servers/data/
+
+# Omnigraph + MinIO local runtime data
+**/omnigraph-data/
+**/minio-data/
 
 # Node.js dependencies (generated)
 mcp-servers/superpowers/node_modules/

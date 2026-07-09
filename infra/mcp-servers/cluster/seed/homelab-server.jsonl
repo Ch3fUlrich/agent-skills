@@ -1,0 +1,15 @@
+{"type":"Project","data":{"slug":"homelab-server","name":"Homelab Server","path":"~/code/Server","summary":"Homelab infrastructure-as-docs: OPNsense edge, Caddy reverse proxy, Docker service stacks, coding/MCP infra."}}
+{"type":"Component","data":{"slug":"srv-caddy","name":"Caddy reverse proxy","kind":"reverse-proxy","location":"server/network/caddy + opnsense os-caddy plugin (caddy.d)"}}
+{"type":"Component","data":{"slug":"srv-opnsense","name":"OPNsense","kind":"firewall/router","location":"server/network/opnsense"}}
+{"type":"Component","data":{"slug":"srv-omnigraph","name":"Omnigraph memory stack","kind":"mcp-memory","location":"agent-skills/infra/mcp-servers (omnigraph-server + minio)"}}
+{"type":"Rule","data":{"slug":"srv-edge-security","statement":"OPNsense remains the firewall/NAT/VPN/DNS edge unchanged; only Caddy TLS-terminates and reverse-proxies. Never open new Fritzbox/OPNsense ports — add a Caddy vhost + Unbound *.vm override instead.","severity":"must"}}
+{"type":"Rule","data":{"slug":"srv-authelia-sso","statement":"Internet-exposed services sit behind Authelia SSO via the Caddy authelia snippet; no anonymous public access to management/memory APIs.","severity":"must"}}
+{"type":"Convention","data":{"slug":"srv-caddy-source-of-truth","name":"Caddy config source of truth","example":"OPNsense os-caddy caddy.d/ files (10-services.conf for *.ohje.ooguy.com); server/network/caddy/Caddyfile mirrors them 1:1. Backends via Unbound *.vm host-overrides (cloud/manage/media/hosting/coding.vm)."}}
+{"type":"Decision","data":{"slug":"srv-haproxy-to-caddy","title":"Reverse proxy moved from pfSense HAProxy to Caddy","rationale":"Caddy handles TLS termination + ACME (Dynu wildcard DNS-01, Cloudflare per-site); OPNsense security posture unchanged.","status":"accepted","date":"2026-07-09"}}
+{"edge":"PartOf","from":"srv-caddy","to":"homelab-server"}
+{"edge":"PartOf","from":"srv-opnsense","to":"homelab-server"}
+{"edge":"PartOf","from":"srv-omnigraph","to":"homelab-server"}
+{"edge":"ConstrainsProject","from":"srv-edge-security","to":"homelab-server"}
+{"edge":"ConstrainsProject","from":"srv-authelia-sso","to":"homelab-server"}
+{"edge":"AppliesTo","from":"srv-caddy-source-of-truth","to":"homelab-server"}
+{"edge":"DecidedIn","from":"srv-haproxy-to-caddy","to":"homelab-server"}
