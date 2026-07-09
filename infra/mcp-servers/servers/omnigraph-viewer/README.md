@@ -5,13 +5,27 @@ ships no self-hostable UI (the `ui` cluster field is reserved upstream), so this
 fills the gap: it lists projects and the typed memory nodes (Decisions, Rules,
 Preferences, Conventions, Components) via the server's stored-query routes.
 
+## Features
+
+- **Project tabs** — `All` · `Global` (general rules/decisions/preferences) · one
+  per project.
+- **Interactive graph** — force-directed nodes + edges (vanilla JS/SVG, no CDN).
+  Drag nodes; click a node for all its fields + connections; click an edge for
+  its type, endpoints, and meaning. Node types are colored with a legend that
+  toggles each type on/off.
+- **Table view** — one sortable table per node type (click a header to sort) with
+  a live text filter across rows.
+- **Search** — highlights matching nodes/edges in the graph (dims the rest) and
+  outlines matching table rows.
+- **Branch selector** — view any branch (`?branch=` / dropdown).
+
 ## Design
 
-- Server-rendered HTML (Flask + gunicorn). No client JS, no external assets —
-  Authelia/Caddy-friendly and CSP-safe.
+- Flask + gunicorn. The browser gets data from `/api/graph?branch=` (JSON built
+  from `POST /graphs/<id>/export`, edges de-duplicated); the frontend is a single
+  self-contained HTML/CSS/JS string — no external assets, Authelia/Caddy-friendly.
 - **Holds the Omnigraph bearer token server-side**; the browser never sees it.
-- Read-only: it only calls `GET /graphs` and `POST /graphs/<id>/queries/<name>`
-  (the `list_*` stored queries declared in `cluster/queries/memory.gq`).
+- Read-only: only `GET /graphs/<id>/branches` and `POST /graphs/<id>/export`.
 
 > **Security:** the app has no auth of its own — put **Authelia SSO in front**
 > (Caddy `import authelia`). Never expose it directly. The Omnigraph **API**
