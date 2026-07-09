@@ -30,6 +30,7 @@ graphs:
   memory:
     schema: memory.pg
     embedding_provider: default
+    queries: queries/
 
 policies:
   cluster-admin:
