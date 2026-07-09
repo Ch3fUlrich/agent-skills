@@ -64,21 +64,54 @@ persistent, structured memory. Runs on your own hardware; no OpenAI key required
 | [Omnigraph viewer](infra/mcp-servers/servers/omnigraph-viewer/) | Read-only web UI for the memory graph (tabs, interactive graph, table, search) |
 | Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
 
-Quick start — two roles, connected by a shared env file
-([`infra/mcp-servers/`](infra/mcp-servers/)):
+### Setup: there are TWO roles — pick yours
+
+Everything lives in [`infra/mcp-servers/`](infra/mcp-servers/). There are **two
+Docker Compose files** and **three env files**. You always load `.env.shared`
+plus the one for your role.
+
+| Role | Compose file | What it runs | Who runs it |
+|---|---|---|---|
+| **SERVER** | `docker-compose.server.yml` | the memory backend: `omnigraph-server` + `minio` + `omnigraph-viewer` | **one** always-on machine (e.g. a homelab VM) |
+| **CLIENT** | `docker-compose.client.yml` | your agent's tools: `serena` (code nav), `graphify` image; optional offline-local memory | **every** developer machine |
+
+`.env.shared` holds the two values that **connect** the roles —
+`OMNIGRAPH_TOKEN` (clients authenticate with the same token) and `S3_BUCKET`.
+Prerequisite: Docker. All commands run from `infra/mcp-servers/`.
+
+**Step 0 — create your env files** (do this once, on both roles):
 
 ```bash
 cd infra/mcp-servers
-cp .env.shared.example .env.shared     # OMNIGRAPH_TOKEN + S3_BUCKET (shared)
-cp .env.server.example .env.server     # MinIO creds, embeddings
-cp .env.client.example .env.client     # CODE_ROOT, OMNIGRAPH_URL
-
-# SERVER (always-on memory backend: omnigraph-server + minio + viewer)
-docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d
-
-# CLIENT (a dev machine's tools: serena; graphify image; offline-local omnigraph)
-docker compose --env-file .env.shared --env-file .env.client -f docker-compose.client.yml up -d
+cp .env.shared.example .env.shared     # set OMNIGRAPH_TOKEN (openssl rand -hex 32) + S3_BUCKET
+cp .env.server.example .env.server     # SERVER only: MinIO creds, embeddings
+cp .env.client.example .env.client     # CLIENT only: CODE_ROOT, OMNIGRAPH_URL (= the server's URL)
 ```
+
+**If you are the SERVER** — start the memory backend:
+
+```bash
+docker compose --env-file .env.shared --env-file .env.server \
+  -f docker-compose.server.yml up -d
+curl -fsS http://localhost:8080/healthz          # expect {"status":"ok",...}
+```
+
+**If you are a CLIENT** — start Serena, build the Graphify image, then point your
+agent's `omnigraph` MCP at the server (`OMNIGRAPH_URL` in `.env.client`):
+
+```bash
+docker compose --env-file .env.shared --env-file .env.client \
+  -f docker-compose.client.yml up -d                       # serena (SSE :9121)
+docker compose --env-file .env.shared --env-file .env.client \
+  -f docker-compose.client.yml --profile build build graphify   # stdio image
+# register the MCP servers into your agent's config (config/*.json), then restart it.
+# OFFLINE (optional): run a local memory the sync timer reconciles later:
+#   … -f docker-compose.client.yml --profile offline up -d
+```
+
+> **Mem0 is retired** (Omnigraph replaced it — ADR 0001). It is off by default;
+> start it only for the fallback with
+> `-f docker-compose.server.yml --profile mem0-fallback up -d`.
 
 Memory is **Omnigraph** by default: agents write typed `Decision / Rule /
 Preference / Convention / Component / Task` nodes (see the `structured-memory`
