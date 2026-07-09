@@ -119,7 +119,7 @@ async def main():
         "env": {
             "MCP_TRANSPORT": "stdio",
             "MEM0_API_URL": "http://localhost:8888",
-            "MEM0_USER_ID": "mauls"
+            "MEM0_USER_ID": "your-username"
         },
         "validation_tool": "health",
         "validation_args": {}

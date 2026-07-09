@@ -8,7 +8,7 @@
 
 $ErrorActionPreference = "Continue"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
-$CodeRoot = "C:\Users\mauls\Documents\Code"
+$CodeRoot = "$(if($env:CODE_ROOT){$env:CODE_ROOT}else{"$env:USERPROFILE\Documents\Code"})"
 
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host "  MCP Server Stack - Start Services                                  " -ForegroundColor Cyan

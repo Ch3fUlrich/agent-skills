@@ -14,15 +14,15 @@ Currently **9 repos** are indexed with Serena LSP support.
 
 ### Adding a New Repository
 
-When you create a new repo under `C:\Users\mauls\Documents\Code`, add it to Serena:
+When you create a new repo under `${CODE_ROOT}`, add it to Serena:
 
 ```powershell
 # Method 1: Direct command
-cd C:\Users\mauls\Documents\Code
-("N`n" * 10) | serena project create "C:\Users\mauls\Documents\Code\NewRepo" --index
+cd ${CODE_ROOT}
+("N`n" * 10) | serena project create "${CODE_ROOT}\NewRepo" --index
 
 # Method 2: Via the initialization script (indexes ALL unindexed repos)
-cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
+cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 .\windows\init-serena-projects.ps1
 ```
 

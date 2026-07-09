@@ -11,7 +11,7 @@ embeddings — no OpenAI API key required.
 ## Quick Start
 
 ```powershell
-cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
+cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 # 1. Edit .env — set DEEPSEEK_API_KEY + POSTGRES_PASSWORD
 # 2. Run setup
 .\scripts\windows\setup.ps1
@@ -202,7 +202,7 @@ curl http://localhost:8001/sse
 # Add a test memory
 curl -X POST http://localhost:8888/memories `
   -H "Content-Type: application/json" `
-  -d '{"messages":[{"role":"user","content":"Test memory"}],"user_id":"mauls"}'
+  -d '{"messages":[{"role":"user","content":"Test memory"}],"user_id":"your-username"}'
 ```
 
 ### Why Mem0 over Serena for Memory?
@@ -401,7 +401,7 @@ Serena, run onboarding, build a Graphify graph, and use semantic code navigation
 
 ## Google Antigravity Setup
 
-For Google Antigravity, configuration is loaded from the global `mcp_config.json` file. A complete, optimized template is provided at [mcp-servers/config/mcp_antigravity.json](file:///c:/Users/mauls/Documents/Code/agent-skills/mcp-servers/config/mcp_antigravity.json).
+For Google Antigravity, configuration is loaded from the global `mcp_config.json` file. A complete, optimized template is provided at [mcp-servers/config/mcp_antigravity.json](file:///c:/Users/your-username/Documents/Code/agent-skills/infra/mcp-servers/config/mcp_antigravity.json).
 
 ### 1. Configuration Location
 On Windows, Antigravity reads its config from:

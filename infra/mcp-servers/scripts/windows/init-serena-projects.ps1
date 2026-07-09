@@ -42,7 +42,7 @@
     Initialize the repository in the current directory.
 
 .EXAMPLE
-    .\init-serena-projects.ps1 -CodeRoot C:\Users\me\Documents\Code
+    .\init-serena-projects.ps1 -CodeRoot $env:CODE_ROOT
     Initialize every git repo directly under the given folder.
 
 .EXAMPLE

@@ -45,7 +45,7 @@
     Initialize the repository in the current directory.
 
 .EXAMPLE
-    .\init-graphify-projects.ps1 -CodeRoot C:\Users\me\Documents\Code
+    .\init-graphify-projects.ps1 -CodeRoot $env:CODE_ROOT
     Initialize every git repo directly under the given folder.
 #>
 [CmdletBinding()]

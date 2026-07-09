@@ -29,7 +29,7 @@ from mcp.server.fastmcp import FastMCP
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 MEM0_API_URL = os.environ.get("MEM0_API_URL", "http://mem0:8000")
-MEM0_USER_ID = os.environ.get("MEM0_USER_ID", "mauls")
+MEM0_USER_ID = os.environ.get("MEM0_USER_ID", "your-username")
 PORT = int(os.environ.get("PORT", "8001"))
 
 mcp = FastMCP(

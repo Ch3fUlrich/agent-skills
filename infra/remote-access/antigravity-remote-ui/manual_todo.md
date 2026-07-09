@@ -5,7 +5,7 @@ To connect your phone to the Antigravity session with a premium mobile UI, follo
 ## Step 1: Run the automated setup script
 The automated script will handle all dependencies and configure the connection for you.
 
-1. Open PowerShell and navigate to `c:\Users\mauls\Documents\Code\short_changes`.
+1. Open PowerShell and navigate to `${CODE_ROOT}\short_changes`.
 2. Run the provided script:
    ```powershell
    .\start-remote-session.ps1

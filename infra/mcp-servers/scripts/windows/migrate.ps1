@@ -11,7 +11,7 @@
 $ErrorActionPreference = "Continue"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
 $HomeDir = $env:USERPROFILE
-$CodeRoot = "C:\Users\mauls\Documents\Code"
+$CodeRoot = "$(if($env:CODE_ROOT){$env:CODE_ROOT}else{"$env:USERPROFILE\Documents\Code"})"
 
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "      MCP Server Stack - Claude Code Data Migration             " -ForegroundColor Cyan
@@ -87,7 +87,7 @@ $BootstrapFile = "$RepoRoot\data\mem0\bootstrap_memories.txt"
 # Each line starting with # is a comment. Non-comment lines are stored as memories.
 
 # === Project Architecture ===
-Code monorepo at C:\Users\mauls\Documents\Code containing 20+ projects
+Code monorepo at $env:CODE_ROOT containing 20+ projects
 Main programming languages: Python (most repos), TypeScript, Shell, C#
 Key frameworks: PyTorch, FastAPI, DeepLabCut, MARBLE, MaxEnt, IsingModel
 

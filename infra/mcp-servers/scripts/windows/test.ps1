@@ -152,7 +152,7 @@ Write-Host ""
 Write-Host "[Test 3] Superpowers MCP Server" -ForegroundColor Cyan
 
 try {
-    $SpBuild = "C:\Users\mauls\Documents\Code\agent-skills\mcp-servers\servers\superpowers\build\index.js"
+    $SpBuild = "$(if($env:AGENT_SKILLS_ROOT){$env:AGENT_SKILLS_ROOT}else{"$env:USERPROFILE\Documents\Code\agent-skills"})\infra\mcp-servers\servers\superpowers\build\index.js"
     if (Test-Path $SpBuild) {
         Test-Pass "Superpowers built at: $SpBuild"
     } else {

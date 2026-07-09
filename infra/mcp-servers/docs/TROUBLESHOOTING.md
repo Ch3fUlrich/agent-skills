@@ -247,7 +247,7 @@ curl http://localhost:6333/collections | ConvertFrom-Json
 
 # Serena check
 serena --version
-serena project health-check --project C:\Users\mauls\Documents\Code
+serena project health-check --project ${CODE_ROOT}
 ```
 
 ## Complete Reset
@@ -256,7 +256,7 @@ If everything is broken and you want to start fresh:
 
 ```powershell
 # Stop and remove containers
-cd C:\Users\mauls\Documents\Code\agent-skills\mcp-servers
+cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 docker compose down -v
 
 # Remove data (warning: deletes all memories and indices)
