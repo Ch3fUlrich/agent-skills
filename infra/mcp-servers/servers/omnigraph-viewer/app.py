@@ -254,6 +254,10 @@ function svgPt(e){const r=$("#svg").getBoundingClientRect();return {x:e.clientX-
 function screenToGraph(sx,sy){return {x:(sx-S.vp.tx)/S.vp.k,y:(sy-S.vp.ty)/S.vp.k};}
 function vpApply(){$("#viewport").setAttribute("transform",`translate(${S.vp.tx},${S.vp.ty}) scale(${S.vp.k})`);}
 function edgeKey(e){return e.type+"|"+e.from+"|"+e.to;}
+function ptSeg(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy||1;
+  let t=((px-ax)*dx+(py-ay)*dy)/L;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
+function nearestEdge(g){let best=null,bd=1e9;for(const e of (S.curLinks||[])){const a=S.pos[e.from],b=S.pos[e.to];
+  if(!a||!b)continue;const d=ptSeg(g.x,g.y,a.x,a.y,b.x,b.y);if(d<bd){bd=d;best=e;}}return bd<25?best:null;}
 function renderGraph(){
   const svg=$("#svg"),W=svg.clientWidth||800,H=svg.clientHeight||600;
   const vis=visibleNodes(),ids=new Set(vis.map(n=>n.id));
@@ -270,7 +274,8 @@ function renderGraph(){
   const linkEls=links.map(e=>{
     const ln=document.createElementNS(NS,"line");ln.setAttribute("class","link");
     const hit=document.createElementNS(NS,"line");hit.setAttribute("class","hit");
-    hit.addEventListener("click",ev=>{ev.stopPropagation();onEdgeClick(e);});
+    hit.addEventListener("click",ev=>{ev.stopPropagation();
+      const sp=svgPt(ev);onEdgeClick(nearestEdge(screenToGraph(sp.x,sp.y))||e);});
     const tx=document.createElementNS(NS,"text");tx.setAttribute("class","elabel");tx.textContent=e.type;
     linkG.append(ln,hit);elG.append(tx);return {e,ln,hit,tx};
   });
@@ -331,11 +336,13 @@ function toggleRemoved(key){if(!S.removed)S.removed=new Set();S.removed.has(key)
 function applyHighlight(){
   if(!S.els)return;const q=S.q,rm=S.removed||new Set();
   for(const {n,g} of S.els.nodeEls){const isM=q&&matches(n);const hl=isM&&!rm.has(n.id);
-    g.classList.toggle("hl",!!hl);g.classList.toggle("dim",!!(q&&!isM));}
-  for(const {e,ln} of S.els.linkEls){
+    g.classList.toggle("hl",!!hl);g.classList.toggle("dim",!!(q&&!isM));
+    if(hl)g.parentNode.appendChild(g);}   // raise matched nodes above the rest
+  for(const {e,ln,hit,tx} of S.els.linkEls){
     const fn=S.data.nodes.find(x=>x.id===e.from),tn=S.data.nodes.find(x=>x.id===e.to);
     const isM=q&&((fn&&matches(fn))||(tn&&matches(tn)));const hl=isM&&!rm.has(edgeKey(e));
-    ln.classList.toggle("hl",!!hl);ln.classList.toggle("dim",!!(q&&!isM));}
+    ln.classList.toggle("hl",!!hl);ln.classList.toggle("dim",!!(q&&!isM));
+    if(hl){ln.parentNode.appendChild(ln);hit.parentNode.appendChild(hit);tx.parentNode.appendChild(tx);}}
 }
 function showNode(n,links){if(!n)return;
   const conn=(links||S.data.edges).filter(e=>e.from===n.id||e.to===n.id);
@@ -347,12 +354,21 @@ function showNode(n,links){if(!n)return;
     <h3>${esc(n.label||n.id)}</h3><div class="muted">${esc(n.id)} ${n.global?"· global":""}</div>
     ${rows}<div class="k">connections (${conn.length})</div>${cs}`;
 }
+function whyMatch(node){ // when searching, show WHERE the term hit (or "" if it doesn't)
+  if(!S.q||!node)return "";const q=S.q.toLowerCase();
+  for(const [k,v] of Object.entries(node.fields||{})){
+    if(k==="embedding")continue;const s=String(v).toLowerCase();const i=s.indexOf(q);
+    if(i>=0)return `${node.id}.${k}: …${esc(String(v).slice(Math.max(0,i-15),i+q.length+25))}…`;}
+  return "";
+}
 function showEdge(type,from,to){
   const fn=(S.data.nodes||[]).find(n=>n.id===from),tn=(S.data.nodes||[]).find(n=>n.id===to);
+  const why=whyMatch(fn)||whyMatch(tn);
+  const note=S.q?`<div class="k">search "${esc(S.q)}"</div><div class="v">${why?("highlighted because "+why):"<span class=muted>not matched — highlighted edges connect a node that matches</span>"}</div>`:"";
   $("#side").innerHTML=`<span class="pill" style="background:var(--acc)">edge</span><h3>${esc(type)}</h3>
     <div class="k">from</div><div class="v">${esc(from)} <span class="muted">(${esc(fn?fn.type:"?")})</span></div>
     <div class="k">to</div><div class="v">${esc(to)} <span class="muted">(${esc(tn?tn.type:"?")})</span></div>
-    <div class="k">meaning</div><div class="v">${esc(EDGE_DOC[type]||"relationship")}</div>`;
+    <div class="k">meaning</div><div class="v">${esc(EDGE_DOC[type]||"relationship")}</div>${note}`;
 }
 const EDGE_DOC={DecidedIn:"decision belongs to a project",ConstrainsProject:"rule constrains a project",
   ConstrainsComponent:"rule constrains a component",AppliesTo:"convention/preference applies to target",
