@@ -1,118 +1,98 @@
 # Agent Skills
 
-Reusable AI-agent skills and repository starter packs for coding agents and agent orchestration setups.
+Reusable AI-agent skills, per-repo starter adapters, and a self-hosted MCP
+runtime for coding agents — so useful workflows are reused across projects
+instead of rediscovered in every new repository.
 
-This repository exists so useful agent workflows can be reused across projects instead of rediscovered in every new repository. The first skill, `html-working-documents`, teaches agents to create self-contained HTML working documents for substantial planning, exploration, review, research, reporting, prototyping, and implementation handoff work.
-
-## Why HTML Working Documents
-
-Long markdown plans are easy for agents to produce, but they quickly become hard to scan, compare, and reuse. Standalone HTML files can combine prose, tables, code snippets, diagrams, visual comparisons, status colors, and small interactions in one portable artifact that opens in any browser.
-
-The goal is not to turn every note into HTML. The goal is to give future agents a clear decision rule: use HTML when layout, comparison, diagrams, mockups, interaction, or handoff value makes the work easier to understand.
-
-## Repository Layout
+The repository is organized into **three pillars**:
 
 ```text
-skills/                        # Skill library
-  html-working-documents/
-    SKILL.md
-    agents/openai.yaml
-    references/pattern-catalog.md
-  mcp-servers-setup/
-    SKILL.md
-
-starters/                      # Starter packs — light pointers to the full skills
-  html-working-documents/
-    README.md
-  mcp-servers/
-    AGENTS.md
-    CLAUDE.md
-    README.md
-
-mcp-servers/                   # Self-hosted MCP server stack (Serena, Graphify,
-  config/                      # Mem0, Superpowers, Playwright) — see
-  scripts/                     # mcp-servers/README.md for setup and usage
-  servers/
-  docs/
-
-antigravity-remote-ui/         # Setup scripts for the Omni Remote Chat UI
-  start-remote-session.ps1
-  start-remote-session.sh
-  Dockerfile
-  docker-compose.yml
-
-docs/
-  agent-compatibility.md
+skills/     # Pillar 1 — reusable skills (each skill's SKILL.md is the source of truth)
+starters/   # Pillar 2 — thin per-repo adapters that point at a skill
+infra/      # Pillar 3 — self-hosted runtime (MCP stack + remote access)
+prompts/    # standalone prompt templates (repo→spec, big-todo workflow, examples)
+docs/       # architecture, agent-compatibility, decision records (ADRs)
 ```
 
-## Use In An Existing Repository
+See [`docs/architecture.md`](docs/architecture.md) for how the pieces fit and
+[`CHANGELOG.md`](CHANGELOG.md) for what changed.
 
-Add a short pointer to your project's agent instruction file (`AGENTS.md`,
-`CLAUDE.md`, `GEMINI.md`, or equivalent):
-
-```markdown
-## HTML Working Documents
-
-For long planning, research, review, report, diagram, prototype, and handoff
-work, follow the skill at `skills/html-working-documents/SKILL.md`.
-```
-
-See `docs/agent-compatibility.md` for the native instruction file format each
-agent expects.
-
-## Use As A Skill Library
-
-If you only want the skill itself, copy:
-
-```text
-skills/html-working-documents/
-```
-
-to one of these locations:
-
-- Repo-local: `.codex/skills/html-working-documents/`
-- User-wide: `$CODEX_HOME/skills/html-working-documents/`
-
-Repo-local installation is better when the workflow is part of a project convention. User-wide installation is better when you want the skill available everywhere.
-
-## MCP Server Stack
-
-`mcp-servers/` holds a self-hosted MCP server stack that reduces token usage on
-code-heavy tasks through semantic navigation, a queryable project graph, and
-persistent cross-session memory. It runs on your own hardware (Docker + uv +
-Node.js) and needs no OpenAI API key.
-
-| Server | Transport | Purpose |
-| --- | --- | --- |
-| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation — symbols, references, refactoring |
-| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv`) | Queryable project graph for code, docs, and relationships |
-| **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector |
-| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming |
-| [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation |
-
-Setup, configuration, and per-agent wiring (Claude Code, Antigravity, etc.)
-are documented in [mcp-servers/README.md](mcp-servers/README.md) and
-[mcp-servers/docs/INSTALL-GUIDE.md](mcp-servers/docs/INSTALL-GUIDE.md). To
-install the workflow instructions that teach an agent to use this stack in
-another repository, see `starters/mcp-servers/`.
-
-## Current Skills
+## Pillar 1 — Skills
 
 | Skill | Purpose |
-| --- | --- |
-| `html-working-documents` | Create self-contained HTML artifacts for planning, review, research, diagrams, reports, prototypes, and handoff. |
-| mcp-servers-setup | Configure and use the self-hosted MCP server stack for token-efficient coding. |
-| antigravity-remote-ui | Automated scripts and Docker configuration to set up a remote chat session for Antigravity AI, allowing you to seamlessly continue your work from your phone. |
+|---|---|
+| [`coding-principles`](skills/coding-principles/SKILL.md) | Engineering baseline: DRY, TDD, single responsibility, document-the-why, changelog/ADR backtracking, MCP-first navigation. |
+| [`structured-memory`](skills/structured-memory/SKILL.md) | Typed, cross-project, cross-agent memory on Omnigraph — recall at session start, persist durable decisions at end. |
+| [`mcp-servers-setup`](skills/mcp-servers-setup/SKILL.md) | Configure and use the self-hosted MCP stack for token-efficient coding. |
+| [`html-working-documents`](skills/html-working-documents/SKILL.md) | Self-contained HTML artifacts for planning, review, research, diagrams, reports, prototypes, and handoff. |
 
-## Adding More Skills
+Each skill is self-contained: required `SKILL.md`, optional `agents/openai.yaml`,
+`references/`, `scripts/`, `assets/`. Keep reusable detail in `references/` and
+`SKILL.md` focused on when to use the skill and how to run it.
 
-See `CONTRIBUTING.md` for conventions on adding skills and starter packs.
+## Pillar 2 — Starters
 
-Each skill should be self-contained and concise:
+Thin adapters to drop a skill into another repository. Add a short pointer to your
+project's agent instruction file (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, …):
 
-- Required: `SKILL.md`
-- Recommended: `agents/openai.yaml`
-- Optional: `references/`, `scripts/`, and `assets/`
+```markdown
+For any implementation, refactor, or bugfix, follow the skill at
+`skills/coding-principles/SKILL.md`.
+```
 
-Keep reusable detail in `references/` and keep `SKILL.md` focused on when to use the skill and how to execute the workflow.
+Available: [`starters/coding-principles`](starters/coding-principles/),
+[`starters/mcp-servers`](starters/mcp-servers/),
+[`starters/html-working-documents`](starters/html-working-documents/). Starters
+are pointers, never copies of the workflow — see
+[`docs/agent-compatibility.md`](docs/agent-compatibility.md) for the native
+instruction file each agent expects.
 
+## Pillar 3 — Infrastructure (`infra/`)
+
+A self-hosted stack that reduces token usage on code-heavy tasks and gives agents
+persistent, structured memory. Runs on your own hardware; no OpenAI key required.
+
+### MCP server stack (`infra/mcp-servers/`)
+
+| Server | Role |
+|---|---|
+| [Serena](https://github.com/oraios/serena) | LSP semantic code navigation |
+| [Graphify](https://github.com/safishamsi/graphify) | Auto-extracted code-structure graph |
+| **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | Structured cross-project memory (default) |
+| [Superpowers](https://github.com/erophames/superpowers-mcp) | Disciplined workflow skills |
+| [Playwright](https://github.com/microsoft/playwright-mcp) | Browser automation |
+| Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
+
+Quick start:
+
+```bash
+cd infra/mcp-servers
+cp .env.example .env          # set MinIO creds, OMNIGRAPH_TOKEN, S3_BUCKET
+docker compose up -d          # default: Omnigraph + MinIO
+```
+
+Memory is **Omnigraph** by default: agents write typed `Decision / Rule /
+Preference / Convention / Component / Task` nodes (see the `structured-memory`
+skill) rather than Mem0's unstructured blobs. Mem0 is retained as a documented
+fallback — rationale in
+[`docs/decisions/0001-omnigraph-over-mem0.md`](docs/decisions/0001-omnigraph-over-mem0.md).
+Full setup and per-agent wiring:
+[`infra/mcp-servers/README.md`](infra/mcp-servers/README.md).
+
+### Remote access & multi-agent (`infra/remote-access/`)
+
+- **[Herdr](infra/remote-access/herdr/)** — recommended agent multiplexer: run and
+  persist multiple agents, reattach over SSH or phone, agent-to-agent socket API
+  (Linux/macOS/Windows). Supersedes raw tmux
+  ([ADR 0002](docs/decisions/0002-herdr-multiplexer.md)).
+- **[antigravity-remote-ui](infra/remote-access/antigravity-remote-ui/)** — stream
+  the Antigravity IDE chat to a phone browser (a distinct GUI use case).
+
+See [`infra/remote-access/README.md`](infra/remote-access/README.md) for when to
+use which.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for conventions on adding skills and
+starters. Decisions are recorded as ADRs under
+[`docs/decisions/`](docs/decisions/); notable changes go in `CHANGELOG.md`.

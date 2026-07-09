@@ -1,0 +1,76 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "serena-agent",
+        "serena",
+        "start-mcp-server",
+        "--open-web-dashboard",
+        "false",
+        "--enable-gui-log-window",
+        "false"
+      ],
+      "excludeTools": [
+        "onboarding",
+        "open_dashboard",
+        "initial_instructions",
+        "write_memory",
+        "read_memory",
+        "list_memories",
+        "delete_memory",
+        "rename_memory",
+        "edit_memory"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+    "omnigraph": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modernrelay/omnigraph-mcp"
+      ],
+      "env": {
+        "OMNIGRAPH_URL": "http://localhost:8080",
+        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
+      }
+    },
+    "superpowers": {
+      "command": "node",
+      "args": [
+        "${AGENT_SKILLS_DIR}/infra/mcp-servers/servers/superpowers/build/index.js"
+      ]
+    },
+    "graphify": {
+      "command": "uv",
+      "args": [
+        "--quiet",
+        "run",
+        "--with",
+        "graphifyy[mcp]",
+        "python",
+        "-m",
+        "graphify.serve",
+        "graphify-out/graph.json"
+      ]
+    },
+    "graphify-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "${AGENT_SKILLS_DIR}:/repo",
+        "graphify-mcp:latest"
+      ]
+    }
+  }
+}

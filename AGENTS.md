@@ -1,17 +1,31 @@
 # Agent Instructions
 
-This repository stores reusable skills and starter packs for AI coding agents.
+This repository stores reusable AI-agent skills, per-repo starter adapters, and a
+self-hosted MCP runtime. Keep starters and this file as **thin pointers** — a
+skill's `SKILL.md` is the single source of truth; never copy its workflow here.
 
-When updating a starter pack, keep the tool-specific entrypoints aligned with the full skill under `skills/`.
+## Skills (source of truth in `skills/`)
 
-## Compatibility Goal
+- **Coding discipline** — for any implementation, refactor, or bugfix, follow
+  `skills/coding-principles/SKILL.md` (DRY, TDD, single responsibility,
+  document-the-why, changelog/ADR backtracking, MCP-first navigation).
+- **Memory** — at session start and end, follow
+  `skills/structured-memory/SKILL.md` to recall and persist typed, cross-project
+  memory in Omnigraph.
+- **HTML working documents** — for long planning, research, review, report,
+  diagram, prototype, and handoff work, follow
+  `skills/html-working-documents/SKILL.md`.
+- **MCP stack usage** — `skills/mcp-servers-setup/SKILL.md`.
 
-Prefer broad, plug-and-play compatibility over a single-vendor setup. If a workflow should work in multiple agents, provide the native instruction file each agent expects and keep each adapter short.
+## Compatibility goal
 
-## HTML Working Documents
+Prefer broad, plug-and-play compatibility over a single-vendor setup. Provide the
+native instruction file each agent expects and keep each adapter short. See
+`docs/agent-compatibility.md`.
 
-For long planning, research, review, report, diagram, prototype, and handoff work in this repository, follow the skill at `skills/html-working-documents/SKILL.md`.
+## Infrastructure
 
-## MCP Server Stack
-
-This repository includes a self-hosted MCP server stack under `mcp-servers/`. See `mcp-servers/README.md` for setup and `starters/mcp-servers/` for per-repository installation.
+Self-hosted MCP runtime lives under `infra/` — `infra/mcp-servers/` (Serena,
+Graphify, Omnigraph memory, Superpowers, Playwright; Mem0 as fallback) and
+`infra/remote-access/` (Herdr multiplexer + Antigravity remote UI). See
+`docs/architecture.md`.

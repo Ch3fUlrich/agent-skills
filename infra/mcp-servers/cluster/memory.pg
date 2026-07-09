@@ -1,0 +1,69 @@
+// Structured-memory schema for the `memory` graph.
+// Typed nodes + edges (see skills/structured-memory/references/schema.md).
+// Vector(768) matches bge-m3 so switching the mock embedder to a real Ollama
+// openai-compatible provider later is drop-in. With the mock provider, stored
+// vectors are empty and search relies on graph traversal + scalar indexes.
+
+node Project {
+  slug: String
+  name: String?
+  path: String?
+  summary: String?
+  @key(slug)
+}
+
+node Decision {
+  slug: String
+  title: String
+  rationale: String?
+  status: enum(proposed, accepted, superseded, deprecated)
+  date: String?
+  embedding: Vector(768)? @embed("rationale")
+  @key(slug)
+  @index(status)
+}
+
+node Rule {
+  slug: String
+  statement: String
+  severity: enum(must, should)
+  @key(slug)
+  @index(severity)
+}
+
+node Preference {
+  slug: String
+  statement: String
+  scope: String
+  @key(slug)
+  @index(scope)
+}
+
+node Convention {
+  slug: String
+  name: String
+  example: String?
+  @key(slug)
+}
+
+node Component {
+  slug: String
+  name: String
+  kind: String?
+  location: String?
+  @key(slug)
+}
+
+node Task {
+  slug: String
+  title: String
+  state: String
+  @key(slug)
+}
+
+edge DecidedIn: Decision -> Project
+edge ConstrainsProject: Rule -> Project
+edge ConstrainsComponent: Rule -> Component
+edge AppliesTo: Convention -> Project
+edge PartOf: Component -> Project
+edge Supersedes: Decision -> Decision

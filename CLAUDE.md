@@ -1,17 +1,24 @@
 # Claude Code Instructions
 
-This repository stores reusable skills and starter packs for AI coding agents.
+This repository stores reusable skills, per-repo starter adapters, and a
+self-hosted MCP runtime. See [AGENTS.md](AGENTS.md) for the shared, agent-neutral
+instructions — this file adds only Claude-specific notes.
 
-When updating a starter pack, keep the tool-specific entrypoints aligned with the shared guidance in `skills/` and with the full skill under `skills/<skill-name>/SKILL.md`.
+Keep starters and root instruction files as **thin pointers**; a skill's
+`SKILL.md` is the single source of truth (see
+`skills/coding-principles/SKILL.md`, Principle 1).
 
-## Compatibility Goal
+## Skills to apply
 
-Prefer broad, plug-and-play compatibility over a single-vendor setup. If a workflow should work in multiple agents, provide the native instruction file each agent expects and keep each adapter short.
+- Coding discipline: `skills/coding-principles/SKILL.md`
+- Memory (recall at start, persist at end): `skills/structured-memory/SKILL.md`
+- HTML working documents: `skills/html-working-documents/SKILL.md`
+- MCP stack usage: `skills/mcp-servers-setup/SKILL.md`
 
-## HTML Working Documents
+## Claude-specific notes
 
-For long planning, research, review, report, diagram, prototype, and handoff work in this repository, follow the skill at `skills/html-working-documents/SKILL.md`.
-
-## MCP Server Stack
-
-This repository includes a self-hosted MCP server stack under `mcp-servers/`. See `mcp-servers/README.md` for setup and `starters/mcp-servers/` for per-repository installation.
+- MCP config for Claude Code: `infra/mcp-servers/config/mcp-claude-code.json`
+  (Serena, Playwright, Omnigraph, Superpowers, Graphify). Restart to load MCP
+  servers — they only initialize at session start.
+- When updating a starter pack, keep the tool-specific entrypoints aligned with
+  the shared guidance in `skills/` and with the full `SKILL.md`.

@@ -1,0 +1,295 @@
+# Self-Hosted MCP Memory Stack — Docker Compose
+#
+# DEFAULT stack (structured cross-project memory):
+#   1. omnigraph-server — lakehouse-native graph engine (Axum HTTP on :8080)
+#   2. minio            — S3-compatible object store backing Omnigraph
+#   3. minio-init       — one-shot: creates the Omnigraph bucket
+#
+# FALLBACK stack (Mem0, off by default — profile "mem0-fallback"):
+#   postgres + mem0 API + mem0-mcp bridge + mem0-dashboard
+#   See docs/decisions/0001-omnigraph-over-mem0.md for why Omnigraph is default.
+#
+# Usage:
+#   docker compose up -d                          # Omnigraph + MinIO (default)
+#   docker compose --profile mem0-fallback up -d  # also start the Mem0 fallback
+#   docker compose down                           # stop, preserve data
+#   docker compose down -v                        # stop, destroy all data
+#
+# Omnigraph API:  http://localhost:8080/healthz
+# MinIO console:  http://localhost:9001
+# (Mem0 fallback) API http://localhost:8888/docs · dashboard :3000 · MCP SSE :8001
+
+name: mcp-memory-stack
+
+services:
+  # ─── MinIO — S3-compatible object store (Omnigraph storage backend) ────────
+  minio:
+    image: minio/minio:latest
+    container_name: omnigraph-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - ./data/minio:/data
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # web console
+    networks:
+      - mcp-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── one-shot: create the Omnigraph bucket, then exit ─────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: omnigraph-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      echo 'bucket $${S3_BUCKET} ready'
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:-omnigraph}
+    networks:
+      - mcp-net
+    restart: "no"
+
+  # ─── one-shot: converge the cluster into the S3 storage root, then exit ────
+  #   Writes the state ledger the server boots from. Declared config lives in
+  #   ./cluster (git); state lives in MinIO (the Terraform split).
+  omnigraph-init:
+    image: modernrelay/omnigraph-server:v0.8.1
+    container_name: omnigraph-init
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c", "omnigraph cluster import --config /cluster --yes 2>/dev/null || true; omnigraph cluster apply --config /cluster --yes --as default"]
+    environment:
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL_S3=http://minio:9000
+      - AWS_ALLOW_HTTP=true
+      - AWS_S3_FORCE_PATH_STYLE=true
+    volumes:
+      - ./cluster:/cluster:ro
+    networks:
+      - mcp-net
+    restart: "no"
+
+  # ─── Omnigraph server — graph + vector + full-text memory engine ──────────
+  omnigraph-server:
+    image: modernrelay/omnigraph-server:v0.8.1
+    container_name: omnigraph-server
+    restart: unless-stopped
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      omnigraph-init:
+        condition: service_completed_successfully
+    environment:
+      - OMNIGRAPH_BIND=0.0.0.0:8080
+      # Cluster boot source: the S3 storage-root URI on MinIO.
+      - OMNIGRAPH_CLUSTER=s3://${S3_BUCKET:-omnigraph}/cluster
+      # Single bearer token for the implicit `default` actor.
+      - OMNIGRAPH_SERVER_BEARER_TOKEN=${OMNIGRAPH_TOKEN:?Set OMNIGRAPH_TOKEN in .env}
+      # S3 (MinIO) contract — see Omnigraph docs/user/deployment.md
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL_S3=http://minio:9000
+      - AWS_ALLOW_HTTP=true
+      - AWS_S3_FORCE_PATH_STYLE=true
+      # Embedding provider (Ollama on cloud.vm) — dummy key; Ollama ignores it.
+      - OLLAMA_DUMMY_KEY=${OLLAMA_DUMMY_KEY:-ollama}
+    extra_hosts:
+      # Resolve the LAN Ollama host from inside the container.
+      - "cloud.vm:${OLLAMA_HOST_IP:-192.168.178.159}"
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - mcp-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ─── Omnigraph memory viewer (read-only web UI) ───────────────────────────
+  #   Holds the bearer server-side; put Authelia in front when exposed.
+  #   Local: http://127.0.0.1:8090 . Deployed instance: see
+  #   Server/server/coding/mcp-servers/docker-compose.yml (coding.vm).
+  omnigraph-viewer:
+    build:
+      context: ./servers/omnigraph-viewer
+    container_name: omnigraph-viewer
+    restart: unless-stopped
+    depends_on:
+      omnigraph-server:
+        condition: service_healthy
+    environment:
+      - OMNIGRAPH_URL=http://omnigraph-server:8080
+      - OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN:?Set OMNIGRAPH_TOKEN in .env}
+      - OMNIGRAPH_GRAPH=memory
+    ports:
+      - "127.0.0.1:8090:8090"
+    networks:
+      - mcp-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  FALLBACK: Mem0 stack — only starts with `--profile mem0-fallback`
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: mem0-postgres
+    profiles: ["mem0-fallback"]
+    restart: unless-stopped
+    shm_size: "128mb"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -d postgres -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    networks:
+      - mcp-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  mem0:
+    build:
+      context: ./servers/_fallback/mem0-custom
+    container_name: mem0-api
+    profiles: ["mem0-fallback"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=postgres
+      - MEM0_TELEMETRY=${MEM0_TELEMETRY:-false}
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      - OPENAI_API_KEY=${DEEPSEEK_API_KEY}
+      - OPENAI_BASE_URL=${DEEPSEEK_API_BASE:-https://api.deepseek.com/v1}
+      - LLM_MODEL=${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      - EMBEDDER_PROVIDER=ollama
+      - EMBEDDER_MODEL=${OLLAMA_EMBED_MODEL:-bge-m3}
+      - OLLAMA_BASE_URL=${OLLAMA_EMBED_URL:-http://host.docker.internal:11434}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8888:8000"
+    volumes:
+      - ./data/mem0-history:/app/history
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mcp-net
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  mem0-mcp:
+    build:
+      context: ./servers/_fallback/mem0-mcp
+    container_name: mem0-mcp
+    profiles: ["mem0-fallback"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - MEM0_API_URL=http://mem0:8000
+      - MEM0_USER_ID=${MEM0_USER_ID:-your-username}
+      - PORT=8001
+    depends_on:
+      mem0:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - mcp-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(3); s.connect(('localhost',8001)); s.close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  mem0-dashboard:
+    build:
+      context: ./servers/_fallback/mem0-dashboard
+    container_name: mem0-dashboard
+    profiles: ["mem0-fallback"]
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8888
+      - API_INTERNAL_URL=http://mem0:8000
+      - NEXT_PUBLIC_INSTANCE_NAME=Mem0
+    depends_on:
+      mem0:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - mcp-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+networks:
+  mcp-net:
+    driver: bridge
