@@ -119,6 +119,11 @@ services:
       - AWS_ENDPOINT_URL_S3=http://minio:9000
       - AWS_ALLOW_HTTP=true
       - AWS_S3_FORCE_PATH_STYLE=true
+      # Embedding provider (Ollama on cloud.vm) — dummy key; Ollama ignores it.
+      - OLLAMA_DUMMY_KEY=${OLLAMA_DUMMY_KEY:-ollama}
+    extra_hosts:
+      # Resolve the LAN Ollama host from inside the container.
+      - "cloud.vm:${OLLAMA_HOST_IP:-192.168.178.159}"
     ports:
       - "127.0.0.1:8080:8080"
     networks:
