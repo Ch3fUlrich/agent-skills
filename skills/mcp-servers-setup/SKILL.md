@@ -113,14 +113,14 @@ mcp_superpowers_recommend_skills(task="debug a timeout issue")
 
 ```bash
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
-docker compose up -d          # Omnigraph + MinIO (default memory stack)
+docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d
 ./scripts/linux/start.sh      # or scripts/windows/start.ps1 on Windows
 ./scripts/linux/test.sh       # verify all services
 ```
 
 ## Recommended Workflow
 
-1. Start services: `docker compose up -d` (Omnigraph + MinIO) and the platform `start` script
+1. Start the server: `docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d`
 2. Activate Serena project: `mcp_serena_activate_project(project="repo-name")`
 3. Recall memory from Omnigraph (see `skills/structured-memory/SKILL.md`)
 4. Build or refresh Graphify graphs when the repo has a graph target

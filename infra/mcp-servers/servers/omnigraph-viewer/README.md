@@ -45,9 +45,9 @@ Preferences, Conventions, Components) via the server's stored-query routes.
 
 It is defined as the `omnigraph-viewer` service in the deployment compose
 (`Server/server/coding/mcp-servers/docker-compose.yml`) and, for local testing,
-in `agent-skills/infra/mcp-servers/docker-compose.yml`. Behind Caddy it is
+in the client/server composes (`docker-compose.server.yml`). Behind Caddy it is
 served at `omnigraph-ui.ohje.ooguy.com` (Authelia-gated).
 
 ```bash
-docker compose up -d omnigraph-viewer   # then browse http://127.0.0.1:8090
+docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d omnigraph-viewer  # browse http://127.0.0.1:8090
 ```

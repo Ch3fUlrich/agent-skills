@@ -15,13 +15,16 @@ compose stack and the agent configs.
 
 ## Run the server (via the stack)
 
-The `omnigraph-server` + `minio` + `minio-init` services are defined in
-[`../../docker-compose.yml`](../../docker-compose.yml) and start by default:
+The `omnigraph-server` + `minio` + `minio-init` + `omnigraph-init` services are
+defined in the **server** compose
+[`../../docker-compose.server.yml`](../../docker-compose.server.yml):
 
 ```bash
 cd infra/mcp-servers
-cp .env.example .env    # set MINIO_ROOT_USER/PASSWORD, OMNIGRAPH_TOKEN, S3_BUCKET
-docker compose up -d    # omnigraph-server (:8080) + minio (:9000/:9001)
+cp .env.shared.example .env.shared    # OMNIGRAPH_TOKEN + S3_BUCKET
+cp .env.server.example .env.server    # MINIO_ROOT_USER/PASSWORD, embeddings
+docker compose --env-file .env.shared --env-file .env.server \
+  -f docker-compose.server.yml up -d  # omnigraph-server :8080 + minio :9000/:9001 + viewer :8090
 ```
 
 Verify:

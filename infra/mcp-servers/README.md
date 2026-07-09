@@ -14,19 +14,35 @@ protocol see [`../../skills/structured-memory/SKILL.md`](../../skills/structured
 
 ## Quick Start
 
+There are **two composes** with **connected env files**: a `server` (the always-on
+memory backend) and a `client` (a developer machine's MCP tools). `.env.shared`
+carries the values that link them (`OMNIGRAPH_TOKEN`, `S3_BUCKET`).
+
 ```bash
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
-cp .env.example .env          # set MINIO creds, OMNIGRAPH_TOKEN, S3_BUCKET
-docker compose up -d          # DEFAULT: Omnigraph + MinIO memory stack
-# one-time indexing:
+cp .env.shared.example .env.shared    # OMNIGRAPH_TOKEN + S3_BUCKET (both roles)
+cp .env.server.example .env.server    # MinIO creds, embeddings, mem0-fallback
+cp .env.client.example .env.client    # CODE_ROOT, OMNIGRAPH_URL
+
+# SERVER — omnigraph-server + minio + minio-init + omnigraph-init + viewer
+docker compose --env-file .env.shared --env-file .env.server \
+  -f docker-compose.server.yml up -d
+#   Mem0 fallback:  … -f docker-compose.server.yml --profile mem0-fallback up -d
+
+# CLIENT — serena (SSE code-nav). Build the stdio graphify image:
+docker compose --env-file .env.shared --env-file .env.client \
+  -f docker-compose.client.yml up -d
+docker compose --env-file .env.shared --env-file .env.client \
+  -f docker-compose.client.yml --profile build build graphify
+#   Offline (local memory the sync timer reconciles):  … --profile offline up -d
+
+# one-time indexing + register MCP servers into your agent's config (config/*.json):
 ./scripts/linux/init-serena-projects.sh     # (or scripts/windows/*.ps1)
 ./scripts/linux/init-graphify-projects.sh
-# register MCP servers into your agent's config (config/*.json), then restart it.
 ```
 
-To start the **Mem0 fallback** instead/as-well:
-`docker compose --profile mem0-fallback up -d`. See
-[`servers/omnigraph/README.md`](servers/omnigraph/README.md) and
+See [`servers/omnigraph/README.md`](servers/omnigraph/README.md),
+[`setup/`](setup/) (client/server + offline sync) and
 [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md).
 
 ## Active Servers
