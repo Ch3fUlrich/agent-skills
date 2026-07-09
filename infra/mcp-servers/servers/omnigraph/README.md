@@ -36,12 +36,36 @@ Key facts (from Omnigraph `docs/user/deployment.md`, v0.8.1):
 
 | Setting | Value |
 |---|---|
-| Image | `ghcr.io/modernrelay/omnigraph-server:v0.8.1` |
+| Image | `modernrelay/omnigraph-server:v0.8.1` (Docker Hub; the GHCR mirror is not public) |
 | Bind | `OMNIGRAPH_BIND` (default `0.0.0.0:8080`) |
 | Cluster source | `OMNIGRAPH_CLUSTER` — here `s3://$S3_BUCKET/cluster` |
 | Auth | `OMNIGRAPH_SERVER_BEARER_TOKEN` (implicit `default` actor) |
 | Storage | `AWS_*` contract → MinIO (`AWS_ENDPOINT_URL_S3=http://minio:9000`, `AWS_ALLOW_HTTP=true`, `AWS_S3_FORCE_PATH_STYLE=true`) |
 | Health | `GET /healthz` (unauthenticated) |
+
+## Cluster bootstrap & policy (important)
+
+Omnigraph is **cluster-only boot**: the server serves a storage root only after a
+cluster has been converged into it. The declared config lives in git at
+[`../../cluster/`](../../cluster/) (`cluster.yaml` + `memory.pg`); the state
+ledger lives in MinIO (the Terraform split). The compose stack does this
+automatically via the `omnigraph-init` one-shot:
+
+```bash
+omnigraph cluster import --config /cluster --yes   # bootstrap state.json
+omnigraph cluster apply  --config /cluster --yes   # create graphs + schema, write ledger
+# then omnigraph-server --cluster s3://omnigraph/cluster serves it
+```
+
+`/healthz` is open; **all server-scoped/management and data-plane actions are
+closed by default (HTTP 403) until an explicit policy bundle is applied** —
+"the management surface is never exposed without operator opt-in". Applying that
+policy bundle (granting the `default` actor access to the `memory` graph) and
+expanding `memory.pg` to the full structured-memory schema is the next step; see
+`skills/structured-memory/references/schema.md`. Until then the graph exists and
+is reachable by direct store access
+(`--store s3://omnigraph/cluster/graphs/memory.omni`) but not through the server
+API.
 
 ## Register the MCP bridge
 

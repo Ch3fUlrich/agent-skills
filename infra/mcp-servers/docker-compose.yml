@@ -69,15 +69,42 @@ services:
       - mcp-net
     restart: "no"
 
+  # ─── one-shot: converge the cluster into the S3 storage root, then exit ────
+  #   Writes the state ledger the server boots from. Declared config lives in
+  #   ./cluster (git); state lives in MinIO (the Terraform split).
+  omnigraph-init:
+    image: modernrelay/omnigraph-server:v0.8.1
+    container_name: omnigraph-init
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c", "omnigraph cluster import --config /cluster --yes && omnigraph cluster apply --config /cluster --yes"]
+    environment:
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ENDPOINT_URL_S3=http://minio:9000
+      - AWS_ALLOW_HTTP=true
+      - AWS_S3_FORCE_PATH_STYLE=true
+    volumes:
+      - ./cluster:/cluster:ro
+    networks:
+      - mcp-net
+    restart: "no"
+
   # ─── Omnigraph server — graph + vector + full-text memory engine ──────────
   omnigraph-server:
-    image: ghcr.io/modernrelay/omnigraph-server:v0.8.1
+    image: modernrelay/omnigraph-server:v0.8.1
     container_name: omnigraph-server
     restart: unless-stopped
     depends_on:
       minio:
         condition: service_healthy
       minio-init:
+        condition: service_completed_successfully
+      omnigraph-init:
         condition: service_completed_successfully
     environment:
       - OMNIGRAPH_BIND=0.0.0.0:8080

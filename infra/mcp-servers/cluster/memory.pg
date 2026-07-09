@@ -1,0 +1,5 @@
+node Project {
+  slug: String
+  name: String?
+  summary: String?
+}
