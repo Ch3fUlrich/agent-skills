@@ -6,10 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Exposed the stack to the internet** via the OPNsense/Caddy reverse proxy:
+  `omnigraph.ohje.ooguy.com` (API, bearer only), `omnigraph-ui.ohje.ooguy.com`
+  (viewer) and `omnigraph-minio.ohje.ooguy.com` (MinIO console), the latter two
+  behind Authelia (admin-only).
+- Interactive **memory viewer**: project tabs (All/Global/per-project), a
+  force-directed graph (clickable while animating, zoom/pan, edge details), a
+  filterable/sortable table, and search highlighting with match explanations.
 - Deployed the Omnigraph memory stack on coding.vm via the single-source
   `Server/server/coding/mcp-servers/docker-compose.yml` (server + MinIO + viewer),
   seeded, with real Ollama `nomic-embed-text` embeddings and working semantic
-  search. Read-only branch-aware memory **viewer** and `search_decisions` query.
+  search. `search_decisions` stored query.
+- Credential-**access** memory (methods + file locations, never secret values)
+  stored in the `homelab-server` graph, plus a hard rule against storing secrets
+  in the internet-exposed graph.
 - `infra/mcp-servers/setup/`: client/server setup guide, `client-setup.sh`,
   and `omnigraph-sync.sh` (+ systemd timer) for automatic device-branch sync.
 - `coding-principles` skill + starter: DRY, TDD, single responsibility,
