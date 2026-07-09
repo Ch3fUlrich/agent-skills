@@ -422,7 +422,7 @@ Serena, run onboarding, build a Graphify graph, and use semantic code navigation
 
 ## Google Antigravity Setup
 
-For Google Antigravity, configuration is loaded from the global `mcp_config.json` file. A complete, optimized template is provided at [mcp-servers/config/mcp_antigravity.json](file:///c:/Users/your-username/Documents/Code/agent-skills/infra/mcp-servers/config/mcp_antigravity.json).
+For Google Antigravity, configuration is loaded from the global `mcp_config.json` file. A complete, optimized template is provided at [`config/mcp_antigravity.json`](config/mcp_antigravity.json).
 
 ### 1. Configuration Location
 On Windows, Antigravity reads its config from:
