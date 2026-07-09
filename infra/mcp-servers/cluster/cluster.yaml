@@ -1,10 +1,7 @@
 # Omnigraph cluster — declared as code (versioned in git; state lives in S3/MinIO).
 # `omnigraph cluster apply --config .` converges this into the storage root below,
 # writing the state ledger the server boots from (`omnigraph-server --cluster <root>`).
-#
-# This is the MINIMAL bootable cluster. The full structured-memory schema
-# (Decision/Rule/Preference/… + edges + vector columns) is applied on top in a
-# later step — see skills/structured-memory/references/schema.md.
+# See skills/structured-memory/references/schema.md for the memory model.
 version: 1
 metadata:
   name: mcp-memory
@@ -17,6 +14,27 @@ state:
   backend: cluster
   lock: true
 
+# Query-time embedding provider. `mock` is deterministic and needs no external
+# service (no real semantic search yet). To enable real vector search, switch to
+# a local Ollama openai-compatible endpoint:
+#   kind: openai-compatible
+#   base_url: http://host.docker.internal:11434/v1
+#   model: bge-m3
+#   api_key: ${OLLAMA_DUMMY_KEY}
+providers:
+  embedding:
+    default:
+      kind: mock
+
 graphs:
   memory:
     schema: memory.pg
+    embedding_provider: default
+
+policies:
+  cluster-admin:
+    file: cluster.policy.yaml
+    applies_to: [cluster]
+  memory-access:
+    file: memory.policy.yaml
+    applies_to: [memory]
