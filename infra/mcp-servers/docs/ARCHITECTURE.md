@@ -1,12 +1,17 @@
 # MCP Server Stack — Architecture
 
+> **Note:** This is a detailed/legacy reference. The authoritative current
+> overview is [`../../../docs/architecture.md`](../../../docs/architecture.md);
+> the default memory layer is **Omnigraph** (Mem0 is a fallback).
+
+
 ## Overview
 
-Three self-hosted MCP servers give CodeWhale (and Claude Code) semantic code
+Three self-hosted MCP servers give your coding agent (and Claude Code) semantic code
 understanding, persistent memory, and disciplined coding workflows.
 
 ```
-                      CodeWhale TUI (DeepSeek V4)
+                      your coding agent TUI (DeepSeek V4)
                       or Claude Code CLI
                               │
               ┌───────────────┼───────────────────┐
@@ -106,7 +111,7 @@ postgres (pgvector, :5432)   ← Vector embeddings + metadata
 6. Returns ranked memories with similarity scores
 
 **Why SSE instead of stdio**: The previous stdio-based mem0 MCP server hit
-CodeWhale's hardcoded 120-second MCP timeout. SSE transport runs as a
+your coding agent's hardcoded 120-second MCP timeout. SSE transport runs as a
 persistent HTTP service inside Docker — no stdio timeout applies. The
 bridge waits as long as the mem0 API takes to respond.
 
@@ -171,29 +176,29 @@ mcp-servers/
 ```
 User: "Add error handling to the batch processing pipeline"
 
-1. CodeWhale → Serena: find_symbol("batch_process")
-   Serena → CodeWhale: { file: "src/pipeline.py", line: 42 }
+1. your coding agent → Serena: find_symbol("batch_process")
+   Serena → your coding agent: { file: "src/pipeline.py", line: 42 }
 
-2. CodeWhale → Serena: get_code_context("batch_process", context_lines=20)
-   Serena → CodeWhale: [20 lines around line 42]
+2. your coding agent → Serena: get_code_context("batch_process", context_lines=20)
+   Serena → your coding agent: [20 lines around line 42]
 
-3. CodeWhale → Mem0: search_memories("error handling patterns for batch processing")
-   Mem0 → CodeWhale: "User prefers try/except with specific exception types"
+3. your coding agent → Mem0: search_memories("error handling patterns for batch processing")
+   Mem0 → your coding agent: "User prefers try/except with specific exception types"
 
-4. CodeWhale → Superpowers: use_skill("tdd")
-   Superpowers → CodeWhale: [TDD workflow]
+4. your coding agent → Superpowers: use_skill("tdd")
+   Superpowers → your coding agent: [TDD workflow]
 
 5. Agent edits code, runs tests, records decision:
-   CodeWhale → Mem0: add_memory("Batch processing now uses custom BatchError")
+   your coding agent → Mem0: add_memory("Batch processing now uses custom BatchError")
 
 6. Next session, another agent asks:
-   CodeWhale → Mem0: search_memories("batch processing")
-   Mem0 → CodeWhale: "Batch processing uses custom BatchError (added 2026-06-18)"
+   your coding agent → Mem0: search_memories("batch processing")
+   Mem0 → your coding agent: "Batch processing uses custom BatchError (added 2026-06-18)"
 ```
 
 ## Configuration Files
 
-### `~/.codewhale/mcp.json` (CodeWhale)
+### `~/.codewhale/mcp.json` (your coding agent)
 Loaded on startup. Defines three MCP servers: Serena (stdio), Mem0 (SSE),
 Superpowers (stdio). Tools exposed as `mcp_serena_*`, `mcp_mem0_*`, `mcp_superpowers_*`.
 

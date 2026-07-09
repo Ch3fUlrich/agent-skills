@@ -1,5 +1,10 @@
 ## Serena Project Management
 
+> **Note:** This is a detailed/legacy reference. The authoritative current
+> overview is [`../../../docs/architecture.md`](../../../docs/architecture.md);
+> the default memory layer is **Omnigraph** (Mem0 is a fallback).
+
+
 ### Where Indices Are Stored
 
 Serena stores data in two places:
@@ -32,7 +37,7 @@ depending on repo size.
 
 ### How the Agent Uses Serena
 
-Once a project is indexed, any CodeWhale session can use it. This assumes
+Once a project is indexed, any your coding agent session can use it. This assumes
 Serena is running in multi-project mode (the current default -- see
 `docs/ARCHITECTURE.md#serena-mcp-server`); if it's set up with
 `--project-from-cwd` instead, `activate_project` isn't exposed and the

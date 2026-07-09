@@ -1,5 +1,10 @@
 # Troubleshooting
 
+> **Note:** This is a detailed/legacy reference. The authoritative current
+> overview is [`../../../docs/architecture.md`](../../../docs/architecture.md);
+> the default memory layer is **Omnigraph** (Mem0 is a fallback).
+
+
 ## Common Issues
 
 ### Docker services won't start
@@ -57,7 +62,7 @@ uv tool dir  # Shows where tools are installed
 
 ### Serena times out on first launch
 
-**Symptom**: CodeWhale shows "MCP server serena connection timeout".
+**Symptom**: your coding agent shows "MCP server serena connection timeout".
 
 Serena needs to download language servers on first use. Give it more time:
 
@@ -148,9 +153,9 @@ curl http://localhost:11434/api/tags | ConvertFrom-Json | Select-Object -ExpandP
 docker exec -it mcp-ollama ollama pull bge-m3
 ```
 
-### CodeWhale doesn't show MCP tools
+### your coding agent doesn't show MCP tools
 
-**Symptom**: After starting CodeWhale, MCP tools don't appear.
+**Symptom**: After starting your coding agent, MCP tools don't appear.
 
 ```powershell
 # Check MCP config location
@@ -234,7 +239,7 @@ Run these when something seems wrong:
 docker compose ps
 docker compose logs --tail=50
 
-# CodeWhale MCP status
+# your coding agent MCP status
 codewhale-tui doctor
 codewhale-tui mcp validate
 codewhale-tui mcp list
@@ -266,7 +271,7 @@ Remove-Item -Recurse -Force .\data
 uv tool uninstall serena-agent
 uv tool uninstall superpowers-mcp
 
-# Remove CodeWhale MCP config
+# Remove your coding agent MCP config
 Remove-Item $env:USERPROFILE\.codewhale\mcp.json
 
 # Re-run setup

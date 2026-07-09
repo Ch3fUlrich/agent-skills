@@ -1,43 +1,44 @@
 # MCP Server Stack — Self-Hosted
 
-A combined MCP server stack for CodeWhale that reduces token usage by
-40–60% on code-heavy tasks through semantic navigation, disciplined
-coding workflows, and persistent cross-session memory.
+A combined MCP server stack for your coding agent (CodeWhale, Claude Code,
+Antigravity, …) that reduces token usage by 40–60% on code-heavy tasks through
+semantic navigation, disciplined coding workflows, and **structured cross-project
+memory**.
 
-Runs on your own hardware with Docker + uv + Node.js. Mem0 uses
-**DeepSeek V4** for fact extraction and **Ollama with bge-m3** for
-embeddings — no OpenAI API key required.
+Runs on your own hardware with Docker + uv + Node.js. The default memory layer is
+**Omnigraph** (typed graph + vector + full-text) backed by MinIO — no OpenAI key
+required. **Mem0** is retained as an off-by-default fallback (it uses DeepSeek for
+fact extraction + Ollama `bge-m3` for embeddings). For the authoritative overview
+see [`../../docs/architecture.md`](../../docs/architecture.md); for the memory
+protocol see [`../../skills/structured-memory/SKILL.md`](../../skills/structured-memory/SKILL.md).
 
 ## Quick Start
 
-```powershell
+```bash
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
-# 1. Edit .env — set DEEPSEEK_API_KEY + POSTGRES_PASSWORD
-# 2. Run setup
-.\scripts\windows\setup.ps1
-.\scripts\windows\init-serena-projects.ps1   # Pre-index all repos (one-time)
-.\scripts\windows\init-graphify-projects.ps1  # Build repo graphs (one-time)
-# 3. Register servers into Claude Code's own config (per server, deliberately —
-#    see "Graphify + local Ollama - known gotchas" below for why this isn't automatic)
-.\scripts\windows\register-claude-code-mcp.ps1 -Server graphify
-# 4. Restart CodeWhale / Claude Code — MCP servers only load at session start
+cp .env.example .env          # set MINIO creds, OMNIGRAPH_TOKEN, S3_BUCKET
+docker compose up -d          # DEFAULT: Omnigraph + MinIO memory stack
+# one-time indexing:
+./scripts/linux/init-serena-projects.sh     # (or scripts/windows/*.ps1)
+./scripts/linux/init-graphify-projects.sh
+# register MCP servers into your agent's config (config/*.json), then restart it.
 ```
 
-Then run `.\scripts\windows\start.ps1` each session or after reboot to start the
-Mem0 Docker stack.
+To start the **Mem0 fallback** instead/as-well:
+`docker compose --profile mem0-fallback up -d`. See
+[`servers/omnigraph/README.md`](servers/omnigraph/README.md) and
+[docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md).
 
-See [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md) for manual step-by-step setup.
+## Active Servers
 
-## Active Servers (5 of 6)
-
-| MCP Server | Transport | Purpose | Token Savings | Status |
-|-----------|-----------|---------|:---:|:------:|
-| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation | ~40–60% | Working |
-| [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation — navigate, click, type, screenshots | Browser | Working |
-| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv` or Docker) | Queryable project graph for code, docs, and relationships | Graph reasoning | Working |
-| **Mem0** (official) | SSE (`docker`) | Persistent cross-session memory — REST API + pgvector + MCP bridge | Context reuse | Working |
-| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning, brainstorming | Quality | Working |
-| ~~Filesystem~~ | ~~stdio~~ | ~~file I/O~~ | ~~~5%~~ | Disabled — redundant with CodeWhale built-ins |
+| MCP Server | Transport | Purpose | Status |
+|-----------|-----------|---------|:------:|
+| [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | LSP semantic code navigation | Default |
+| [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv` or Docker) | Queryable **code-structure** graph | Default |
+| **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | stdio bridge → HTTP `:8080` | **Structured cross-project memory** (typed nodes) | Default |
+| [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning | Default |
+| [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation | Default |
+| Mem0 | SSE (`docker`) | Cross-session memory (REST API + pgvector) | Fallback (`--profile mem0-fallback`) |
 
 ## Graphify Visualizations
 Graphify provides built-in tools to visualize your project graph. After extraction, you can generate:
@@ -135,16 +136,20 @@ it finds (`uv cache dir` + `archive-v0/*/**/graphify/{__main__,ids}.py`), so
 this is handled automatically, but it's why you can't just patch "the"
 graphify install once and be done.
 
-## Mem0 — Official Self-Hosted Docker Stack
+## Mem0 — Fallback Memory (off by default)
+
+> Omnigraph is the default memory layer (see the top of this file). The Mem0
+> stack below runs only under `docker compose --profile mem0-fallback up -d` and
+> is documented here for that fallback case.
 
 Mem0 runs as a three-container Docker stack using the official `mem0/mem0-api-server`
 image, PostgreSQL with pgvector for embeddings, and a custom MCP SSE bridge that lets
-CodeWhale and Claude Code connect without the stdio timeout issue.
+your coding agent and Claude Code connect without the stdio timeout issue.
 
 ### Architecture
 
 ```
-CodeWhale / Claude Code
+your coding agent / Claude Code
   │
   │ SSE (http://localhost:8001/sse)
   ▼
@@ -169,7 +174,7 @@ CodeWhale / Claude Code
 ### Why This Fixes the Old Problem
 
 The previous setup used a third-party MCP server (`mem0-mcp-selfhosted` by elvismdev)
-over stdio transport. CodeWhale's hardcoded 120-second MCP stdio timeout killed every
+over stdio transport. your coding agent's hardcoded 120-second MCP stdio timeout killed every
 `tools/call` before mem0 could respond. The new approach:
 
 - **SSE transport** — the MCP bridge runs as a persistent Docker service with an HTTP
@@ -205,7 +210,7 @@ curl -X POST http://localhost:8888/memories `
   -d '{"messages":[{"role":"user","content":"Test memory"}],"user_id":"your-username"}'
 ```
 
-### Why Mem0 over Serena for Memory?
+### Why a dedicated memory server (not Serena's local memory)?
 
 While Serena includes basic local memory capabilities, **Mem0 is the designated single source of truth for all cross-session memory in this stack.** 
 
@@ -220,7 +225,7 @@ To prevent agent confusion and overlapping functionality, Serena's memory tools 
 ### Data Flow
 
 ```
-CodeWhale Agent
+your coding agent Agent
   │
   ├── Serena (uvx, stdio)
   │     ├── LSP servers (per-language) ──► Project source code
@@ -276,7 +281,7 @@ Playwright scripts. No API key required.
 
 **Setup:**
 1. Playwright MCP auto-installs on first `npx` run. No manual steps needed.
-2. Restart CodeWhale — tools appear as `mcp_playwright_*` (40+ tools).
+2. Restart your coding agent — tools appear as `mcp_playwright_*` (40+ tools).
 3. Try: *"Go to example.com, take a screenshot, and describe what you see."*
 
 **Configuration options** (add to `args` in `mcp.json`):
@@ -313,7 +318,7 @@ The self-hosted dashboard runs at **[http://localhost:3000](http://localhost:300
 Once auth is enabled:
 1. Log into the dashboard
 2. Go to **API Keys** → **Create Key**
-3. Give it a label (e.g. "CodeWhale")
+3. Give it a label (e.g. "your coding agent")
 4. Copy the generated key
 5. Pass it to the MCP bridge or REST API calls as `X-API-Key` header
 
@@ -325,7 +330,7 @@ There are **no default credentials**. The setup wizard at `/setup` creates the f
 
 ```
 mcp-servers/
-├── config/                              # CodeWhale MCP configs
+├── config/                              # your coding agent MCP configs
 │   ├── mcp.json                         # Production config (Serena + Mem0 + Superpowers)
 │   ├── mcp-claude-code.json             # Claude Code equivalent config
 │   └── serena-project.yml               # Per-repo template for Serena
@@ -408,7 +413,7 @@ On Windows, Antigravity reads its config from:
 `C:\Users\<username>\.gemini\config\mcp_config.json` (which is symlinked to `C:\Users\<username>\.gemini\antigravity\mcp_config.json`).
 
 ### 2. Transport Optimization
-While CodeWhale uses SSE transport for Mem0 to bypass its 120s stdio timeout, Antigravity has native SSE client issues that cause `Method Not Allowed` (405) errors. To resolve this, **Mem0 is run as a stdio process** for Antigravity using `uv run`, connecting to the same running Mem0 Docker containers on port `8888`.
+While your coding agent uses SSE transport for Mem0 to bypass its 120s stdio timeout, Antigravity has native SSE client issues that cause `Method Not Allowed` (405) errors. To resolve this, **Mem0 is run as a stdio process** for Antigravity using `uv run`, connecting to the same running Mem0 Docker containers on port `8888`.
 
 ### 3. Tool Filtering (excludeTools)
 To prevent agent confusion and tool redundancy (e.g., memory tools exposed by both Serena and Mem0), we filter out unused/unneeded tools using the client-side `excludeTools` property:

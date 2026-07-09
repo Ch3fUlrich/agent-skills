@@ -2,12 +2,12 @@
 
 > **Current state**: Claude Code uses plugins (`serena@claude-plugins-official`,
 > `superpowers@claude-plugins-official`, `context7@claude-plugins-official`,
-> `cq@cq`). The new self-hosted MCP servers are running for CodeWhale but
+> `cq@cq`). The new self-hosted MCP servers are running for your coding agent but
 > Claude Code still uses its own plugin system.
 
 ## Why Migrate?
 
-- **Shared state**: Both agents (CodeWhale + Claude Code) share the same Mem0
+- **Shared state**: Both agents (your coding agent + Claude Code) share the same Mem0
   memory and Serena indices. No duplication.
 - **Self-hosted**: No dependency on Claude's plugin marketplace.
 - **Consistent tools**: Same MCP tools, same behavior across agents.
@@ -19,18 +19,18 @@
 
 - [x] MCP servers installed and running (Serena, Mem0, Superpowers)
 - [x] Docker services running (Qdrant + Ollama)
-- [x] CodeWhale configured with `~/.codewhale/mcp.json`
+- [x] your coding agent configured with `~/.codewhale/mcp.json`
 - [ ] Claude Code **still using plugins** for now
 - [ ] Verify Claude Code plugins continue to work alongside the new setup
-- [ ] Use CodeWhale for a week — confirm MCP tools work as expected
+- [ ] Use your coding agent for a week — confirm MCP tools work as expected
 
 **Goal**: Prove the new stack works before switching Claude Code.
 
 ### Phase 2: Bootstrap Knowledge Transfer
 
-- [ ] Agent has built up knowledge in Mem0 through CodeWhale usage
+- [ ] Agent has built up knowledge in Mem0 through your coding agent usage
 - [ ] Serena indices exist for frequently-used repositories
-- [ ] Superpowers skills are tested via CodeWhale
+- [ ] Superpowers skills are tested via your coding agent
 
 **Goal**: The new system has enough context that Claude Code won't lose anything
 by switching.
@@ -73,7 +73,7 @@ by switching.
 - [ ] Test: `mcp_serena_find_symbol`, `mcp_mem0_recall`, `mcp_superpowers_*`
 - [ ] Rollback if broken: restore `settings.json.backup`
 
-**Goal**: Claude Code uses the same MCP servers as CodeWhale.
+**Goal**: Claude Code uses the same MCP servers as your coding agent.
 
 ### Phase 5: Cleanup (After 2+ Weeks of Stable Operation)
 
@@ -106,7 +106,7 @@ Claude Code's plugin system when not connected.
 - [ ] `mcp_mem0_remember` stores new memories
 - [ ] `mcp_mem0_recall` retrieves stored memories
 - [ ] `mcp_superpowers_*` skills work as before
-- [ ] Same tools available in both CodeWhale and Claude Code
+- [ ] Same tools available in both your coding agent and Claude Code
 - [ ] Token usage is measurably lower than before (track with /cost)
 
 ## Notes

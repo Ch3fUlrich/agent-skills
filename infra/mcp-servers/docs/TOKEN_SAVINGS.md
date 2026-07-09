@@ -1,5 +1,10 @@
 # Token Savings Analysis
 
+> **Note:** This is a detailed/legacy reference. The authoritative current
+> overview is [`../../../docs/architecture.md`](../../../docs/architecture.md);
+> the default memory layer is **Omnigraph** (Mem0 is a fallback).
+
+
 ## How AI Coding Agents Spend Tokens
 
 In a typical coding session, tokens are spent on:
@@ -161,7 +166,7 @@ Superpowers → Agent: [TDD workflow: 1) Write test, 2) Run (fail), 3) Implement
 
 ## Tracking Savings
 
-Inside CodeWhale:
+Inside your coding agent:
 ```
 /cost   ← Shows current session token usage and cache hit rate
 ```
