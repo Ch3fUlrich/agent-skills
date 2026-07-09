@@ -161,6 +161,9 @@ svg{width:100%;height:100%;display:block}
 #side .v{white-space:pre-wrap;word-break:break-word}
 #side .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;color:#fff}
 #side .muted{color:var(--mut)}
+#hint{position:absolute;right:10px;top:10px;background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:4px 9px;font-size:11px;color:var(--mut);pointer-events:none}
+#svg{cursor:grab}#svg.panning{cursor:grabbing}
+.hit{stroke:transparent;stroke-width:12px;fill:none;cursor:pointer}
 #legend{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:8px 10px;font-size:12px;max-width:240px}
 #legend label{display:inline-flex;align-items:center;gap:5px;margin:2px 6px 2px 0;cursor:pointer}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
@@ -189,7 +192,8 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
 <div class="tabs" id="tabs"></div>
 <main>
   <div id="stage">
-    <svg id="svg"><g id="links"></g><g id="elabels"></g><g id="nodes"></g></svg>
+    <svg id="svg"><g id="viewport"><g id="links"></g><g id="elabels"></g><g id="nodes"></g></g></svg>
+    <div id="hint">scroll = zoom · drag empty space = pan · drag node = move</div>
     <div id="legend"></div>
   </div>
   <div id="table" class="hidden"></div>
@@ -244,59 +248,94 @@ function render(){
   $("#legend").style.display=S.view==="graph"?"":"none";
   if(S.view==="graph")renderGraph();else renderTable();
 }
-/* ---------- force-directed graph (vanilla) ---------- */
+/* ---------- force-directed graph: build DOM once, update positions per tick ---------- */
+const NS="http://www.w3.org/2000/svg";
+function svgPt(e){const r=$("#svg").getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
+function screenToGraph(sx,sy){return {x:(sx-S.vp.tx)/S.vp.k,y:(sy-S.vp.ty)/S.vp.k};}
+function vpApply(){$("#viewport").setAttribute("transform",`translate(${S.vp.tx},${S.vp.ty}) scale(${S.vp.k})`);}
+function edgeKey(e){return e.type+"|"+e.from+"|"+e.to;}
 function renderGraph(){
   const svg=$("#svg"),W=svg.clientWidth||800,H=svg.clientHeight||600;
   const vis=visibleNodes(),ids=new Set(vis.map(n=>n.id));
   const links=(S.data.edges||[]).filter(e=>ids.has(e.from)&&ids.has(e.to));
-  // preserve positions across renders
+  S.curVis=vis;S.curLinks=links;
   const prev=S.pos||{};S.pos={};
   vis.forEach(n=>{const p=prev[n.id];S.pos[n.id]={x:p?p.x:W/2+(Math.random()-.5)*W*.6,y:p?p.y:H/2+(Math.random()-.5)*H*.6,vx:0,vy:0};});
+  if(!S.vp)S.vp={tx:0,ty:0,k:1};
   if(S.sim)cancelAnimationFrame(S.sim);
+
+  // build DOM once (persists across sim ticks so clicks/drag always work)
+  const linkG=$("#links"),elG=$("#elabels"),nodeG=$("#nodes");
+  linkG.innerHTML="";elG.innerHTML="";nodeG.innerHTML="";
+  const linkEls=links.map(e=>{
+    const ln=document.createElementNS(NS,"line");ln.setAttribute("class","link");
+    const hit=document.createElementNS(NS,"line");hit.setAttribute("class","hit");
+    hit.addEventListener("click",ev=>{ev.stopPropagation();onEdgeClick(e);});
+    const tx=document.createElementNS(NS,"text");tx.setAttribute("class","elabel");tx.textContent=e.type;
+    linkG.append(ln,hit);elG.append(tx);return {e,ln,hit,tx};
+  });
+  const nodeEls=vis.map(n=>{
+    const g=document.createElementNS(NS,"g");g.setAttribute("class","node");
+    const r=n.type==="Project"?13:9;
+    const c=document.createElementNS(NS,"circle");c.setAttribute("r",r);c.setAttribute("fill",COLOR(n.type));
+    const t=document.createElementNS(NS,"text");t.setAttribute("x",r+3);t.setAttribute("y",4);t.textContent=(n.label||n.id).slice(0,22);
+    g.append(c,t);nodeG.append(g);
+    g.addEventListener("mousedown",ev=>{ev.stopPropagation();ev.preventDefault();
+      const start=svgPt(ev);let moved=false;n._drag=1;
+      const mv=e2=>{const sp=svgPt(e2);if(Math.hypot(sp.x-start.x,sp.y-start.y)>4)moved=true;
+        const gp=screenToGraph(sp.x,sp.y);S.pos[n.id].x=gp.x;S.pos[n.id].y=gp.y;paint();};
+      const up=()=>{n._drag=0;document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);
+        if(!moved)onNodeClick(n);};   // moved little => it was a click, not a drag
+      document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);});
+    return {n,g};
+  });
+  S.els={linkEls,nodeEls};
+
+  // zoom (wheel) + pan (drag empty space) — attach to the persistent svg
+  svg.onwheel=ev=>{ev.preventDefault();const sp=svgPt(ev),g=screenToGraph(sp.x,sp.y);
+    const f=ev.deltaY<0?1.1:1/1.1;S.vp.k=Math.max(.2,Math.min(4,S.vp.k*f));
+    S.vp.tx=sp.x-g.x*S.vp.k;S.vp.ty=sp.y-g.y*S.vp.k;vpApply();};
+  svg.onmousedown=ev=>{if(ev.target.closest(".node")||ev.target.classList.contains("hit"))return;
+    ev.preventDefault();svg.classList.add("panning");
+    const s={x:ev.clientX,y:ev.clientY,tx:S.vp.tx,ty:S.vp.ty};
+    const mv=e2=>{S.vp.tx=s.tx+(e2.clientX-s.x);S.vp.ty=s.ty+(e2.clientY-s.y);vpApply();};
+    const up=()=>{svg.classList.remove("panning");document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);};
+    document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);};
+
+  vpApply();applyHighlight();
   let ticks=0;
-  function step(){
+  (function tick(){
     const P=S.pos;
-    for(const a of vis){for(const b of vis){if(a.id>=b.id)continue;
-      const pa=P[a.id],pb=P[b.id];let dx=pa.x-pb.x,dy=pa.y-pb.y,d=Math.hypot(dx,dy)||1;
-      const f=3000/(d*d);pa.vx+=dx/d*f;pa.vy+=dy/d*f;pb.vx-=dx/d*f;pb.vy-=dy/d*f;}}
+    for(let i=0;i<vis.length;i++)for(let j=i+1;j<vis.length;j++){
+      const pa=P[vis[i].id],pb=P[vis[j].id];let dx=pa.x-pb.x,dy=pa.y-pb.y,d=Math.hypot(dx,dy)||1,f=3000/(d*d);
+      pa.vx+=dx/d*f;pa.vy+=dy/d*f;pb.vx-=dx/d*f;pb.vy-=dy/d*f;}
     for(const e of links){const pa=P[e.from],pb=P[e.to];if(!pa||!pb)continue;
       let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,f=(d-90)*0.01;
       pa.vx+=dx/d*f;pa.vy+=dy/d*f;pb.vx-=dx/d*f;pb.vy-=dy/d*f;}
-    for(const n of vis){const p=P[n.id];p.vx+=(W/2-p.x)*0.002;p.vy+=(H/2-p.y)*0.002;
-      if(n._drag)continue;p.x+=p.vx*=.85;p.y+=p.vy*=.85;p.x=Math.max(20,Math.min(W-20,p.x));p.y=Math.max(20,Math.min(H-20,p.y));}
-    draw(vis,links);
-    if(++ticks<300)S.sim=requestAnimationFrame(step);
-  }
-  function draw(vis,links){
-    const P=S.pos;
-    $("#links").innerHTML=links.map(e=>{const a=P[e.from],b=P[e.to];
-      const hl=S.q&&(vis.find(n=>n.id===e.from&&matches(n))||vis.find(n=>n.id===e.to&&matches(n)));
-      const cls="link"+(hl?" hl":(S.q?" dim":""));
-      return `<line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" data-e="${esc(e.type)}|${esc(e.from)}|${esc(e.to)}"></line>`;}).join("");
-    $("#elabels").innerHTML=links.map(e=>{const a=P[e.from],b=P[e.to];
-      return `<text class="elabel" x="${(a.x+b.x)/2}" y="${(a.y+b.y)/2}">${esc(e.type)}</text>`;}).join("");
-    $("#nodes").innerHTML=vis.map(n=>{const p=P[n.id];const m=matches(n);
-      const cls="node"+(m?" hl":(S.q?" dim":""));
-      const r=n.type==="Project"?13:9;
-      return `<g class="${cls}" data-n="${esc(n.id)}" transform="translate(${p.x},${p.y})">
-        <circle r="${r}" fill="${COLOR(n.type)}"></circle>
-        <text x="${r+3}" y="4">${esc((n.label||n.id).slice(0,22))}</text></g>`;}).join("");
-    wire();
-  }
-  function wire(){
-    $("#nodes").querySelectorAll(".node").forEach(g=>{
-      const id=g.dataset.n;
-      g.onclick=()=>showNode(vis.find(n=>n.id===id),links);
-      g.onmousedown=ev=>{ev.preventDefault();const n=vis.find(n=>n.id===id);n._drag=1;
-        const mv=e=>{const pt=toSvg(e);S.pos[id].x=pt.x;S.pos[id].y=pt.y;draw(vis,links);};
-        const up=()=>{n._drag=0;document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);};
-        document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);};
-    });
-    $("#links").querySelectorAll(".link").forEach(l=>l.onclick=()=>{
-      const [t,f,to]=l.dataset.e.split("|");showEdge(t,f,to);});
-  }
-  function toSvg(e){const r=svg.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
-  step();
+    for(const n of vis){const p=P[n.id];if(n._drag){p.vx=p.vy=0;continue;}
+      p.vx+=(W/2-p.x)*0.002;p.vy+=(H/2-p.y)*0.002;p.x+=p.vx*=.85;p.y+=p.vy*=.85;}
+    paint();
+    if(++ticks<400)S.sim=requestAnimationFrame(tick);
+  })();
+}
+function paint(){
+  if(!S.els)return;const P=S.pos;
+  for(const {e,ln,hit,tx} of S.els.linkEls){const a=P[e.from],b=P[e.to];if(!a||!b)continue;
+    for(const L of [ln,hit]){L.setAttribute("x1",a.x);L.setAttribute("y1",a.y);L.setAttribute("x2",b.x);L.setAttribute("y2",b.y);}
+    tx.setAttribute("x",(a.x+b.x)/2);tx.setAttribute("y",(a.y+b.y)/2);}
+  for(const {n,g} of S.els.nodeEls){const p=P[n.id];g.setAttribute("transform",`translate(${p.x},${p.y})`);}
+}
+function onNodeClick(n){if(S.q)toggleRemoved(n.id);showNode(n,S.curLinks);}
+function onEdgeClick(e){if(S.q)toggleRemoved(edgeKey(e));showEdge(e.type,e.from,e.to);}
+function toggleRemoved(key){if(!S.removed)S.removed=new Set();S.removed.has(key)?S.removed.delete(key):S.removed.add(key);applyHighlight();}
+function applyHighlight(){
+  if(!S.els)return;const q=S.q,rm=S.removed||new Set();
+  for(const {n,g} of S.els.nodeEls){const isM=q&&matches(n);const hl=isM&&!rm.has(n.id);
+    g.classList.toggle("hl",!!hl);g.classList.toggle("dim",!!(q&&!isM));}
+  for(const {e,ln} of S.els.linkEls){
+    const fn=S.data.nodes.find(x=>x.id===e.from),tn=S.data.nodes.find(x=>x.id===e.to);
+    const isM=q&&((fn&&matches(fn))||(tn&&matches(tn)));const hl=isM&&!rm.has(edgeKey(e));
+    ln.classList.toggle("hl",!!hl);ln.classList.toggle("dim",!!(q&&!isM));}
 }
 function showNode(n,links){if(!n)return;
   const conn=(links||S.data.edges).filter(e=>e.from===n.id||e.to===n.id);
@@ -346,8 +385,8 @@ function renderTable(){
 /* ---------- wire header ---------- */
 $("#v-graph").onclick=()=>{S.view="graph";render();};
 $("#v-table").onclick=()=>{S.view="table";render();};
-$("#search").oninput=e=>{S.q=e.target.value;if(S.view==="graph")renderGraph();else renderTable();};
-$("#branch").onchange=e=>{S.branch=e.target.value;S.pos=null;load();};
+$("#search").oninput=e=>{S.q=e.target.value;S.removed=new Set();if(S.view==="graph")applyHighlight();else renderTable();};
+$("#branch").onchange=e=>{S.branch=e.target.value;S.pos=null;S.vp=null;load();};
 window.addEventListener("resize",()=>{if(S.view==="graph")renderGraph();});
 loadBranches().then(load);
 </script></body></html>"""
