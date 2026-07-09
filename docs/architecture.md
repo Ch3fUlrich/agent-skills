@@ -30,15 +30,46 @@ auto-extracts from source); **Omnigraph** answers "what did we decide and why"
 Agent
  ├── Serena ─────────► source code (LSP)
  ├── Graphify ───────► graphify-out/graph.json (code structure)
- ├── Omnigraph ──────► omnigraph-server :8080 ──► MinIO (S3) :9000
+ ├── Omnigraph ──────► omnigraph-server :8080 ──► MinIO (S3) :9000/:9001
  │     (structured memory: Project/Decision/Rule/Preference/Convention/...)
+ │       └── vector search ──► Ollama nomic-embed-text (768-dim, cloud.vm)
  ├── Superpowers ────► workflow skills
  └── Playwright ─────► browser
+
+omnigraph-viewer :8090 ──► omnigraph-server (read-only web UI over the API)
 ```
 
-Default runtime = `docker compose up -d` (Omnigraph + MinIO). The Mem0 fallback
-starts only with `--profile mem0-fallback`. See
+Default runtime = `docker compose up -d` (Omnigraph + MinIO + viewer). The Mem0
+fallback starts only with `--profile mem0-fallback`. See
 `docs/decisions/0001-omnigraph-over-mem0.md`.
+
+### Omnigraph internals
+
+Omnigraph is **cluster-only boot**: a declared cluster (`infra/mcp-servers/cluster/`
+— `cluster.yaml` + `memory.pg` schema + Cedar `*.policy.yaml` + stored `queries/`)
+is `import`+`apply`ed into the MinIO storage root (the state ledger), then
+`omnigraph-server --cluster s3://…` serves it. The API is bearer-token protected;
+management/data actions require the applied policy bundle. Vector columns
+(`Vector(768)` on `Decision`) are populated by supplying embeddings in load data
+or the `omnigraph embed` pipeline; the `search_decisions($q)` stored query does
+`nearest($d.embedding, $q)`.
+
+## Deployed topology (this homelab)
+
+The authoritative instance runs on **`coding.vm`**, spun up from the single
+source of truth `Server/server/coding/mcp-servers/docker-compose.yml` (which
+references this repo's `cluster/` config + viewer image). It is exposed through
+the OPNsense `os-caddy` reverse proxy:
+
+| Host | Backend | Auth |
+|---|---|---|
+| `omnigraph.ohje.ooguy.com` | `coding.vm:8080` (API/MCP) | **bearer token only** — no Authelia (SSO would block programmatic clients) |
+| `omnigraph-ui.ohje.ooguy.com` | `coding.vm:8090` (viewer) | Authelia SSO (admin) |
+| `omnigraph-minio.ohje.ooguy.com` | `coding.vm:9001` (MinIO console) | Authelia SSO (admin) |
+
+Clients: **online** = MCP → the public API on `main`; **offline-capable** = local
+stack + `setup/omnigraph-sync.sh` timer that pushes to a `device/<host>` branch
+and merges into `main` when reachable (`infra/mcp-servers/setup/`).
 
 ## Remote access (`infra/remote-access/`)
 

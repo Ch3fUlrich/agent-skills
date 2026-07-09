@@ -38,7 +38,23 @@ To start the **Mem0 fallback** instead/as-well:
 | **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | stdio bridge → HTTP `:8080` | **Structured cross-project memory** (typed nodes) | Default |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning | Default |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation | Default |
+| [Omnigraph viewer](servers/omnigraph-viewer/) | HTTP `:8090` | Read-only web UI for the memory graph (tabs, interactive graph, table, search) | Default |
 | Mem0 | SSE (`docker`) | Cross-session memory (REST API + pgvector) | Fallback (`--profile mem0-fallback`) |
+
+**Vector search** uses a local **Ollama `nomic-embed-text`** embedder (768-dim,
+no cloud key), configured in [`cluster/cluster.yaml`](cluster/cluster.yaml); the
+`search_decisions($q)` stored query runs `nearest()` over Decision embeddings.
+
+**Clients & offline sync** — online clients point their MCP at the server on
+`main`; offline-capable clients run a local copy + a sync timer that reconciles
+via a `device/<host>` branch. See [`setup/`](setup/) (`client-setup.sh`,
+`omnigraph-sync.sh`).
+
+**Deployed instance (this homelab).** Runs on `coding.vm` from the single-source
+`Server/server/coding/mcp-servers/docker-compose.yml`, exposed via OPNsense/Caddy:
+`omnigraph.ohje.ooguy.com` (API, bearer), `omnigraph-ui.ohje.ooguy.com` (viewer,
+Authelia), `omnigraph-minio.ohje.ooguy.com` (MinIO console, Authelia). See
+[`../../docs/architecture.md`](../../docs/architecture.md).
 
 ## Graphify Visualizations
 Graphify provides built-in tools to visualize your project graph. After extraction, you can generate:

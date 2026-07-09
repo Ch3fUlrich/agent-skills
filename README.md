@@ -58,26 +58,41 @@ persistent, structured memory. Runs on your own hardware; no OpenAI key required
 |---|---|
 | [Serena](https://github.com/oraios/serena) | LSP semantic code navigation |
 | [Graphify](https://github.com/safishamsi/graphify) | Auto-extracted code-structure graph |
-| **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | Structured cross-project memory (default) |
+| **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | Structured cross-project memory (default), + MinIO object store |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | Disciplined workflow skills |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | Browser automation |
+| [Omnigraph viewer](infra/mcp-servers/servers/omnigraph-viewer/) | Read-only web UI for the memory graph (tabs, interactive graph, table, search) |
 | Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
 
-Quick start:
+Quick start (local / reference):
 
 ```bash
 cd infra/mcp-servers
 cp .env.example .env          # set MinIO creds, OMNIGRAPH_TOKEN, S3_BUCKET
-docker compose up -d          # default: Omnigraph + MinIO
+docker compose up -d          # Omnigraph + MinIO (+ viewer on :8090)
 ```
 
 Memory is **Omnigraph** by default: agents write typed `Decision / Rule /
 Preference / Convention / Component / Task` nodes (see the `structured-memory`
-skill) rather than Mem0's unstructured blobs. Mem0 is retained as a documented
-fallback — rationale in
+skill) rather than Mem0's unstructured blobs. Real vector search uses a local
+**Ollama `nomic-embed-text`** embedder (768-dim; no cloud key). Mem0 is retained
+as a documented fallback — rationale in
 [`docs/decisions/0001-omnigraph-over-mem0.md`](docs/decisions/0001-omnigraph-over-mem0.md).
 Full setup and per-agent wiring:
 [`infra/mcp-servers/README.md`](infra/mcp-servers/README.md).
+
+**Client vs server, offline & auto-sync.** A server (always-on) owns the
+authoritative `main`; online clients point their MCP straight at it, and
+offline-capable clients run a local copy that a timer reconciles when the
+internet returns — agents never manage branches themselves. See
+[`infra/mcp-servers/setup/`](infra/mcp-servers/setup/).
+
+**Deployed instance (this homelab).** The stack runs on `coding.vm` from the
+single-source compose in
+`Server/server/coding/mcp-servers/docker-compose.yml`, exposed through the
+OPNsense/Caddy reverse proxy: `omnigraph.ohje.ooguy.com` (API, bearer token),
+`omnigraph-ui.ohje.ooguy.com` (viewer, Authelia), `omnigraph-minio.ohje.ooguy.com`
+(MinIO console, Authelia).
 
 ### Remote access & multi-agent (`infra/remote-access/`)
 

@@ -78,13 +78,23 @@ Configured in `cluster/cluster.yaml`; the server resolves it at boot
 - The server calls the provider at **query time** for `nearest($v, "text")`
   auto-embedding, so vector search works even though boot doesn't require the
   endpoint (non-vector queries always work if `cloud.vm` is down).
-- **Backfilling stored vectors** for already-loaded rows is an offline step:
-  `omnigraph embed --store s3://omnigraph/cluster/graphs/memory.omni
-  --spec <embedding-spec.json> --reembed-all` run with the server **stopped**
-  (it is a local command and holds no lock against a running server). Until then
-  nodes carry null `embedding` and search relies on graph traversal + scalar
-  indexes. To fall back to zero-dependency embeddings, set the provider `kind:
-  mock` in `cluster.yaml` and re-apply.
+- **Stored vectors are populated by supplying them in load data** — the simplest
+  reliable path (the `omnigraph embed` CLI is a `--input/--output/--spec` file
+  pipeline, not an in-place re-embed). Compute the embedding for each node's
+  source text via the same endpoint and include it as the node's `embedding`
+  field, then `load --mode merge`. The seed loader does this for `Decision`
+  nodes, so semantic search is **live**: e.g. `search_decisions("why did we
+  replace the memory system")` ranks the *omnigraph-over-mem0* decision first.
+- To fall back to zero-dependency embeddings, set the provider `kind: mock` in
+  `cluster.yaml` and re-apply.
+
+Review embeddings / semantic search:
+```bash
+# via the stored query (server-side, uses the configured embedder)
+curl -s -X POST -H "Authorization: Bearer $OMNIGRAPH_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"params":{"q":"how do we run agents remotely"}}' \
+  http://localhost:8080/graphs/memory/queries/search_decisions
+```
 
 ## Register the MCP bridge
 
