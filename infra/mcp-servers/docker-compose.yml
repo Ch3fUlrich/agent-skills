@@ -139,6 +139,31 @@ services:
         limits:
           memory: 1G
 
+  # ─── Omnigraph memory viewer (read-only web UI) ───────────────────────────
+  #   Holds the bearer server-side; put Authelia in front when exposed.
+  #   Local: http://127.0.0.1:8090 . Deployed instance: see
+  #   Server/server/coding/mcp-servers/docker-compose.yml (coding.vm).
+  omnigraph-viewer:
+    build:
+      context: ./servers/omnigraph-viewer
+    container_name: omnigraph-viewer
+    restart: unless-stopped
+    depends_on:
+      omnigraph-server:
+        condition: service_healthy
+    environment:
+      - OMNIGRAPH_URL=http://omnigraph-server:8080
+      - OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN:?Set OMNIGRAPH_TOKEN in .env}
+      - OMNIGRAPH_GRAPH=memory
+    ports:
+      - "127.0.0.1:8090:8090"
+    networks:
+      - mcp-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
   # ═══════════════════════════════════════════════════════════════════════════
   #  FALLBACK: Mem0 stack — only starts with `--profile mem0-fallback`
   # ═══════════════════════════════════════════════════════════════════════════
