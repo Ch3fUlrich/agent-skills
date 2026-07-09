@@ -67,6 +67,25 @@ is reachable by direct store access
 (`--store s3://omnigraph/cluster/graphs/memory.omni`) but not through the server
 API.
 
+## Embeddings (vector search)
+
+The `memory` graph's embedding provider is **Ollama `nomic-embed-text` on
+`cloud.vm`** (openai-compatible, 768-dim — matches `Vector(768)` in `memory.pg`).
+Configured in `cluster/cluster.yaml`; the server resolves it at boot
+(`OLLAMA_DUMMY_KEY` + the `cloud.vm` `extra_hosts` entry). Benchmarked CPU-only:
+~360 ms cold, ~60 ms warm — comfortably within the 16-CPU container.
+
+- The server calls the provider at **query time** for `nearest($v, "text")`
+  auto-embedding, so vector search works even though boot doesn't require the
+  endpoint (non-vector queries always work if `cloud.vm` is down).
+- **Backfilling stored vectors** for already-loaded rows is an offline step:
+  `omnigraph embed --store s3://omnigraph/cluster/graphs/memory.omni
+  --spec <embedding-spec.json> --reembed-all` run with the server **stopped**
+  (it is a local command and holds no lock against a running server). Until then
+  nodes carry null `embedding` and search relies on graph traversal + scalar
+  indexes. To fall back to zero-dependency embeddings, set the provider `kind:
+  mock` in `cluster.yaml` and re-apply.
+
 ## Register the MCP bridge
 
 `@modernrelay/omnigraph-mcp` runs over stdio and bridges the server's

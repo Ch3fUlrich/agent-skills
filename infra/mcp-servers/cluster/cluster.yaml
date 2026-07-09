@@ -14,17 +14,17 @@ state:
   backend: cluster
   lock: true
 
-# Query-time embedding provider. `mock` is deterministic and needs no external
-# service (no real semantic search yet). To enable real vector search, switch to
-# a local Ollama openai-compatible endpoint:
-#   kind: openai-compatible
-#   base_url: http://host.docker.internal:11434/v1
-#   model: bge-m3
-#   api_key: ${OLLAMA_DUMMY_KEY}
+# Query-time embedding provider. Real vector search via Ollama on cloud.vm
+# (nomic-embed-text = 768 dims, matches Vector(768) in memory.pg). Ollama ignores
+# the api_key but openai-compatible requires the field, so a dummy env is used.
+# Falls back conceptually to `mock` if cloud.vm is unavailable (swap kind: mock).
 providers:
   embedding:
     default:
-      kind: mock
+      kind: openai-compatible
+      base_url: http://cloud.vm:11434/v1
+      model: nomic-embed-text
+      api_key: ${OLLAMA_DUMMY_KEY}
 
 graphs:
   memory:
