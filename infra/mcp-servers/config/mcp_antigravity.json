@@ -13,7 +13,7 @@
         "false"
       ],
       "env": {
-        "SERENA_HOME": "C:/Users/mauls/.serena"
+        "SERENA_HOME": "${SERENA_HOME}"
       },
       "excludeTools": [
         "onboarding",
@@ -27,27 +27,21 @@
         "edit_memory"
       ]
     },
-    "mem0": {
-      "command": "uv",
+    "omnigraph": {
+      "command": "npx",
       "args": [
-        "run",
-        "--with",
-        "mcp>=1.6.0",
-        "C:/Users/mauls/Documents/Code/agent-skills/mcp-servers/servers/mem0-mcp/server.py"
+        "-y",
+        "@modernrelay/omnigraph-mcp"
       ],
       "env": {
-        "MCP_TRANSPORT": "stdio",
-        "MEM0_API_URL": "http://localhost:8888",
-        "MEM0_USER_ID": "mauls"
-      },
-      "excludeTools": [
-        "health"
-      ]
+        "OMNIGRAPH_URL": "http://localhost:8080",
+        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
+      }
     },
     "superpowers": {
       "command": "node",
       "args": [
-        "C:/Users/mauls/Documents/Code/agent-skills/mcp-servers/servers/superpowers/build/index.js"
+        "${AGENT_SKILLS_DIR}/infra/mcp-servers/servers/superpowers/build/index.js"
       ]
     },
     "graphify": {

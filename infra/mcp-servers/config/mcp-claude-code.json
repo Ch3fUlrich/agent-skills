@@ -31,17 +31,21 @@
         "@playwright/mcp@latest"
       ]
     },
-    "mem0": {
-      "type": "sse",
-      "url": "http://localhost:8001/sse",
-      "excludeTools": [
-        "health"
-      ]
+    "omnigraph": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modernrelay/omnigraph-mcp"
+      ],
+      "env": {
+        "OMNIGRAPH_URL": "http://localhost:8080",
+        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
+      }
     },
     "superpowers": {
       "command": "node",
       "args": [
-        "${AGENT_SKILLS_DIR}/mcp-servers/servers/superpowers/build/index.js"
+        "${AGENT_SKILLS_DIR}/infra/mcp-servers/servers/superpowers/build/index.js"
       ]
     },
     "graphify": {
