@@ -10,7 +10,7 @@ import html
 import os
 
 import requests
-from flask import Flask, Response
+from flask import Flask, Response, request
 
 OMNIGRAPH_URL = os.environ.get("OMNIGRAPH_URL", "http://omnigraph-server:8080").rstrip("/")
 OMNIGRAPH_TOKEN = os.environ.get("OMNIGRAPH_TOKEN", "")
@@ -31,16 +31,28 @@ SECTIONS = [
 ]
 
 
-def _run_query(name: str):
-    """Return (columns, rows) for a stored query, or (None, error_str)."""
+def _run_query(name: str, branch: str = "main"):
+    """Return (columns, rows) for a stored query on a branch, or (None, error)."""
     url = f"{OMNIGRAPH_URL}/graphs/{GRAPH_ID}/queries/{name}"
+    params = {"branch": branch} if branch and branch != "main" else None
     try:
-        r = requests.post(url, json={}, headers=_headers, timeout=TIMEOUT)
+        r = requests.post(url, json={}, params=params, headers=_headers, timeout=TIMEOUT)
         r.raise_for_status()
         body = r.json()
         return body.get("columns", []), body.get("rows", [])
     except Exception as exc:  # noqa: BLE001 - surface any failure in the UI
         return None, str(exc)
+
+
+def _list_branches():
+    try:
+        r = requests.get(
+            f"{OMNIGRAPH_URL}/graphs/{GRAPH_ID}/branches", headers=_headers, timeout=TIMEOUT
+        )
+        r.raise_for_status()
+        return r.json().get("branches", ["main"])
+    except Exception:  # noqa: BLE001
+        return ["main"]
 
 
 def _list_graphs():
@@ -58,8 +70,8 @@ def _cell(value) -> str:
     return html.escape(str(value))
 
 
-def _render_section(title: str, name: str) -> str:
-    cols, rows = _run_query(name)
+def _render_section(title: str, name: str, branch: str = "main") -> str:
+    cols, rows = _run_query(name, branch)
     if cols is None:  # error
         return (
             f'<section><h2>{html.escape(title)}</h2>'
@@ -89,6 +101,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 font:15px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}}
 header{{padding:20px 24px;border-bottom:1px solid var(--bd)}}
 h1{{margin:0;font-size:18px}}.sub{{color:var(--mut);font-size:13px;margin-top:4px}}
+.branches{{margin-top:8px;font-size:13px;color:var(--mut)}}.branches a{{text-decoration:none}}
 main{{padding:20px 24px;max-width:1100px;margin:0 auto}}
 section{{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px;margin-bottom:18px}}
 h2{{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px}}
@@ -100,7 +113,8 @@ td{{max-width:520px}}.null{{color:var(--mut)}}.err{{color:#e5484d}}
 .pill{{font-size:12px;color:var(--mut)}}a{{color:var(--acc)}}
 </style></head><body>
 <header><h1>Omnigraph Memory Viewer</h1>
-<div class="sub">graph <b>{graph}</b> &middot; server {server} &middot; graphs: {graphs} &middot; read-only</div>
+<div class="sub">graph <b>{graph}</b> &middot; branch <b>{branch}</b> &middot; server {server} &middot; read-only</div>
+<div class="branches">branches: {branchnav}</div>
 </header><main>{body}</main></body></html>"""
 
 
@@ -111,12 +125,21 @@ def healthz():
 
 @app.get("/")
 def index():
-    graphs = ", ".join(_list_graphs()) or "(none)"
-    body = "".join(_render_section(t, n) for t, n in SECTIONS)
+    branches = _list_branches()
+    branch = request.args.get("branch", "main")
+    if branch not in branches:
+        branch = "main"
+    # branch nav: link each branch; bold the current one.
+    nav = " &middot; ".join(
+        (f"<b>{html.escape(b)}</b>" if b == branch else f'<a href="/?branch={html.escape(b)}">{html.escape(b)}</a>')
+        for b in branches
+    )
+    body = "".join(_render_section(t, n, branch) for t, n in SECTIONS)
     page = PAGE.format(
         graph=html.escape(GRAPH_ID),
+        branch=html.escape(branch),
         server=html.escape(OMNIGRAPH_URL),
-        graphs=html.escape(graphs),
+        branchnav=nav,
         body=body,
     )
     return Response(page, mimetype="text/html")
