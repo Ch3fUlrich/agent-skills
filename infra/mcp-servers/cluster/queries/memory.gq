@@ -22,3 +22,9 @@ query list_components() {
   match { $c: Component }
   return { $c.slug, $c.name, $c.kind, $c.location }
 }
+query search_decisions($q: String) {
+  match { $d: Decision }
+  return { $d.slug, $d.title, $d.status }
+  order { nearest($d.embedding, $q) }
+  limit 5
+}
