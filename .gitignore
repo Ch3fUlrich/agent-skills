@@ -62,13 +62,14 @@ infra/mcp-servers/data/
 **/minio-data/
 
 # Node.js dependencies (generated)
-mcp-servers/superpowers/node_modules/
-mcp-servers/superpowers/package-lock.json
-mcp-servers/superpowers/pnpm-lock.yaml
-mcp-servers/superpowers/.git/
-mcp-servers/superpowers/.github/
-mcp-servers/superpowers/.gitignore
-mcp-servers/superpowers/tsconfig.json
+mcp-servers/servers/superpowers/node_modules/
+mcp-servers/servers/superpowers/package-lock.json
+mcp-servers/servers/superpowers/pnpm-lock.yaml
+mcp-servers/servers/superpowers/.git/
+mcp-servers/servers/superpowers/.github/
+mcp-servers/servers/superpowers/.gitignore
+mcp-servers/servers/superpowers/tsconfig.json
+
 
 # Antigravity remote UI local dependencies
 antigravity-remote-ui/node_modules/
