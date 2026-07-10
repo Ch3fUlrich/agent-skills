@@ -129,22 +129,37 @@ def main():
     nodes = [r for r in recs if "type" in r]
     edges = [r for r in recs if "edge" in r]
     dupes = find_dupes(nodes, a.by_name)
+    # Duplicate EDGES: edges are not slug-keyed, so a cross-store export->load (e.g. a
+    # device-branch merge, or reconciling two clients) APPENDS them -> duplicates. The
+    # GQ API cannot delete an individual edge (edges have no queryable `id`, and
+    # `where from=.. and to=..` does not parse), so the only fix is this
+    # export->dedup->rebuild path. Trigger the rebuild on edge dups too, not just nodes.
+    eseen = set()
+    edge_dupes = 0
+    for e in edges:
+        k = (e["edge"], e["from"], e["to"])
+        edge_dupes += 1 if k in eseen else 0
+        eseen.add(k)
 
-    if not dupes:
+    if not dupes and not edge_dupes:
         print("[dedup] no duplicates — graph is clean, nothing to do.")
         return
 
     slug_map = {}
-    print("[dedup] duplicate groups:")
-    for members in dupes:
-        canon = canonical(members, forced)
-        for m in members:
-            s = m["data"]["slug"]
-            if s != canon:
-                slug_map[s] = canon
-        print(f"  {members[0]['type']}: {sorted({m['data']['slug'] for m in members})} -> {canon}")
+    if dupes:
+        print("[dedup] duplicate node groups:")
+        for members in dupes:
+            canon = canonical(members, forced)
+            for m in members:
+                s = m["data"]["slug"]
+                if s != canon:
+                    slug_map[s] = canon
+            print(f"  {members[0]['type']}: {sorted({m['data']['slug'] for m in members})} -> {canon}")
+    if edge_dupes:
+        print(f"[dedup] {edge_dupes} duplicate edge(s) to collapse "
+              "(rebuild de-dupes by (type,from,to)).")
     if a.dry_run:
-        print("[dedup] --dry-run: would remap", slug_map)
+        print("[dedup] --dry-run: would remap", slug_map, f"+ drop {edge_dupes} dup edges")
         return
 
     os.makedirs(a.backup_dir, exist_ok=True)
