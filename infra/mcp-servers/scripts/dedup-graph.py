@@ -102,6 +102,22 @@ def canonical(members, forced):
     return richest["data"]["slug"]
 
 
+def node_count(a, token):
+    """Total node rows in the graph (via snapshot). -1 on failure."""
+    r = subprocess.run(
+        ["docker", "run", "--rm", "-i", "--network", a.network,
+         "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
+         "--entrypoint", "sh", a.image, "-c",
+         'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
+         'omnigraph snapshot --server local --graph memory 2>/dev/null'],
+        capture_output=True, text=True)
+    try:
+        d = json.loads(r.stdout[r.stdout.index("{"):])
+        return sum(t["rowCount"] for t in d.get("tables", []) if t["tableKey"].startswith("node"))
+    except Exception:  # noqa: BLE001
+        return -1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="http://omnigraph-server:8080")
@@ -204,17 +220,32 @@ def main():
     # rebuild: reset the store (overwrite is unreliable on a populated v0.8.1 graph) then overwrite-load
     print("[dedup] resetting store + overwrite-loading cleaned graph...")
     dc = ["docker", "compose", "-f", a.compose_file]
-    sh(dc + ["rm", "-sf", "omnigraph-server", "omnigraph-viewer", "omnigraph-minio",
-             "omnigraph-init", "omnigraph-minio-init"], capture_output=True)
+    svcs = ["omnigraph-server", "omnigraph-viewer", "omnigraph-minio",
+            "omnigraph-init", "omnigraph-minio-init"]
+    sh(dc + ["stop"] + svcs, capture_output=True)
+    sh(dc + ["rm", "-f"] + svcs, capture_output=True)
+    # force-remove anything still holding the volume, then remove it — VERIFIED.
+    for c in sh(["docker", "ps", "-aq", "--filter", f"volume={a.minio_volume}"],
+                capture_output=True, text=True).stdout.split():
+        sh(["docker", "rm", "-f", c], capture_output=True)
     sh(["docker", "volume", "rm", a.minio_volume], capture_output=True)
-    sh(dc + ["up", "-d", "omnigraph-minio", "omnigraph-minio-init", "omnigraph-init",
-             "omnigraph-server", "omnigraph-viewer"], capture_output=True)
-    # wait for health
-    for _ in range(30):
+    vols = sh(["docker", "volume", "ls", "--format", "{{.Name}}"], capture_output=True, text=True).stdout.split()
+    if a.minio_volume in vols:
+        sys.exit(f"[dedup] ABORT: could not remove volume {a.minio_volume}; graph untouched. backup: {bk}")
+
+    sh(dc + ["up", "-d"] + list(reversed(svcs)), capture_output=True)
+    for _ in range(45):
         h = sh(dc + ["ps", "omnigraph-server", "--format", "{{.Status}}"], capture_output=True, text=True)
         if "healthy" in h.stdout:
             break
         time.sleep(2)
+    # CRITICAL GUARD: never overwrite a non-empty graph — that is what accumulated
+    # nodes on v0.8.1 when the wipe silently failed. Abort unless the graph is empty.
+    empty = node_count(a, token)
+    if empty != 0:
+        sys.exit(f"[dedup] ABORT: fresh graph is not empty ({empty} nodes) — not loading, "
+                 f"to avoid duplication. Investigate the reset. backup: {bk}")
+
     data = open(clean, "rb").read()
     r = subprocess.run(
         ["docker", "run", "--rm", "-i", "--network", a.network,
@@ -226,7 +257,10 @@ def main():
     print(r.stdout.decode()[-400:])
     if r.returncode != 0:
         sys.exit(f"[dedup] overwrite failed; restore from {bk} via mc mirror. stderr:\n{r.stderr.decode()[-400:]}")
-    print("[dedup] done. Verify with a query / search_decisions.")
+    got = node_count(a, token)
+    if got != len(merged):
+        print(f"[dedup] WARNING: expected {len(merged)} nodes but graph has {got} — inspect for drift.")
+    print(f"[dedup] done — {got} nodes. Verify with a query / search_decisions.")
 
 
 if __name__ == "__main__":
