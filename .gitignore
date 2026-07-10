@@ -92,3 +92,6 @@ mcp-servers/superpowers/src/git.test.ts
 mcp-servers/superpowers/src/integration.test.ts
 mcp-servers/superpowers/src/server.test.ts
 mcp-servers/superpowers/src/update.test.ts
+
+# Local graph backups (NDJSON exports + MinIO byte copies) — never track
+infra/mcp-servers/.graph-backup/
