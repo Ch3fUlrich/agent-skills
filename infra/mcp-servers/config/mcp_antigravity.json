@@ -34,7 +34,8 @@
         "@modernrelay/omnigraph-mcp"
       ],
       "env": {
-        "OMNIGRAPH_URL": "http://localhost:8080",
+        "OMNIGRAPH_BASE_URL": "http://localhost:8080",
+        "OMNIGRAPH_GRAPH_ID": "memory",
         "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
       }
     },
