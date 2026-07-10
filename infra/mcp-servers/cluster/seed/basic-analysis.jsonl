@@ -1,0 +1,56 @@
+{"type":"Project","data":{"slug":"basic-analysis","name":"Basic Analysis","path":"~/code/basic-analysis","summary":"Flexible pipeline extracting information from neural + behavioral recordings (2P calcium imaging). Research goal: intrinsic activity in hippocampus CA3 in mice, in darkness, no task. Python 3.10.19 + uv. Data on F:\\Experiments\\Steffen\\Intrinsic_Imaging (32 animals, 525 sessions). Importable package basic_analysis/ + Flask web app app/."}}
+{"type":"Decision","data":{"slug":"ba-src-to-package","title":"Restructure src/ into basic_analysis/ package + Flask app/","rationale":"Importable package basic_analysis/ (analysis, io, pipeline, preprocessing, video, viz, cli, events, simulation) replaces flat src/; web UI is a Flask application-factory app/ with blueprints + services run via 'python -m app.run'.","status":"accepted","date":"2026-07-01"}}
+{"type":"Decision","data":{"slug":"ba-maxent-migration","title":"Vendor MaxEnt (Ising / avalanche criticality) into basic-analysis","rationale":"Pairwise maximum-entropy + avalanche/criticality moved from the sibling MaxEnt repo into basic_analysis/analysis/maxent (+viz/cli/slurm). basic-analysis HDF5 store is canonical (dropped MaxEnt's duplicate stores); single configs/pipeline.yaml maxent: section; PyQt6 GUI replaced by a Flask blueprint. T1-T18 complete.","status":"accepted","date":"2026-06-29"}}
+{"type":"Decision","data":{"slug":"ba-vendor-ngmd","title":"Vendor ngmd graph/STTC/network code into the package","rationale":"Ported ngmd (Rodrigo C. G. Pena, ceda-unibas, BSD-3) graph/STTC/network analysis into basic_analysis/analysis (graphs.py, sttc.py), removing the editable external dependency; credited in NOTICE + README.","status":"accepted","date":"2026-06-29"}}
+{"type":"Decision","data":{"slug":"ba-vendor-binarize2p","title":"Migrate binarize2pcalcium preprocessing into the package","rationale":"Calcium preprocessing (binarization / dF/F) migrated from the external binarize2pcalcium repo into basic_analysis/preprocessing/.","status":"accepted","date":"2026-06-30"}}
+{"type":"Decision","data":{"slug":"ba-serbra-kinematics","title":"Migrate SERBRA movement-state + kinematics into basic-analysis","rationale":"Ported movement-state detector + kinematics from SERBRA into basic_analysis (signal_processing, utils, analysis/kinematics, behavior_coupling.movement_state); excluded spatial/stimulus functions as irrelevant to the darkness/no-task paradigm. merged_velocity.npy is m/s.","status":"accepted","date":"2026-07-02"}}
+{"type":"Decision","data":{"slug":"ba-hdf5-single-source","title":"Master HDF5 store is the single source of truth (no CSVs)","rationale":"All analysis output consolidated behind one HDF5 layout seam (app/services/h5_paths.resolve_group); pipeline/video/metadata CSVs removed; batch writes go through a staging->merge queue with a reentrant cross-process write lock (basic_analysis/io/hdf5_lock.py) to avoid batch/web write contention.","status":"accepted","date":"2026-07-06"}}
+{"type":"Decision","data":{"slug":"ba-video-classical-cv","title":"Classical computer vision for video behavior extraction","rationale":"OpenCV over scikit-image (hardware decode, MOG2, contour/ellipse); Otsu bright-pupil threshold over deep learning (IR pupil is the brightest blob); MOG2 over DeepLabCut (zero training data).","status":"accepted","date":"2026-06-23"}}
+{"type":"Decision","data":{"slug":"ba-web-components","title":"Native Web Components for the UI (no bundler)","rationale":"UI built from native Web Components (ba-header/ba-filter/ba-help/ba-run-panel/ba-palette...) hosted by a thin Jinja base.html; dataset selection persisted in localStorage; no build step.","status":"accepted","date":"2026-07-01"}}
+{"type":"Decision","data":{"slug":"ba-intrinsic-overhaul","title":"5-phase intrinsic CA3-in-darkness pipeline overhaul","rationale":"2026-07-08 plan (branch refactor): (1) config translator seam + config page; (2) versioned fluorescence pipeline raw->binarize->dF/F->z-score + suite2p orchestration + store rebuild; (3) video twitch + ROI correction; (4) analysis rerun + significance framework + longitudinal benchmark; (5) addons: population geometry/tangling, topology/Betti, Bayesian+XGBoost decoders, coupling, drift.","status":"accepted","date":"2026-07-08"}}
+{"type":"Rule","data":{"slug":"ba-never-delete-raw","statement":"Never delete stat.npy or other raw/derived data files; HDF5 cell-metadata caching is additive only.","severity":"must"}}
+{"type":"Rule","data":{"slug":"ba-help-mandatory","statement":"Every analysis and plot must ship a '?' help affordance (help_algorithm/help_shows/docs_url) AND a docs page in the same change; enforced by tests/test_app_help_registry.py and mkdocs --strict. (AGENTS.md rule 4)","severity":"must"}}
+{"type":"Rule","data":{"slug":"ba-coverage-lint","statement":"Aim for >95% test coverage per file; Ruff (rules E,F,I,W, line-length 100) must be clean before done.","severity":"should"}}
+{"type":"Rule","data":{"slug":"ba-mi-bits","statement":"Report mutual information in bits, not nats (divide KSG/KNN estimates by ln 2) to stay consistent with the binned estimator.","severity":"should"}}
+{"type":"Convention","data":{"slug":"ba-test-command","name":"Test invocation bypassing hardcoded --cov","example":"pyproject addopts hardcodes --cov, so run: .venv/Scripts/python.exe -m pytest -q -o addopts=\"\" (NUMBA_DISABLE_JIT=1 set in conftest so njit kernels are line-traced). Full suite ~3629 tests, ~18 min."}}
+{"type":"Convention","data":{"slug":"ba-qc-tukey","name":"Outlier QC via Tukey outer fence","example":"Flag outlier cells/neurons with Tukey's outer fence (Q3 + 3.0*IQR) on per-neuron metrics into outlier_rois.csv; flag, never silently drop."}}
+{"type":"Convention","data":{"slug":"ba-viz-publication","name":"Publication figure defaults","example":"SciencePlots no-latex, 8pt sans-serif font, 300 DPI PDF output, colorblind-friendly palette."}}
+{"type":"Convention","data":{"slug":"ba-ruff-check","name":"Lint with plain ruff check","example":"Use `ruff check <files>` (pyproject ignores E501); passing an explicit --select E,F,I,W overrides the ignore list and reintroduces E501 line-length noise."}}
+{"type":"Convention","data":{"slug":"ba-pipeline-analysis-split","name":"pipeline/ drives IO, analysis/ computes","example":"basic_analysis/pipeline/*.py are thin IO-bound drivers that load from + save to the master HDF5; basic_analysis/analysis/*.py hold the algorithms with no IO."}}
+{"type":"Convention","data":{"slug":"ba-windows-shell","name":"Windows dev environment notes","example":"Use pwsh.exe; YAML paths use backslashes; the F: network data drive is slow for I/O."}}
+{"type":"Component","data":{"slug":"ba-webapp","name":"Flask web dashboard","kind":"web-app","location":"app/ blueprints (core, neural, behavior, video_analyzer, maxent, running, config); services (analysis_registry, result_store, analysis_runner, job_queue). 4-card dashboard + generic run->HDF5->auto-load lifecycle."}}
+{"type":"Component","data":{"slug":"ba-master-hdf5","name":"Master HDF5 store","kind":"datastore","location":"basic_analysis/io/{master_hdf5,video_store,hdf5_lock}.py; app/services/{result_store,store_merge,auto_merge,staging}.py. Reentrant cross-process write lock; staging->merge queue."}}
+{"type":"Component","data":{"slug":"ba-video-pipeline","name":"Video behavior pipeline","kind":"pipeline","location":"basic_analysis/video/ — pupil (Otsu bright-pupil + ellipse fit), paw (MOG2 / GPU tracker); planned myoclonic-twitch detection from motion energy."}}
+{"type":"Component","data":{"slug":"ba-analysis-pkg","name":"Analysis algorithms package","kind":"library","location":"basic_analysis/analysis/ — graphs, sttc, maxent, decoding/decoders, assemblies, sequences, registration, spatial_qc, clustering, place_cells, grid_cells, comparison, behavior_coupling, behavior_states, kinematics."}}
+{"type":"Component","data":{"slug":"ba-batch-engine","name":"Batch engine + CLI","kind":"cli","location":"basic_analysis/analysis/batch.py (Click) — run as `python -m basic_analysis.analysis.batch <subcommand>` (degree-distributions, laplacian-spectra, network-summaries, sttc, trace-statistics, population-rates...)."}}
+{"type":"Component","data":{"slug":"ba-config","name":"Config single-source + validation","kind":"config","location":"configs/pipeline.yaml (single source); basic_analysis/config.py; app/services/{config_schema,config_help,config_store}.py; docs/src/configuration.md is the reference."}}
+{"type":"Component","data":{"slug":"ba-docs","name":"MkDocs documentation","kind":"docs","location":"docs/src (Material for MkDocs); mkdocs build --strict is a gate; every analysis has a docs_url page."}}
+{"type":"Task","data":{"slug":"ba-task-intrinsic-overhaul","title":"Execute the 2026-07-08 intrinsic-analysis-overhaul (5 phases) on branch refactor","state":"in-progress"}}
+{"type":"Task","data":{"slug":"ba-task-suite2p-runner","title":"Build/port the suite2p per-subsession runner (currently absent; only loading/binarization/dF/F/QC migrated)","state":"planned"}}
+{"type":"Task","data":{"slug":"ba-task-twitch-detection","title":"Implement immobility-gated myoclonic-twitch detection from IR-video motion energy","state":"planned"}}
+{"edge":"DecidedIn","from":"ba-src-to-package","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-maxent-migration","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-vendor-ngmd","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-vendor-binarize2p","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-serbra-kinematics","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-hdf5-single-source","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-video-classical-cv","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-web-components","to":"basic-analysis"}
+{"edge":"DecidedIn","from":"ba-intrinsic-overhaul","to":"basic-analysis"}
+{"edge":"ConstrainsProject","from":"ba-never-delete-raw","to":"basic-analysis"}
+{"edge":"ConstrainsProject","from":"ba-help-mandatory","to":"basic-analysis"}
+{"edge":"ConstrainsProject","from":"ba-coverage-lint","to":"basic-analysis"}
+{"edge":"ConstrainsProject","from":"ba-mi-bits","to":"basic-analysis"}
+{"edge":"AppliesTo","from":"ba-test-command","to":"basic-analysis"}
+{"edge":"AppliesTo","from":"ba-qc-tukey","to":"basic-analysis"}
+{"edge":"AppliesTo","from":"ba-viz-publication","to":"basic-analysis"}
+{"edge":"AppliesTo","from":"ba-ruff-check","to":"basic-analysis"}
+{"edge":"AppliesTo","from":"ba-pipeline-analysis-split","to":"basic-analysis"}
+{"edge":"AppliesTo","from":"ba-windows-shell","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-webapp","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-master-hdf5","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-video-pipeline","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-analysis-pkg","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-batch-engine","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-config","to":"basic-analysis"}
+{"edge":"PartOf","from":"ba-docs","to":"basic-analysis"}

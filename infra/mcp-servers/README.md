@@ -41,7 +41,9 @@ docker compose --env-file .env.shared --env-file .env.client \
 ./scripts/linux/init-graphify-projects.sh
 ```
 
-See [`servers/omnigraph/README.md`](servers/omnigraph/README.md),
+See the **[local runbook](docs/OMNIGRAPH-LOCAL-RUNBOOK.md)** (verified setup +
+every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
+[`servers/omnigraph/README.md`](servers/omnigraph/README.md),
 [`setup/`](setup/) (client/server + offline sync) and
 [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md).
 
