@@ -13,7 +13,9 @@
 #   docker compose up -d                          # Omnigraph + MinIO (default)
 #   docker compose --profile mem0-fallback up -d  # also start the Mem0 fallback
 #   docker compose down                           # stop, preserve data
-#   docker compose down -v                        # stop, destroy all data
+#   docker compose down -v                        # stop, remove named volumes
+#   NOTE: MinIO data is a bind mount (./data/minio), NOT a named volume, so it
+#   survives `down -v`. To wipe all graph/memory data: also rm -rf ./data/minio
 #
 # Omnigraph API:  http://localhost:8080/healthz
 # MinIO console:  http://localhost:9001
@@ -34,8 +36,10 @@ services:
     volumes:
       - ./data/minio:/data
     ports:
-      - "127.0.0.1:9000:9000"   # S3 API
-      - "127.0.0.1:9001:9001"   # web console
+      # Host ports only; Omnigraph reaches MinIO over the internal network.
+      # Override in .env.server if 9000/9001 are taken on your host.
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"       # S3 API
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"   # web console
     networks:
       - mcp-net
     healthcheck:
@@ -176,7 +180,10 @@ services:
     shm_size: "128mb"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      # Default lets the Omnigraph-only stack start without a fallback-only var
+      # (Compose interpolates profile services too). Set a real value in
+      # .env.server before running `--profile mem0-fallback`.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-mem0-fallback-only}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -q -d postgres -U ${POSTGRES_USER:-postgres}"]
       interval: 5s

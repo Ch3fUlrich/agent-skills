@@ -72,22 +72,26 @@ API.
 
 ## Embeddings (vector search)
 
-The `memory` graph's embedding provider is **Ollama `nomic-embed-text` on
-`cloud.vm`** (openai-compatible, 768-dim — matches `Vector(768)` in `memory.pg`).
-Configured in `cluster/cluster.yaml`; the server resolves it at boot
-(`OLLAMA_DUMMY_KEY` + the `cloud.vm` `extra_hosts` entry). Benchmarked CPU-only:
-~360 ms cold, ~60 ms warm — comfortably within the 16-CPU container.
+The `memory` graph's embedding provider is **Ollama `nomic-embed-text`**
+(openai-compatible, 768-dim — matches `Vector(768)` in `memory.pg`), reached as
+`cloud.vm` via the compose `extra_hosts` entry. Configured in
+`cluster/cluster.yaml`; the server resolves it at boot (`OLLAMA_DUMMY_KEY`).
+For a **fully self-contained local stack**, run a local Ollama container with
+`nomic-embed-text` pulled and set `OLLAMA_HOST_IP=host-gateway` in `.env.server`
+(routes `cloud.vm` to the Docker host). Benchmarked CPU-only: ~360 ms cold,
+~60 ms warm — comfortably within the 16-CPU container.
 
 - The server calls the provider at **query time** for `nearest($v, "text")`
   auto-embedding, so vector search works even though boot doesn't require the
   endpoint (non-vector queries always work if `cloud.vm` is down).
-- **Stored vectors are populated by supplying them in load data** — the simplest
-  reliable path (the `omnigraph embed` CLI is a `--input/--output/--spec` file
-  pipeline, not an in-place re-embed). Compute the embedding for each node's
-  source text via the same endpoint and include it as the node's `embedding`
-  field, then `load --mode merge`. The seed loader does this for `Decision`
-  nodes, so semantic search is **live**: e.g. `search_decisions("why did we
-  replace the memory system")` ranks the *omnigraph-over-mem0* decision first.
+- **Stored vectors are populated by supplying them in load data**, but on v0.8.1
+  `load --mode merge` of hand-supplied vectors hits a Lance batch error and the
+  `omnigraph embed` CLI can't target a local endpoint — so the verified path is
+  to compute embeddings against the (local) Ollama and **`load --mode overwrite`**.
+  Automated by [`../../scripts/populate-embeddings.py`](../../scripts/populate-embeddings.py)
+  (detail in [`../../docs/OMNIGRAPH-LOCAL-RUNBOOK.md`](../../docs/OMNIGRAPH-LOCAL-RUNBOOK.md) §4).
+  After populating, `search_decisions("why did we replace the memory system")`
+  ranks the *omnigraph-over-mem0* decision first.
 - To fall back to zero-dependency embeddings, set the provider `kind: mock` in
   `cluster.yaml` and re-apply.
 
@@ -131,7 +135,8 @@ claude mcp add --scope user omnigraph -- \
 claude mcp get omnigraph      # -> Status: Connected
 ```
 
-Restart the agent so it loads the new MCP server at session start.
+**Full procedure, handshake test, and tool-usage norms:**
+[`../../docs/OMNIGRAPH-LOCAL-RUNBOOK.md`](../../docs/OMNIGRAPH-LOCAL-RUNBOOK.md).
 
 ## Mem0 fallback (off by default)
 
