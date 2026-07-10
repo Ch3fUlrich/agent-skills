@@ -32,15 +32,21 @@
       ]
     },
     "omnigraph": {
-      "command": "npx",
+      "command": "docker",
       "args": [
-        "-y",
-        "@modernrelay/omnigraph-mcp"
-      ],
-      "env": {
-        "OMNIGRAPH_URL": "http://localhost:8080",
-        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
-      }
+        "run",
+        "-i",
+        "--rm",
+        "--network",
+        "mcp-servers_default",
+        "-e",
+        "OMNIGRAPH_BASE_URL=http://omnigraph-server:8080",
+        "-e",
+        "OMNIGRAPH_GRAPH_ID=memory",
+        "-e",
+        "OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN}",
+        "omnigraph-mcp:latest"
+      ]
     },
     "superpowers": {
       "command": "node",

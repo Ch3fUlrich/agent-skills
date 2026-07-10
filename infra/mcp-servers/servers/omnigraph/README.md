@@ -101,25 +101,35 @@ curl -s -X POST -H "Authorization: Bearer $OMNIGRAPH_TOKEN" -H 'Content-Type: ap
 
 ## Register the MCP bridge
 
-`@modernrelay/omnigraph-mcp` runs over stdio and bridges the server's
-`schema / branches / queries / mutations / ingest` tools into the agent. It is
-already registered in the config files under `config/`:
+[`@modernrelay/omnigraph-mcp`](https://www.npmjs.com/package/@modernrelay/omnigraph-mcp)
+runs over stdio and exposes the graph's tools (`query`, `mutate`, `load`,
+`schema_get`, `branches_*`, `snapshot`, `commits_*`) + resources. Required env:
+
+| Var | Value |
+|---|---|
+| `OMNIGRAPH_BASE_URL` | the server URL (e.g. `http://omnigraph-server:8080`, `http://localhost:8080`, or the public URL) |
+| `OMNIGRAPH_GRAPH_ID` | **`memory`** — required (server is cluster-only; the bridge refuses to start without it) |
+| `OMNIGRAPH_TOKEN` | the bearer token |
+
+**Hosts with Node** run it directly (see `config/mcp.json`, `config/mcp_antigravity.json`):
 
 ```json
-"omnigraph": {
-  "command": "npx",
-  "args": ["-y", "@modernrelay/omnigraph-mcp"],
-  "env": {
-    "OMNIGRAPH_URL": "http://localhost:8080",
-    "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
-  }
-}
+"omnigraph": { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
+  "env": { "OMNIGRAPH_BASE_URL": "http://localhost:8080", "OMNIGRAPH_GRAPH_ID": "memory", "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}" } }
 ```
 
-> The `OMNIGRAPH_URL` / `OMNIGRAPH_TOKEN` env names follow the server's URL +
-> bearer contract. Confirm the exact env/arg names the installed
-> `@modernrelay/omnigraph-mcp` version expects during first bring-up (plan task
-> B1) and adjust the three `config/*.json` files together if they differ.
+**Hosts without Node** (e.g. this coding VM) run the bridge in a container — build
+[`../omnigraph-mcp/`](../omnigraph-mcp/) (`docker build -t omnigraph-mcp:latest
+servers/omnigraph-mcp`) and use the docker-run form in `config/mcp-claude-code.json`.
+For Claude Code, register it directly:
+
+```bash
+claude mcp add --scope user omnigraph -- \
+  docker run -i --rm --network mcp-servers_default \
+  -e OMNIGRAPH_BASE_URL=http://omnigraph-server:8080 \
+  -e OMNIGRAPH_GRAPH_ID=memory -e OMNIGRAPH_TOKEN=<bearer> omnigraph-mcp:latest
+claude mcp get omnigraph      # -> Status: Connected
+```
 
 Restart the agent so it loads the new MCP server at session start.
 
