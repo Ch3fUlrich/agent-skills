@@ -67,19 +67,29 @@ older docs said:
 | `OMNIGRAPH_TOKEN` | the bearer from `.env.shared` | |
 | `OMNIGRAPH_GRAPH_ID` | `memory` | **required** — server 0.7.0+ is cluster-only |
 
-**Launch it with `pnpm dlx`, not `npx`, on this machine.** The bundled npm is
-broken (`Class extends value #<Object> is not a constructor` from a corrupted
-`minipass-pipeline` under `…/nvm/vXX/node_modules/npm`), so every `npx` fetch /
-`npm view` / `npm install` fails. `pnpm dlx` sidesteps npm entirely. (To fix npm
-itself: reinstall the Node version via nvm, e.g. `nvm uninstall 24.13.0 && nvm
-install 24.13.0`. Until then, prefer `pnpm dlx`.)
+**Launch it with `npx`** — with a healthy npm. This host's bundled npm had been
+corrupted: `Class extends value #<Object> is not a constructor`, because the
+nested `minipass` v3 under `minipass-pipeline` / `minipass-flush` was missing, so
+they resolved the hoisted `minipass` v7 (whose export is an object, not a class).
+Every `npx` fetch / `npm view` / `npm install` failed. **Fix — replace npm's
+bundled package with a fresh registry tarball** (the nvm version dir is
+admin-owned, so the swap needs elevation):
+
+```bash
+curl -fSL https://registry.npmjs.org/npm/-/npm-11.6.2.tgz -o npm.tgz && tar -xzf npm.tgz
+# elevated:  Rename-Item …\nvm\<ver>\node_modules\npm npm.broken.bak
+#            Move-Item   package …\nvm\<ver>\node_modules\npm
+```
+
+(Equivalently `nvm uninstall <ver> && nvm install <ver>`.) If npm can't be fixed,
+`pnpm dlx @modernrelay/omnigraph-mcp` sidesteps npm entirely — same env vars.
 
 Claude Code entry (in `~/.claude.json` → top-level `mcpServers`):
 
 ```json
 "omnigraph": {
-  "command": "pnpm",
-  "args": ["dlx", "@modernrelay/omnigraph-mcp"],
+  "command": "npx",
+  "args": ["-y", "@modernrelay/omnigraph-mcp"],
   "env": {
     "OMNIGRAPH_BASE_URL": "http://localhost:8080",
     "OMNIGRAPH_TOKEN": "<local bearer>",
@@ -99,7 +109,7 @@ printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
   | OMNIGRAPH_BASE_URL=http://localhost:8080 OMNIGRAPH_TOKEN="$OMNIGRAPH_TOKEN" \
-    OMNIGRAPH_GRAPH_ID=memory pnpm dlx @modernrelay/omnigraph-mcp
+    OMNIGRAPH_GRAPH_ID=memory npx -y @modernrelay/omnigraph-mcp
 ```
 
 A healthy bridge returns a `serverInfo` block then a `tools/list`. **Actual tool
@@ -218,7 +228,7 @@ the script above.)
 Ports:   API 8080 · viewer 8090 · MinIO ${MINIO_API_PORT:-9000}/${MINIO_CONSOLE_PORT:-9001}
 Graph:   memory   (cluster-only boot; schema in cluster/memory.pg)
 Bearer:  OMNIGRAPH_TOKEN (.env.shared)   ·   CLI env name: OMNIGRAPH_BEARER_TOKEN
-MCP:     pnpm dlx @modernrelay/omnigraph-mcp   env: OMNIGRAPH_BASE_URL/TOKEN/GRAPH_ID
+MCP:     npx -y @modernrelay/omnigraph-mcp   env: OMNIGRAPH_BASE_URL/TOKEN/GRAPH_ID (pnpm dlx if npm broken)
 Embed:   local ollama nomic-embed-text (768d); OLLAMA_HOST_IP=host-gateway; overwrite-load
 Wipe:    down && rm -rf ./data/minio && up      (down -v alone does NOT clear the bind mount)
 Net:     run CLI containers with --network mcp-server_mcp-net, address omnigraph-server:8080
