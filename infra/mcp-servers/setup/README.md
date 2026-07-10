@@ -99,5 +99,20 @@ So agents write to local `main` and stay dumb about branches; the sync creates
   bucket with `mc mirror` / bucket replication for a read cache. Do **not** point
   two live servers at one blindly-replicated bucket (Lance manifest conflicts).
 
+### Sync helpers & the remote test
+
+- [`omnigraph-sync.sh`](omnigraph-sync.sh) (Linux, `--network host`) and
+  [`sync-windows.ps1`](sync-windows.ps1) (Docker Desktop: compose network +
+  stdin, no `--network host`) run the reconcile with a **local backup first** and
+  a **no-duplicates guarantee** — nodes dedupe by slug, edges are de-duplicated
+  and verified via [`omnigraph_jsonl.py`](omnigraph_jsonl.py); the local pull is
+  an `overwrite` of a deduped central export.
+- `-DryRun` / `DRY_RUN=1` snapshots + verifies **both** sides without writing.
+- Backups land in `setup/backups/local-main-<ts>.jsonl` (gitignored).
+- The full production send/merge procedure — canary-first, the embedding
+  reconciliation (standardize on CPU-capable `nomic-embed-text`), risks and
+  rollback — is in
+  [`../../../docs/REMOTE-SYNC-TEST-PLAN.md`](../../../docs/REMOTE-SYNC-TEST-PLAN.md).
+
 See [`../servers/omnigraph/README.md`](../servers/omnigraph/README.md) and the
 [`structured-memory`](../../../skills/structured-memory/SKILL.md) skill.
