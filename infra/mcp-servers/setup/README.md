@@ -116,3 +116,24 @@ So agents write to local `main` and stay dumb about branches; the sync creates
 
 See [`../servers/omnigraph/README.md`](../servers/omnigraph/README.md) and the
 [`structured-memory`](../../../skills/structured-memory/SKILL.md) skill.
+
+## Automatic dedup (server-side)
+
+Omnigraph auto-merges nodes that share a slug (@key), but two branches/devices
+that give the same thing DIFFERENT slugs (a case variant like `Invest` vs
+`invest`, or slug drift) stay as duplicates it cannot collapse on its own.
+[`../scripts/dedup-graph.py`](../scripts/dedup-graph.py) fixes that: it groups
+nodes by `(type, casefold(slug))` (add `--by-name` for same-label too), picks a
+canonical slug, redirects the duplicates' edges, merges fields, and rebuilds.
+It is **idempotent** and a **cheap no-op when clean** (only rebuilds when
+duplicates exist — a brief outage then). Preview with `--dry-run`.
+
+Run it on the **memory server host** on a timer (not on clients — one authority
+dedups). Install [`dedup-graph.service`](dedup-graph.service) +
+[`dedup-graph.timer`](dedup-graph.timer):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp dedup-graph.service dedup-graph.timer ~/.config/systemd/user/
+systemctl --user enable --now dedup-graph.timer     # hourly sweep
+```
