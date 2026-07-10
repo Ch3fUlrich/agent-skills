@@ -119,14 +119,26 @@ See [`../servers/omnigraph/README.md`](../servers/omnigraph/README.md) and the
 
 ## Automatic dedup (server-side)
 
-Omnigraph auto-merges nodes that share a slug (@key), but two branches/devices
-that give the same thing DIFFERENT slugs (a case variant like `Invest` vs
-`invest`, or slug drift) stay as duplicates it cannot collapse on its own.
-[`../scripts/dedup-graph.py`](../scripts/dedup-graph.py) fixes that: it groups
-nodes by `(type, casefold(slug))` (add `--by-name` for same-label too), picks a
-canonical slug, redirects the duplicates' edges, merges fields, and rebuilds.
-It is **idempotent** and a **cheap no-op when clean** (only rebuilds when
-duplicates exist — a brief outage then). Preview with `--dry-run`.
+Omnigraph auto-merges nodes that share a slug (@key), but two things it cannot
+collapse on its own: (a) the same node under DIFFERENT slugs (a case variant like
+`Invest` vs `invest`, or slug drift), and (b) **duplicate edges** — edges are not
+slug-keyed, so any cross-store `export → load --merge` (a device-branch merge, or
+reconciling two clients) APPENDS them, and the GQ API has **no way to delete an
+individual edge** (edges expose no queryable `id`, and `where from=.. and to=..`
+does not parse). [`../scripts/dedup-graph.py`](../scripts/dedup-graph.py) fixes
+both: it groups nodes by `(type, casefold(slug))` (add `--by-name` for same-label
+too), picks a canonical slug, redirects the duplicates' edges, merges fields, and
+**de-dupes edges by `(type,from,to)`**, then rebuilds (export → reset store →
+`load --mode overwrite`, the one reliable write path on v0.8.1). It triggers on
+node **or** edge duplicates, so the hourly timer keeps the graph clean after any
+device sync. It is **idempotent** and a **cheap no-op when clean** (only rebuilds
+when duplicates exist — a brief outage then). Preview with `--dry-run`.
+
+> **This is the only way to remove duplicate edges** — a client (Windows/laptop)
+> cannot, because the fix needs a store reset (MinIO volume) on the server host.
+> After a cross-store merge leaves dup edges on central, the client sync's
+> `verify` gate correctly **refuses to pull** (protecting the clean local copy)
+> until this server-side sweep runs.
 
 Run it on the **memory server host** on a timer (not on clients — one authority
 dedups). Install [`dedup-graph.service`](dedup-graph.service) +
