@@ -14,8 +14,16 @@ decisions integrated across future builds.
 Schema (node/edge types, `.pg` declaration, JSONL ingest examples):
 [references/schema.md](references/schema.md).
 
-MCP server: `@modernrelay/omnigraph-mcp`, tools `schema`, `branches`, `queries`,
-`mutations`, `ingest`.
+**Operational rules & gotchas — read before any query/mutate/load/sync:**
+[references/operations.md](references/operations.md) (edge casing, the D₂
+insert-xor-delete rule, duplicate-edge handling, never-overwrite-shared-`main`,
+lowercase slugs, `nomic-embed-text` 768-dim embeddings, remote CLI ops). These
+capture failure modes already debugged — honoring them avoids re-troubleshooting.
+
+MCP server: `@modernrelay/omnigraph-mcp`. Tools: `schema_get` (read schema
+first), `query` (read GQ), `mutate` (write GQ, insert/update/delete), `load`
+(bulk NDJSON upsert by `@key`), `branches_create` / `branches_merge` /
+`branches_delete`, `commits_list` (verify writes), `snapshot`, `health`.
 
 ## First action every session — recall
 
@@ -24,7 +32,7 @@ Before editing code, load prior memory for the current project:
 1. Identify the project slug (the repository folder name, e.g. `agent-skills`).
 2. Query the project subgraph for `Rule`, `Decision`, `Preference`, `Convention`
    nodes edged to that `Project`, plus global `Preference` nodes (`scope: global`).
-   Use a fused query (graph + vector + full-text) via the `queries` tool, e.g.
+   Use a fused query (graph + vector + full-text) via the `query` tool, e.g.
    ask "rules and decisions for project `<slug>`" and "conventions applying to
    `<slug>`".
 3. Treat the returned `Rule (must)` nodes as hard constraints and `Decision`
@@ -51,15 +59,19 @@ captured in code, `CHANGELOG.md`, or an ADR (link to those instead).
 
 Memory writes are reviewable like code:
 
-1. Create a working branch off `main` with the `branches` tool
+1. Create a working branch off `main` with `branches_create`
    (e.g. `mem/<project-slug>/<short-topic>`).
-2. Write typed nodes/edges with `ingest` (JSONL) or `mutations` (single writes),
-   using stable kebab-case slugs so re-writes are idempotent.
-3. Merge the branch into `main`. Prefer many small, self-describing writes over
-   one large dump.
+2. Write typed nodes/edges with `load` (bulk NDJSON, `mode: merge`) or `mutate`
+   (single GQ writes), using stable **lowercase** kebab-case slugs so re-writes
+   are idempotent. Mind the edge-casing and D₂ rules in
+   [references/operations.md](references/operations.md).
+3. Merge the branch into `main` with `branches_merge` (edge-de-duplicating —
+   prefer it over a raw cross-store `load --merge`, which appends duplicate
+   edges). Prefer many small, self-describing writes over one large dump.
 
 Supersede, don't overwrite, an accepted `Decision`: write the new `Decision` and
-a `supersedes` edge to the old one; set the old one's `status` to `superseded`.
+a `Supersedes` edge to the old one; set the old one's `status` to `superseded`.
+Never `overwrite` the shared `main`.
 
 ## You do not manage device branches — sync is automatic
 
