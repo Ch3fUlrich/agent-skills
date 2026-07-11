@@ -12,6 +12,8 @@ Keep starters and root instruction files as **thin pointers**; a skill's
 
 - Coding discipline: `skills/coding-principles/SKILL.md`
 - Memory (recall at start, persist at end): `skills/structured-memory/SKILL.md`
+  — and `skills/structured-memory/references/operations.md` for the Omnigraph
+  operational rules/gotchas (read before any query/mutate/load/sync).
 - HTML working documents: `skills/html-working-documents/SKILL.md`
 - MCP stack usage: `skills/mcp-servers-setup/SKILL.md`
 

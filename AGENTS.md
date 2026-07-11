@@ -11,7 +11,11 @@ skill's `SKILL.md` is the single source of truth; never copy its workflow here.
   document-the-why, changelog/ADR backtracking, MCP-first navigation).
 - **Memory** — at session start and end, follow
   `skills/structured-memory/SKILL.md` to recall and persist typed, cross-project
-  memory in Omnigraph.
+  memory in Omnigraph. Before any Omnigraph query/mutate/load/sync, read
+  `skills/structured-memory/references/operations.md` — the operational rules and
+  gotchas (edge casing, insert-xor-delete, duplicate-edge handling, never
+  overwriting shared `main`, lowercase slugs, `nomic-embed-text` embeddings) that
+  keep the graph clean without troubleshooting.
 - **HTML working documents** — for long planning, research, review, report,
   diagram, prototype, and handoff work, follow
   `skills/html-working-documents/SKILL.md`.
