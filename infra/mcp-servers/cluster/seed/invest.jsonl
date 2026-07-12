@@ -84,3 +84,6 @@
 {"edge": "Supersedes", "from": "invest-rust-stack-live", "to": "inv-event-driven-engine"}
 {"edge": "Supersedes", "from": "invest-cloudvm-bearer-api", "to": "inv-stdlib-subsystems"}
 {"edge": "Supersedes", "from": "invest-gate-enforced-evidence", "to": "inv-significance-dsr"}
+{"type": "Decision", "data": {"slug": "invest-one-month-paper-run", "title": "One-month unattended paper run started 2026-07-12: $10/day pot mirrored to Alpaca paper vs $70/week SPY saver", "rationale": "Acceptance: pipeline NOT acceptable below the default-ETF weekly-savings benchmark. paper stage mirrors the SIM POT (pot-scaled, never account equity); paper_snapshots tracks sim-vs-paper divergence; benchmark_equity = $70/week SPY zero-fee buy-and-hold. LLM/news deliberately not wired for this first test. Review from cold start: docs/superpowers/plans/2026-08-12-post-month-review-plan.md.", "status": "accepted", "date": "2026-07-12"}}
+{"type": "Task", "data": {"slug": "invest-post-month-review", "title": "On/after 2026-08-12: execute docs/superpowers/plans/2026-08-12-post-month-review-plan.md", "state": "scheduled"}}
+{"edge": "DecidedIn", "from": "invest-one-month-paper-run", "to": "invest"}
