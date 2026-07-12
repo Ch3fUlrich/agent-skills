@@ -84,7 +84,7 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    entrypoint: ["sh", "-c", "omnigraph cluster import --config /cluster --yes 2>/dev/null || true; omnigraph cluster apply --config /cluster --yes --as default"]
+    entrypoint: ["sh", "-c", "if omnigraph cluster import --config /cluster --yes; then echo 'first boot: state ledger created — applying full config'; omnigraph cluster apply --config /cluster --yes --as default; else echo 'existing state ledger — checking plan before apply'; PLAN=$(omnigraph cluster plan --config /cluster 2>&1); echo \"$PLAN\"; if echo \"$PLAN\" | grep -qi 'create'; then echo 'REFUSING destructive auto-apply: plan wants to (re)create resources on an existing cluster; review and run apply manually'; else omnigraph cluster apply --config /cluster --yes --as default; fi; fi"]
     environment:
       - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
