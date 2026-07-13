@@ -93,6 +93,18 @@
       "connect_timeout": 120,
       "execute_timeout": 240,
       "disabled": true
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp",
+        "--api-key",
+        "YOUR_API_KEY_HERE"
+      ],
+      "connect_timeout": 60,
+      "execute_timeout": 120,
+      "disabled": false
     }
   }
 }

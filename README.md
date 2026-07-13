@@ -61,6 +61,7 @@ persistent, structured memory. Runs on your own hardware; no OpenAI key required
 | **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | Structured cross-project memory (default), + MinIO object store |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | Disciplined workflow skills |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | Browser automation |
+| [Context7](https://context7.com/) | Advanced contextual retrieval for agents |
 | [Omnigraph viewer](infra/mcp-servers/servers/omnigraph-viewer/) | Read-only web UI for the memory graph (tabs, interactive graph, table, search) |
 | Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
 
@@ -143,6 +144,13 @@ OPNsense/Caddy reverse proxy: `omnigraph.ohje.ooguy.com` (API, bearer token),
   ([ADR 0002](docs/decisions/0002-herdr-multiplexer.md)).
 - **[antigravity-remote-ui](infra/remote-access/antigravity-remote-ui/)** — stream
   the Antigravity IDE chat to a phone browser (a distinct GUI use case).
+
+### Container Registry (Harbor)
+
+This repository incorporates **Harbor**, an enterprise-class self-hosted container registry.
+- Do **not** install the container registry on local developer machines.
+- Harbor is designed to be hosted on your remote cloud server. 
+- You can push built container images (e.g., your custom MCP servers or agent environments) to the remote Harbor registry and pull them wherever needed across your infrastructure.
 
 See [`infra/remote-access/README.md`](infra/remote-access/README.md) for when to
 use which.

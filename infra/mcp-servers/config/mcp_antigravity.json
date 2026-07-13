@@ -58,15 +58,20 @@
         "${workspaceFolder}/graphify-out/graph.json"
       ]
     },
-    "graphify-docker": {
-      "command": "docker",
+    "playwright": {
+      "command": "npx",
       "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-v",
-        "${workspaceFolder}:/repo",
-        "graphify-mcp:latest"
+        "-y",
+        "@playwright/mcp"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp",
+        "--api-key",
+        "YOUR_API_KEY_HERE"
       ]
     }
   }
