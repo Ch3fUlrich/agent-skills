@@ -33,3 +33,7 @@ Self-hosted MCP runtime lives under `infra/` — `infra/mcp-servers/` (Serena,
 Graphify, Omnigraph memory, Superpowers, Playwright; Mem0 as fallback) and
 `infra/remote-access/` (Herdr multiplexer + Antigravity remote UI). See
 `docs/architecture.md`.
+
+We also use **Harbor** as a self-hosted container registry. 
+- Do **not** install the Harbor registry locally on this device. 
+- The container should be pushed to a remote cloud server where it acts as a centralized registry. Agents and deployment scripts can push/pull images to and from the remote Harbor instance whenever needed.

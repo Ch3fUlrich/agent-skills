@@ -56,6 +56,7 @@ every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 | **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | stdio bridge → HTTP `:8080` | **Structured cross-project memory** (typed nodes) | Default |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning | Default |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation | Default |
+| [Context7](https://context7.com/) | stdio (`npx`) | Advanced contextual retrieval and analysis for agents | Default |
 | [Omnigraph viewer](servers/omnigraph-viewer/) | HTTP `:8090` | Read-only web UI for the memory graph (tabs, interactive graph, table, search) | Default |
 | Mem0 | SSE (`docker`) | Cross-session memory (REST API + pgvector) | Fallback (`--profile mem0-fallback`) |
 
@@ -73,6 +74,12 @@ via a `device/<host>` branch. See [`setup/`](setup/) (`client-setup.sh`,
 `omnigraph.ohje.ooguy.com` (API, bearer), `omnigraph-ui.ohje.ooguy.com` (viewer,
 Authelia), `omnigraph-minio.ohje.ooguy.com` (MinIO console, Authelia). See
 [`../../docs/architecture.md`](../../docs/architecture.md).
+
+## Container Registry (Harbor)
+
+To store and share Docker images (like `graphify-mcp` or other custom agents), we use **Harbor**, an open-source trusted cloud native registry. 
+*   **Do not install Harbor locally.** It should be hosted centrally on your remote cloud server (e.g. `coding.vm` or a dedicated infrastructure VM).
+*   Use it to push images after a local build, and pull them for remote deployments or across different agent workstations.
 
 ## Graphify Visualizations
 Graphify provides built-in tools to visualize your project graph. After extraction, you can generate:
