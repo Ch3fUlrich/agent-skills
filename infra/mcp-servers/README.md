@@ -57,8 +57,12 @@ every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | Disciplined workflow skills — TDD, debugging, planning | Default |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | stdio (`npx`) | Full browser automation | Default |
 | [Context7](https://context7.com/) | stdio (`npx`) | Advanced contextual retrieval and analysis for agents | Default |
+| Sentry | stdio (`npx` / Docker) | Runtime error debugging and early error detection ([Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)) | Default (Observability) |
+| Datadog | stdio (`npx` / Docker) | Cross-service context for distributed setups ([Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)) | Conditional (Observability) |
 | [Omnigraph viewer](servers/omnigraph-viewer/) | HTTP `:8090` | Read-only web UI for the memory graph (tabs, interactive graph, table, search) | Default |
 | Mem0 | SSE (`docker`) | Cross-session memory (REST API + pgvector) | Fallback (`--profile mem0-fallback`) |
+
+> **Note on Observability MCPs**: Sentry and Datadog require specific token scoping and security configurations. See the **[Observability MCP Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)** before enabling them.
 
 **Vector search** uses a local **Ollama `nomic-embed-text`** embedder (768-dim,
 no cloud key), configured in [`cluster/cluster.yaml`](cluster/cluster.yaml); the

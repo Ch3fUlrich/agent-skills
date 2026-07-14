@@ -14,7 +14,7 @@ class LocalGLMAdapter:
             "explicit_cache_control": False,
             "subagents": False,
             "skills": False,
-            "mcp": ExternalWrapperRequired = True,
+            "mcp": True,
             "terminal": False,
             "local_runtime": True,
         }

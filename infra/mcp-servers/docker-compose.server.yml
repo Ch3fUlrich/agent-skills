@@ -169,6 +169,30 @@ services:
           memory: 256M
 
   # ═══════════════════════════════════════════════════════════════════════════
+  #  OBSERVABILITY: Sentry & Datadog Proxy — starts with `--profile observability`
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── Datadog Agent (Local Proxy) ───────────────────────────────────────────
+  # Acts as a local telemetry forwarder for distributed setups.
+  datadog-agent:
+    image: datadog/agent:latest
+    container_name: datadog-agent
+    profiles: ["observability"]
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    restart: "no"
+
+  # ─── Self-Hosted Sentry Backend (Placeholder) ──────────────────────────────
+  # Full self-hosted Sentry requires 20+ containers (Kafka, Clickhouse, etc.).
+  # It is excluded from this single compose file. If using a local Sentry
+  # installation, point the client MCP to it via SENTRY_HOST override.
+  
+  # ═══════════════════════════════════════════════════════════════════════════
   #  FALLBACK: Mem0 stack — only starts with `--profile mem0-fallback`
   # ═══════════════════════════════════════════════════════════════════════════
 

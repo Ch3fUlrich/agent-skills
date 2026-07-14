@@ -197,6 +197,8 @@ mcp:
       when:
         - distributed_system
         - multi_server_setup
+        - cross_service_debugging
+        - cross_service_observability
     sequential_thinking:
       when:
         - weak_reasoning_model

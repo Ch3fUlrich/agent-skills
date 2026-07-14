@@ -62,6 +62,8 @@ persistent, structured memory. Runs on your own hardware; no OpenAI key required
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | Disciplined workflow skills |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | Browser automation |
 | [Context7](https://context7.com/) | Advanced contextual retrieval for agents |
+| Sentry | Runtime error debugging and early error detection (Default Observability) |
+| Datadog | Cross-service context for distributed setups (Conditional Observability) |
 | [Omnigraph viewer](infra/mcp-servers/servers/omnigraph-viewer/) | Read-only web UI for the memory graph (tabs, interactive graph, table, search) |
 | Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
 

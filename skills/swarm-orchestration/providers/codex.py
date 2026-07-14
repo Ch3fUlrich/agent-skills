@@ -14,8 +14,8 @@ class CodexAdapter:
             "native_checkpointing": False,
             "explicit_cache_control": False,
             "subagents": False,
-            "skills": PartialSupport = True,
-            "mcp": PartialSupport,
+            "skills": True,
+            "mcp": True,
             "terminal": True,
         }
 

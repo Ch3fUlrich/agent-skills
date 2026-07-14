@@ -48,6 +48,33 @@ services:
     build: ./servers/graphify-mcp
     profiles: ["build"]
 
+  # ─── Sentry MCP Server (Observability) ────────────────────────────────────
+  # Sentry is the default observability MCP for runtime debugging.
+  # Usage: docker compose --profile observability up -d sentry-mcp
+  sentry-mcp:
+    image: node:20-alpine
+    container_name: sentry-mcp
+    profiles: ["observability"]
+    command: npx -y @modelcontextprotocol/server-sentry
+    environment:
+      - SENTRY_AUTH_TOKEN=${SENTRY_ACCESS_TOKEN}
+      - SENTRY_ORG=${SENTRY_ORG}
+      - SENTRY_PROJECT=${SENTRY_PROJECT}
+    restart: "no"
+
+  # ─── Datadog MCP Server (Observability) ───────────────────────────────────
+  # Datadog is conditional, for cross-service observability in distributed setups.
+  datadog-mcp:
+    image: node:20-alpine
+    container_name: datadog-mcp
+    profiles: ["observability"]
+    command: npx -y @modelcontextprotocol/server-datadog
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_APP_KEY=${DD_APP_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+    restart: "no"
+
   # ═══ OFFLINE ONLY (profile "offline") — local Omnigraph memory ═════════════
   #   Lets the agent keep working with no connection to the central server.
   #   setup/omnigraph-sync.sh reconciles this into central `main` when online.
