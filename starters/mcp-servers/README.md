@@ -104,6 +104,8 @@ additional_workspace_folders:
 | [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv`) | ✅ Active — queryable project graph |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | ✅ Active — workflow skills |
 | **Mem0** | SSE / stdio | ✅ Active — unified cross-session memory |
+| **Sentry** | stdio (`npx`) | ⚠️ Default Observability — runtime errors |
+| **Datadog** | stdio (`npx`) | ⚠️ Conditional Observability — distributed traces |
 
 ## Infrastructure (Retained for Future Use)
 

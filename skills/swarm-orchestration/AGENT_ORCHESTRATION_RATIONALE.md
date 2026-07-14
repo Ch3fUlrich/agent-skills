@@ -204,10 +204,19 @@ Chosen for lightweight external retrieval without overloading terminal-based ad 
 Conditional because browser automation is useful only for UI and workflow verification.
 
 ### Sentry
-Chosen as the default runtime error signal for real debugging and early error detection.
+Chosen as the default observability MCP. It is ideal for catching runtime errors, performing failure analysis, and early error detection in standard application logic. It remains the default because its scope is typically narrower and more action-oriented for a single repository or service.
 
 ### Datadog
-Conditional because it becomes valuable mainly in distributed or multi-server environments.
+Chosen as a conditional observability MCP. It becomes valuable only when system topology requires cross-service context—such as distributed systems and multi-server setups. Enabling it by default on single-node projects adds unnecessary noise and complexity.
+
+### Observability MCP Access Rules
+Observability MCP access must be tightly scoped because telemetry data is vast, often noisy, and can contain untrusted external input.
+Exposing full production telemetry to an agent increases the risk of prompt injection and tool poisoning (e.g., an attacker embedding malicious instructions in an error trace). Therefore:
+- Access is scoped strictly by role (Architect for triage, Engineer for debugging, Reviewer for regression-checking).
+- Access is disabled by default for ordinary local feature work.
+
+### Observability Configuration Strategy
+Hosted SaaS and self-hosted environments require different assumptions. Hosted Datadog/Sentry uses standard tokens/API keys and default domains. Self-hosted deployments require overriding URLs (e.g., `SENTRY_HOST`), adjusting certificate validations (`NODE_EXTRA_CA_CERTS`), and potentially disabling advanced features not supported locally (`MCP_DISABLE_SKILLS`). Documenting these required variables rather than providing rigid deployment scripts keeps the framework markdown-first and provider-agnostic, allowing any local stack (e.g., Docker Compose) to plug into the runtime seamlessly.
 
 ### Sequential Thinking
 Conditional because strong thinking-capable models often do not need it, while weaker models may benefit.
@@ -561,3 +570,12 @@ Explicit fallback routing:
 - avoids hidden provider switching
 
 This is especially important when session continuation and checkpoint recovery matter.
+
+## 34. Summary of Architecture Principles
+
+To ensure clarity, the following principles strictly govern this framework's design:
+- **Markdown remains canonical.** The `.md` files define the rules and behavior of the agents. They are the single source of truth.
+- **Python is execution support, not policy.** The Python scaffold executes the rules but does not invent or overwrite them.
+- **YAML exists to separate policy values from execution code.** Thresholds, routing, and capabilities belong in config, not hardcoded in Python.
+- **The adapter layer isolates provider-specific execution details.** Provider quirks are managed behind the adapter interface, keeping the orchestrator generic.
+- **The dry-run example is intended to validate orchestration flow, not model quality.** The local example uses stubbed providers to prove out routing, risk scoring, branching, and checkpointing logic without requiring real APIs.

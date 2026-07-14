@@ -277,7 +277,6 @@ Default MCP routing:
   - Omnigraph
   - Context7
   - Superpowers
-  - Fetch
   - Sentry
   - Datadog only for distributed systems
 - Engineer:

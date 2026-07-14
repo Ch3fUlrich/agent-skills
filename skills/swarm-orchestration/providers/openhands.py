@@ -15,9 +15,9 @@ class OpenHandsAdapter:
             "explicit_cache_control": False,
             "subagents": False,
             "skills": False,
-            "mcp": PartialSupport = True,
+            "mcp": True,
             "terminal": True,
-            "browser": PartialSupport,
+            "browser": True,
         }
 
     def supports_native_checkpointing(self) -> bool:
