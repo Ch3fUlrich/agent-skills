@@ -1,42 +1,101 @@
 # Swarm Orchestration Scaffold
 
-This repository contains a provider-agnostic agent orchestration system that uses Markdown for canonical policy, YAML for declarative runtime config, and Python for the local execution scaffold. 
+This repository provides a capability-aware, provider-agnostic agent orchestration system. It uses Markdown for canonical policy, YAML for declarative runtime configuration, and Python for the local execution scaffold.
+
+## Core Flow
+
+The system orchestrates a swarm of agents (Architect, Engineer, Reviewer) around a central `ARCHITECTURE_CONTRACT.md`. The workflow ensures architectural intent survives implementation.
+
+```mermaid
+sequenceDiagram
+    participant A as Architect
+    participant E as Engineer
+    participant R as Reviewer
+    participant V as Verification Runner
+    participant O as Orchestrator State
+
+    A->>O: Analyzes task, creates ARCHITECTURE_CONTRACT.md
+    A->>O: Sets Risk Score (determines Best-of-N routing)
+    O->>E: Dispatches Engineer to isolated git worktree
+    E->>E: Edits code & implements contract
+    O->>V: Runs tests, ruff, mypy (no shell=True)
+    V-->>O: Structured JUnit/Lint evidence
+    O->>R: Passes verification evidence + branch
+    R->>R: Checks contract compliance
+    R-->>O: Approves or Fails
+    O->>A: (If failed) Re-plans or retries
+```
 
 ## Architectural Principles
 
 1. **Markdown Remains Canonical**
-   - `SKILL.md`, `ARCHITECTURE_CONTRACT.md`, `AGENT_ORCHESTRATION_FRAMEWORK.md`, and `AGENT_ORCHESTRATION_RATIONALE.md` define the rules and constraints of the system. Coding agents read these files first.
+   - Documents like `SKILL.md`, `ARCHITECTURE_CONTRACT_template.md`, `AGENT_ORCHESTRATION_FRAMEWORK.md`, and `AGENT_ORCHESTRATION_RATIONALE.md` define the system's core rules and constraints. Agents must read these first.
 2. **YAML is Declarative Runtime Policy**
-   - `agent_orchestration.config.yaml` controls runtime routing, risk thresholds, MCP assignments, and provider failovers. It separates threshold numbers from Python execution code.
-3. **Python is Execution Support**
-   - `orchestrator_scaffold.py` provides the runtime state mechanics. It coordinates checkpoint persistence, risk scoring, git worktree creation, and routing between providers. It doesn't overwrite Markdown rules.
+   - `custom_orchestration/agent_orchestration.config.yaml` dictates runtime routing, risk thresholds, MCP assignments, and provider failover logic. It explicitly separates operational thresholds from Python execution logic.
+3. **Python is Execution Support (`custom_orchestration/`)**
+   - The Python implementation coordinates checkpointing, lock management, verification execution, and structured payload parsing. It strictly enforces Markdown rules but does not define new policy.
 4. **Provider-Specific Logic is Isolated**
-   - The `providers/` package contains individual provider adapters (e.g. `claude_code.py`, `antigravity.py`). This prevents the core orchestrator from getting tangled up in provider-specific request formats or features.
+   - The `custom_orchestration/providers/` package contains individual provider adapters (e.g., `codex.py`, `ollama.py`, `claude_code.py`). This prevents the core orchestrator from getting tangled up in provider-specific request formats or capability differences.
 
-## Implemented vs Stubbed
+## Provider Capabilities and Response Strategies
 
-- **Implemented**: Risk Engine, Budget Engine, Git Manager (branches/worktrees), Checkpointing (state storage), Contract Hash Manager, MCP Router, Provider Executor, Role Router.
-- **Stubbed**: The actual API clients inside the `providers/` adapters. They currently return a simulated success payload, making the scaffold safe for local structural testing without API keys.
+The system uses a capability-aware matrix to decouple orchestration intent from underlying provider mechanics.
 
-## Running the Dry-Run Example
+### Capability Detection
+Each provider adapter explicitly declares its supported capabilities via the `capabilities()` method:
+- `structured_output`: Can natively return structured data.
+- `strict_schema`: Can strictly enforce JSON schemas (e.g., OpenAI Structured Outputs).
+- `tool_calling`: Supports tool/function calling APIs.
+- `json_mode`: Can guarantee valid JSON without strict schema adherence.
+- `prompt_json_fallback`: Capable of following a prompt instruction to output JSON if native modes fail.
+- `plain_text`: Can return standard markdown/text.
 
-A minimal runnable example script is provided in `examples/run_orchestrator.py`. This simulates an end-to-end task (creating a contract, assigning an engineer, writing a checkpoint, and doing a review pass) purely using stubbed provider responses.
+### Payload Shaping
+The `ProviderExecutor` selects an optimal **Response Strategy** dynamically based on the requested tool/schema constraints and the provider's capabilities:
+1. **Tool Calling**: When tools are provided, invokes native function-calling formats.
+2. **Strict Schema**: When a schema is provided and supported, enforces rigid validation.
+3. **JSON Mode**: Fallback for structured data without strict schemas.
+4. **Prompt Fallback**: Appends explicit formatting instructions to the system prompt if native structured formats aren't available.
 
+## Core Mechanics
+
+- **Decision Engine**: Normalizes provider outputs (plain text, JSON, tool calls) into safe execution pathways (escalation, handoffs, blockages).
+- **Verification Runner & Parser**: Safely executes local tools (`pytest`, `ruff`, `mypy`) without `shell=True` and translates outputs (e.g., JUnit XML) into a structured bundle for the Reviewer.
+- **Git State Manager**: Uses `git worktree` for isolated multi-agent execution, incorporating strict lifecycle locks and stale state cleanup.
+
+## Running the Example Scripts
+
+A minimal runnable example script is provided in `custom_orchestration/examples/run_orchestrator.py`. This simulates an end-to-end task (creating a contract, assigning an engineer, writing a checkpoint, and doing a review pass).
+
+### Stub Mode (Default)
+Runs entirely locally using deterministic mocked payloads. No network requests are made.
 ```bash
-python examples/run_orchestrator.py
+python custom_orchestration/examples/run_orchestrator.py --mode stub
 ```
 
-This acts as a smoke test to validate that the YAML config can be parsed, worktrees can be managed, and requests route correctly to the stubbed providers.
+### Live Mode
+Runs real API requests for supported providers:
+- `codex` (OpenAI API)
+- `deepseek_tui` (DeepSeek API)
+- `local_glm` (Zhipu GLM API)
+- `ollama` (Local Ollama API)
+
+**Setup:**
+1. Copy `custom_orchestration/agent_keys.yaml.example` to `custom_orchestration/agent_keys.yaml`.
+2. Fill in the required API keys or base URLs.
+3. Run the orchestrator:
+```bash
+# Example running deepseek
+python custom_orchestration/examples/run_orchestrator.py --mode live --force-provider deepseek_tui
+
+# Example running local ollama (auto-detects if running)
+python custom_orchestration/examples/run_orchestrator.py --mode live --force-provider ollama
+```
 
 ## How to Add a New Provider Adapter
 
-1. Create a new file in `providers/` (e.g., `my_provider.py`).
-2. Implement a class that matches the interface in `providers/base.py` (needs `capabilities()`, `supports_native_checkpointing()`, `supports_explicit_cache_control()`, `build_request()`, `invoke()`, `resume()`).
-3. Import your adapter in `providers/registry.py` and add it to the `_providers` dictionary.
-4. Update `agent_orchestration.config.yaml` to route roles (or fallback paths) to your new provider.
-
-## Next Implementation Steps
-
-1. **Live Provider Implementation**: Replace the stubs in `providers/` with actual API client calls for the respective agentic backends.
-2. **State Cleanup & Locking Logic Implementation**: Add the missing Git hook or automated cleanup tasks to remove stale locks and merged worktrees.
-3. **Verification/Test Feedback Parsing**: Pipe actual `pytest`/`ruff`/`mypy` output into the reviewer payload automatically.
+1. Create a new file in `custom_orchestration/providers/` (e.g., `my_provider.py`).
+2. Implement an adapter extending `ProviderAdapter` with explicit feature flags defined in `capabilities()`.
+3. Support strategy-aware request shaping in `build_request()`.
+4. Import your adapter in `custom_orchestration/providers/registry.py` and register it.
+5. Update `custom_orchestration/agent_orchestration.config.yaml` to route roles to your new provider.

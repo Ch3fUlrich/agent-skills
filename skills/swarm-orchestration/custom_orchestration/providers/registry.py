@@ -8,6 +8,7 @@ from providers.codex import CodexAdapter
 from providers.deepseek_tui import DeepSeekTUIAdapter
 from providers.local_glm import LocalGLMAdapter
 from providers.openhands import OpenHandsAdapter
+from providers.ollama import OllamaAdapter
 
 
 class ProviderRegistry:
@@ -19,6 +20,7 @@ class ProviderRegistry:
             "openhands": OpenHandsAdapter(),
             "deepseek_tui": DeepSeekTUIAdapter(),
             "local_glm": LocalGLMAdapter(),
+            "ollama": OllamaAdapter(),
         }
 
     def get(self, name: str):

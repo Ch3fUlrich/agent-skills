@@ -281,15 +281,21 @@ Recommended:
 - engineer: TDD, debugging, implementation, refactor
 - reviewer: review, regression-checking, docs, verification
 
-## 14. Provider Strategy
+## 14. Provider Strategy and Payload Shaping
 
-Use the same orchestration logic across providers.
+Use the same orchestration logic across providers, but adapt the request payload shape based on native provider capabilities.
 
 Preferred model behavior:
 - flagship reasoning model for architect on complex planning
 - mid-tier strong coder for engineer on implementation
 - different-family reviewer where possible to reduce shared blind spots
 - local GLM-5.2 or similar as fallback or cost-control path where appropriate
+
+Payload Shaping rules (handled by ProviderExecutor):
+- Check `capabilities()` for `tool_calling`, `strict_schema`, `json_mode`, or `prompt_json_fallback`.
+- If tools are supplied and `tool_calling` is supported, use native function calling.
+- If a schema is supplied, prefer `strict_schema` > `json_mode` > `prompt_fallback`.
+- This ensures the agent receives instructions in the optimal format for its underlying model.
 
 If provider supports:
 - native checkpointing: enable it
