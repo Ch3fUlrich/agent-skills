@@ -170,9 +170,15 @@ checkpointing:
 
 verification:
   python:
-    test: "pytest"
-    lint: "ruff check"
-    typecheck: "mypy"
+    pytest:
+      command: "pytest --junitxml=.agent-state/verification/pytest-report.xml"
+      enabled: true
+    ruff:
+      command: "ruff check ."
+      enabled: true
+    mypy:
+      command: "mypy ."
+      enabled: true
   require_independent_review: true
 
 mcp:
@@ -293,8 +299,23 @@ model_routing:
       - flagship_reasoning
       - strong_mid_tier
 
+locking:
+  enabled: true
+  default_ttl_seconds: 300
+
 cleanup:
-  remove_temp_worktrees: true
-  remove_stale_locks: true
-  archive_old_checkpoints: true
-  delete_temp_branches_when_safe: true
+  remove_temp_worktrees_on_success: true
+  preserve_failed_worktrees: true
+  prune_stale_metadata: true
+
+handoff_policy:
+  allow_reviewer_bypass: true
+  escalate_verification_failures_immediately: true
+  require_human_on_blocked: false
+  allow_low_confidence_text_escalation: false
+
+parser_policy:
+  structured_output_enabled: true
+  strict_schema_validation: false
+  fallback_to_plain_text: true
+  parse_tool_calls: true

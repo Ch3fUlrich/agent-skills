@@ -17,6 +17,12 @@ class ClaudeCodeAdapter:
             "skills": True,
             "mcp": True,
             "terminal": True,
+            "structured_output": False,
+            "strict_schema": False,
+            "tool_calling": True,
+            "json_mode": False,
+            "prompt_json_fallback": True,
+            "plain_text": True,
         }
 
     def supports_native_checkpointing(self) -> bool:
@@ -26,14 +32,22 @@ class ClaudeCodeAdapter:
         return True
 
     def build_request(self, request: AgentRequest) -> Dict[str, Any]:
+        system_prompt = request.system_prompt
+        
+        if request.allow_prompt_fallback and request.response_strategy == "prompt_fallback":
+            from providers.common import get_prompt_fallback_instruction
+            fallback_instruction = get_prompt_fallback_instruction(request.response_schema)
+            system_prompt = (system_prompt or "") + fallback_instruction
+
         payload = {
             "model": request.model,
-            "system": request.system_prompt,
+            "system": system_prompt,
             "prompt": request.user_prompt,
-            "tools": normalize_tool_names(request.tools),
+            "tools": normalize_tool_names(request.tools) if request.response_strategy == "tool_calling" else [],
             "mcp_servers": request.mcp_servers,
             "skills": request.skill_ids,
             "metadata": request.metadata,
+            "response_strategy": request.response_strategy,
         }
         if request.cache_control:
             payload["cache_control"] = request.cache_control

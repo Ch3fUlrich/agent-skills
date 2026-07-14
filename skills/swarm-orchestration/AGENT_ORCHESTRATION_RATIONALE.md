@@ -72,6 +72,15 @@ The chosen risk signals are not arbitrary. They reflect common sources of agent 
 
 These signals help reserve expensive orchestration for the tasks that benefit most from it.
 
+## 8. Safe Locking Lifecycle
+**Why does lock discipline matter?** In a multi-agent coding environment, two engineers assigned to different concurrent bugs might attempt to modify the exact same Python file simultaneously. The Lock Manager prevents write-collision by assigning temporary leased locks (`.agent-state/locks`) on critical files. If an agent tries to modify a locked file, it falls back to a deterministic abort or blocks, rather than causing a silent merge collision on disk.
+
+## 9. Stale Worktree Lifecycle
+**Why clean up deterministic worktrees safely?** A repository flooded with `agent/mock-engineer-001` git worktrees will eventually crash IDE indexers or clutter standard developer workflows. By implementing `git worktree remove` on task success and selectively pruning stale metadata during finalization (`finalize_task_state`), we ensure the project remains ephemeral and tidy. We never allow `remove --force` on the primary codebase tree—there are hard safety blockers to ensure orchestration errors cannot destroy the main workspace.
+
+## 10. Subprocess Execution Hardening
+**Why avoid shell=True?** Because any task config mapping an unvetted command (e.g. via dynamic inputs) into a Python `subprocess.run(..., shell=True)` is vulnerable to trivial arbitrary code execution via shell escaping (e.g. `&& rm -rf /`). Removing `shell=True` and preferring strict `shlex` argv-lists sanitizes local runtime behavior without complicating the Python execution layer.
+
 ## 6. Why Verification Is External
 
 Agents are poor judges of their own correctness when incentives push them toward completion.
@@ -579,3 +588,13 @@ To ensure clarity, the following principles strictly govern this framework's des
 - **YAML exists to separate policy values from execution code.** Thresholds, routing, and capabilities belong in config, not hardcoded in Python.
 - **The adapter layer isolates provider-specific execution details.** Provider quirks are managed behind the adapter interface, keeping the orchestrator generic.
 - **The dry-run example is intended to validate orchestration flow, not model quality.** The local example uses stubbed providers to prove out routing, risk scoring, branching, and checkpointing logic without requiring real APIs.
+
+## 35. Why Payload Shaping is Capability-Aware
+
+Not all language models and orchestration platforms expose identical features for structured data. 
+
+Some guarantee schema adherence natively (OpenAI Structured Outputs). Some support JSON modes but cannot enforce exact keys. Others rely strictly on prompts, and still others treat tool/function calling as an entirely separate channel from final textual output.
+
+If the orchestrator assumes a single format, it either breaks local/smaller models or underutilizes advanced models. 
+
+Therefore, the `ProviderExecutor` queries the provider's `capabilities()` before executing. It dynamically negotiates a response strategy (`tool_calling`, `strict_schema`, `json_mode`, `prompt_fallback`, or `plain_text`) to maximize reliability for the current task on the currently selected model. This allows the system to seamlessly mix GPT-4o (using native schemas) with a local Llama model (using prompt fallbacks) on the same orchestration run without changing the core workflow.

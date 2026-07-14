@@ -10,6 +10,9 @@ import os
 import subprocess
 import time
 import yaml
+from verification_runner import VerificationRunner
+from verification_parser import VerificationParser
+from decision_engine import DecisionEngine, HandoffDecision
 
 
 @dataclass
@@ -96,24 +99,57 @@ class StateStore:
         data = json.loads(path.read_text(encoding="utf-8"))
         return Checkpoint(**data)
 
-    def acquire_lock(self, file_key: str, agent_id: str, ttl_seconds: int = 300) -> bool:
+    def acquire_lock(self, file_key: str, agent_id: str, task_id: str, role: str, resource: str, ttl_seconds: int = 300) -> bool:
         path = self.locks_dir / f"{file_key}.lock"
         now = time.time()
         if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if now - data["timestamp"] < data["ttl_seconds"]:
-                return False
-        payload = {"agent_id": agent_id, "timestamp": now, "ttl_seconds": ttl_seconds}
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if now < data.get("expires_at", 0):
+                    return False
+            except json.JSONDecodeError:
+                pass # Stale or corrupt lock file
+                
+        payload = {
+            "lock_id": file_key,
+            "agent_id": agent_id,
+            "task_id": task_id,
+            "role": role,
+            "resource": resource,
+            "created_at": now,
+            "expires_at": now + ttl_seconds,
+            "status": "active"
+        }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return True
 
-    def release_lock(self, file_key: str, agent_id: str) -> None:
+    def release_lock(self, file_key: str, agent_id: str) -> bool:
         path = self.locks_dir / f"{file_key}.lock"
         if not path.exists():
-            return
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if data["agent_id"] == agent_id:
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("agent_id") == agent_id:
+                path.unlink()
+                return True
+        except json.JSONDecodeError:
             path.unlink()
+            return True
+        return False
+
+    def reclaim_stale_locks(self) -> List[str]:
+        reclaimed = []
+        now = time.time()
+        for path in self.locks_dir.glob("*.lock"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if now >= data.get("expires_at", 0):
+                    path.unlink()
+                    reclaimed.append(data.get("lock_id", path.stem))
+            except json.JSONDecodeError:
+                path.unlink()
+                reclaimed.append(path.stem)
+        return reclaimed
 
 
 class GitManager:
@@ -146,9 +182,43 @@ class GitManager:
         result = self.run("git", "status", "--short", cwd=worktree)
         return result.stdout.strip()
 
-    def remove_worktree(self, worktree: Path) -> None:
-        if worktree.exists():
-            self.run("git", "worktree", "remove", "--force", str(worktree))
+    def remove_worktree(self, worktree: Path, force: bool = False) -> Dict[str, Any]:
+        result = {"action": "remove_worktree", "target": str(worktree), "success": False, "reason": ""}
+        if not worktree.exists():
+            result["reason"] = "Path does not exist"
+            return result
+            
+        # Safety check: do not remove the main repository
+        if worktree.resolve() == self.repo_root.resolve():
+            result["reason"] = "Safety block: Cannot remove main repository worktree"
+            return result
+            
+        args = ["git", "worktree", "remove"]
+        if force:
+            args.append("--force")
+        args.append(str(worktree))
+        
+        proc = self.run(*args)
+        if proc.returncode == 0:
+            result["success"] = True
+            result["reason"] = "Removed"
+        else:
+            result["reason"] = proc.stderr.strip()
+        return result
+
+    def prune_worktrees(self, dry_run: bool = False) -> Dict[str, Any]:
+        result = {"action": "prune_worktrees", "success": False, "reason": "", "dry_run": dry_run}
+        args = ["git", "worktree", "prune"]
+        if dry_run:
+            args.append("--dry-run")
+            
+        proc = self.run(*args)
+        if proc.returncode == 0:
+            result["success"] = True
+            result["reason"] = proc.stdout.strip() if proc.stdout.strip() else "Clean"
+        else:
+            result["reason"] = proc.stderr.strip()
+        return result
 
 
 class ContractManager:
@@ -240,6 +310,16 @@ class Orchestrator:
         self.budget_engine = BudgetEngine(self.config)
         self.mcp_router = MCPRouter(self.config)
         self.provider_executor = ProviderExecutor(self.config.data)
+        self.verification_runner = VerificationRunner(self.config.data, repo_root)
+        self.verification_parser = VerificationParser()
+        self.decision_engine = DecisionEngine(self.config.data)
+
+    def evaluate_handoff(self, role: str, verification_bundle: Optional[Dict[str, Any]], normalized_response: Any) -> HandoffDecision:
+        return self.decision_engine.evaluate(role, verification_bundle, normalized_response)
+
+    def run_verification(self, worktree_path: str) -> Dict[str, Any]:
+        raw_results = self.verification_runner.run_all(worktree_path)
+        return self.verification_parser.parse(raw_results, worktree_path)
 
     def build_task(self, task_id: str, title: str, scope_files: List[str], objective: str, acceptance: List[str], signals: RiskSignals) -> Task:
         score = self.risk_engine.score(signals)
@@ -282,6 +362,49 @@ class Orchestrator:
         if not worktree.exists() and cp.branch:
             self.git.create_worktree(cp.branch, agent_id)
         return cp
+        
+    def finalize_task_state(self, agent_id: str, status: str) -> Dict[str, Any]:
+        """
+        Cleans up task state based on the status (success, abort, failed).
+        Releases locks, removes worktrees, and prunes metadata depending on config.
+        """
+        results = {"status": status, "locks_released": 0, "worktree_removed": None, "prune_result": None}
+        
+        # Release locks held by this agent
+        locks_released = 0
+        for path in self.state.locks_dir.glob("*.lock"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if data.get("agent_id") == agent_id:
+                    path.unlink()
+                    locks_released += 1
+            except Exception:
+                pass
+        results["locks_released"] = locks_released
+        
+        cp = self.state.read_checkpoint(agent_id)
+        if not cp:
+            return results
+            
+        worktree = Path(cp.worktree)
+        cleanup_cfg = self.config.get("cleanup", default={})
+        
+        # Determine whether to remove worktree
+        should_remove = False
+        force = False
+        if status == "success" and cleanup_cfg.get("remove_temp_worktrees_on_success", True):
+            should_remove = True
+            force = True # successful tasks can be force-removed since changes are merged/pushed
+        elif status in ["abort", "failed"] and not cleanup_cfg.get("preserve_failed_worktrees", True):
+            should_remove = True
+            
+        if should_remove:
+            results["worktree_removed"] = self.git.remove_worktree(worktree, force=force)
+            
+        if cleanup_cfg.get("prune_stale_metadata", True):
+            results["prune_result"] = self.git.prune_worktrees(dry_run=False)
+            
+        return results
 
     def route_mcps(self, role: str, task_tags: List[str]) -> List[str]:
         return self.mcp_router.for_role(role, task_tags)
@@ -307,6 +430,7 @@ class Orchestrator:
         worktree: str | None = None,
         cache_control: dict | None = None,
         checkpoint_hint: dict | None = None,
+        preferred_provider: str | None = None,
     ):
         mcps = self.route_mcps(role, task_tags)
         return self.provider_executor.execute(
@@ -323,6 +447,7 @@ class Orchestrator:
             worktree=worktree,
             cache_control=cache_control,
             checkpoint_hint=checkpoint_hint,
+            preferred_provider=preferred_provider,
         )
 
 
