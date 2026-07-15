@@ -26,6 +26,59 @@ sequenceDiagram
     O->>A: (If failed) Re-plans or retries
 ```
 
+## Custom Orchestration vs OpenHands (OpenDevin)
+
+While OpenHands is a powerful execution engine with strong sandboxing, this orchestration scaffold provides a multi-agent coordination framework focused on **contract-first handoffs, risk-gated routing, and policy-driven verification**. 
+
+The systems can be integrated (e.g. using OpenHands as a provider adapter to execute engineer tasks inside a Docker sandbox while maintaining the orchestrator's verification and decision rules). For a deep dive, see [CUSTOM_ORCHESTRATION_VS_OPENHANDS.md](CUSTOM_ORCHESTRATION_VS_OPENHANDS.md).
+
+```mermaid
+graph TB
+    subgraph "Custom Orchestration"
+        direction TB
+        MD["📄 Markdown Policy<br/>(SKILL.md, Framework, Contract)"]
+        YAML["⚙️ YAML Runtime Config<br/>(risk, routing, budget)"]
+        PY["🐍 Python Scaffold<br/>(orchestrator_scaffold.py)"]
+        PE["🔌 ProviderExecutor<br/>(capability-aware)"]
+        DE["🧠 DecisionEngine<br/>(handoff routing)"]
+        VR["✅ VerificationRunner<br/>(pytest/ruff/mypy)"]
+        VP["📊 VerificationParser<br/>(JUnit XML → JSON)"]
+        PA["🔧 Provider Adapters<br/>(codex, ollama, deepseek,<br/>claude_code, openhands...)"]
+
+        MD --> PY
+        YAML --> PY
+        PY --> PE
+        PE --> PA
+        PE --> DE
+        PY --> VR --> VP
+    end
+
+    subgraph "OpenHands"
+        direction TB
+        ES["📜 EventStream<br/>(append-only log)"]
+        AC["🎮 AgentController<br/>(observation-action loop)"]
+        SB["🐳 Docker Sandbox<br/>(isolated execution)"]
+        LLM["🤖 LiteLLM<br/>(100+ providers)"]
+        MA["👥 Multi-Agent<br/>(AgentDelegateAction)"]
+        MC["🧊 MemoryCondenser<br/>(context management)"]
+        MI["📝 Microagents<br/>(.openhands/microagents/)"]
+
+        ES --> AC
+        AC --> SB
+        AC --> LLM
+        AC --> MA
+        AC --> MC
+        MI --> AC
+    end
+
+    style MD fill:#4a9eff,color:#fff
+    style ES fill:#ff6b6b,color:#fff
+```
+
+## State & Memory Coordination
+
+The core orchestrator state is managed by the filesystem (`.agent-state/`), while **cross-agent conversational memory and long-term state are managed exclusively by the `omnigraph` MCP server**. This avoids relying on transient chat history, ensuring all agents read from a durable graph representation of the project's evolution.
+
 ## Architectural Principles
 
 1. **Markdown Remains Canonical**

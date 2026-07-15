@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def normalize_tool_names(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
