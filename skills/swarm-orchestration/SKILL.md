@@ -119,26 +119,26 @@ If these artifacts exist, agents must use them instead of relying on conversatio
 
 ## Risk Scoring
 
-Use Best-of-N only when justified.
+Use Best-of-N only when justified. Risk is calculated as a sum of the following weighted trigger signals:
 
-Trigger signals:
-- touches more than 3 files
-- modifies public API
-- ambiguous acceptance criteria
-- high-churn module
-- architect confidence below threshold
-- missing or weak test coverage
-- concurrency or async changes
-- security-sensitive code
-- prior review failure
-- cross-module interface change
-- high estimation variance from similar past tasks
+Trigger signals & weights:
+- touches more than 3 files (+0.15)
+- modifies public API (+0.15)
+- ambiguous acceptance criteria (+0.20)
+- high-churn module (+0.10)
+- architect confidence below threshold (+0.15)
+- weak or missing test coverage (+0.10)
+- concurrency or async change (+0.10)
+- security-sensitive code (+0.20)
+- prior review failure (+0.15)
+- cross-module interface change (+0.10)
+- estimate variance above 30pct (+0.10)
 
-Default policy:
-- low risk: 1 engineer
-- medium risk: 1 engineer + stronger reviewer gate
-- high risk: Best-of-3
-- very high risk: Best-of-5 only if verification can cheaply arbitrate
+Default policy thresholds (based on sum of signals):
+- **low risk (< 0.60)**: 1 engineer
+- **medium risk (>= 0.60, < 0.85)**: 1 engineer + stronger reviewer gate
+- **high risk (>= 0.85)**: Best-of-3
+- **very high risk**: Best-of-5 only if verification can cheaply arbitrate
 
 Never use Best-of-N as a default for all tasks.
 
