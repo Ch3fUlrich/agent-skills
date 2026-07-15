@@ -181,6 +181,80 @@ verification:
       enabled: true
   require_independent_review: true
 
+safety_gates:
+  enabled: true
+  fail_closed: true
+  size_ceiling:
+    max_files_changed: 30
+    max_lines_changed: 800
+    exemptions:
+      - "testdata/"
+      - "__snapshots__/"
+      - ".*\\.min\\.js$"
+      - ".*\\.lock$"
+      - ".*\\.md$"
+  deny_list:
+    auth: "(?i)(auth|login|session|jwt|oauth)"
+    crypto: "(?i)(crypto|hash|encrypt|decrypt|cipher)"
+    migrations: "(?i)(db/migrate|alembic|migrations)"
+    infra: "(?i)(terraform|k8s|dockerfile|helm|\\.github/workflows)"
+    billing: "(?i)(stripe|billing|invoice|subscription|payment)"
+    public_api: "(?i)(api/public|openapi|swagger|routes/v1)"
+    dependencies: "(?i)(package\\.json|requirements\\.txt|go\\.mod|Cargo\\.toml)"
+
+triage_policy:
+  human_participation_gate:
+    enabled: true
+    never_autofix_if_human_present: true
+    never_autoresolve_if_human_present: true
+  verdict_matrix:
+    blocked:
+      condition: "has_critical_finding"
+      action: "escalate_to_architect"
+    request_changes:
+      condition: "count(high) >= 2 OR (count(high) >= 1 AND count(medium) >= 2)"
+      action: "return_to_engineer"
+    approve_with_nits:
+      condition: "count(high) >= 1 OR count(medium) >= 3"
+      action: "engineer_autofix_or_ignore"
+    approve:
+      condition: "only_low_or_nit"
+      action: "proceed_to_merge"
+
+swarm_review:
+  enabled: true
+  parallel_execution: true
+  timeout_seconds: 600
+  convergence_strategy: "wait_for_all_or_timeout"
+  perspectives:
+    security_auditor:
+      model_tier: "sonnet-3.5"
+      focus: "vulnerabilities, auth bypass, injection"
+    performance_expert:
+      model_tier: "sonnet-3.5"
+      focus: "n+1 queries, memory leaks, algorithmic complexity"
+    xp_reviewer:
+      model_tier: "haiku-3"
+      focus: "naming, readability, DRY, small methods"
+
+evidence_bundle:
+  enabled: true
+  persist_to: "omnigraph"
+  max_retries_per_failure: 3
+  capture_logs: true
+
+babysit_state:
+  enabled: true
+  track_ci_status: true
+  sleep_on_running_tests: true
+  auto_fix_ci_failures: true
+
+narration:
+  mode: "silent" # options: silent, chatty
+  bluf_required: true
+  attribute_findings: true
+  prefix_autofixable: "[🤖 AUTO-FIXABLE]"
+
 mcp:
   core:
     - serena

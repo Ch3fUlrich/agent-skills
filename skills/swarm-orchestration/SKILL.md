@@ -54,8 +54,9 @@ Use this skill for complex implementation, refactoring, migrations, debugging, a
   1. Read `ARCHITECTURE_CONTRACT.md` before coding.
   2. Work only inside assigned scope.
   3. Follow TDD or at minimum add regression coverage for changed behavior.
-  4. Run required verification commands before reporting completion.
-  5. Update checkpoint state before risky edits and before ending turn.
+  4. Run required validation via a **Local Proxy** (see `../no-mistakes/SKILL.md`) before reporting completion. Never push failing code.
+  5. Use `BabysitState` (see `../babysit-prs/SKILL.md`) to track asynchronous CI test sweeps.
+  6. Update checkpoint state before risky edits and before ending turn.
 - Must not:
   - Change architecture without architect approval.
   - Modify unrelated files.
@@ -71,13 +72,14 @@ Use this skill for complex implementation, refactoring, migrations, debugging, a
   - Sentry for error-driven validation
   - Datadog only for distributed systems
 - Must:
-  1. Review diffs against `ARCHITECTURE_CONTRACT.md`.
-  2. Run or validate required verification commands independently.
-  3. Reject incomplete, sloppy, or out-of-scope work.
-  4. Return concrete failure reasons and next actions.
+  1. Operate as a **Swarm** of specialized sub-agents (see `../qa-swarm/SKILL.md`).
+  2. Classify findings and calculate a deterministic verdict (Actionable, Nit, Ambiguous) via **Review Triage** (see `../review-triage/SKILL.md`).
+  3. Obey the **Human Participation Gate**: Never auto-resolve or auto-reply to a thread authored by a human.
+  4. Return concrete failure reasons and next actions using the Narration Protocol.
 - Must not:
   - Approve based on agent claims alone.
   - Rewrite architecture unless explicitly tasked.
+  - Loosen the Deterministic Safety Gates.
 
 ## Core Artifacts
 
@@ -106,16 +108,16 @@ If these artifacts exist, agents must use them instead of relying on conversatio
 5. Architect decides:
    - single engineer, or
    - Best-of-N engineers for high-risk work.
-6. Engineer executes scoped work in isolated branch/worktree.
+6. Engineer executes scoped work in isolated branch/worktree (validated via `../no-mistakes/SKILL.md`).
 7. Engineer runs required verification and writes checkpoint.
-8. Reviewer validates code, scope, and verification output.
-9. If rejected:
-   - reviewer returns precise defects
-   - engineer revises
-   - max 3 review loops per scoped task before architect replans
-10. If approved:
-   - architect marks task complete
-   - cleanup runs after merge/acceptance
+8. **Deterministic Safety Gates** (`../pr-approval-agent/SKILL.md`): The orchestrator strictly checks diff size and deny-lists before reviewing. If failed -> Escalate immediately.
+9. **Swarm Review** (`../qa-swarm/SKILL.md`): Parallel sub-agents audit the code.
+10. **Triage & Verdict** (`../review-triage/SKILL.md`):
+    - If `BLOCKED` or `REQUEST_CHANGES` -> return to Engineer (or escalate).
+    - Engineer revises (max 3 loops).
+11. If approved:
+    - architect marks task complete.
+    - cleanup runs after merge/acceptance.
 
 ## Risk Scoring
 
@@ -142,8 +144,8 @@ Default policy thresholds (based on sum of signals):
 
 Never use Best-of-N as a default for all tasks.
 
-### Manual Best-of-N Execution
-If executing a high-risk task without the custom Python scaffold (e.g., interacting directly as Claude Code, Antigravity, or default OpenHands), the Architect MUST manually execute the Best-of-N pattern:
+### Best-of-N Execution
+If executing a high-risk task without the custom Python scaffold, the Architect MUST manually execute the Best-of-N pattern:
 1. Spawn N engineer sub-agents concurrently.
 2. Provide them with identical prompts and architecture contracts.
 3. Assign each a separate, isolated Git worktree or branch.

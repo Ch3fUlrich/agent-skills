@@ -19,8 +19,11 @@ See [`docs/architecture.md`](docs/architecture.md) for how the pieces fit and
 
 ## Pillar 1 — Skills
 
+> **Start Here:** For a complete directory of available skills, MCP servers, and the orchestration routing map, see the [Agent Skills Repository Index (`skills/repository-index/SKILL.md`)](skills/repository-index/SKILL.md).
+
 | Skill | Purpose |
 |---|---|
+| [`repository-index`](skills/repository-index/SKILL.md) | The master routing map for all MCP servers and agent skills. |
 | [`coding-principles`](skills/coding-principles/SKILL.md) | Engineering baseline: DRY, TDD, single responsibility, document-the-why, changelog/ADR backtracking, MCP-first navigation. |
 | [`structured-memory`](skills/structured-memory/SKILL.md) | Typed, cross-project, cross-agent memory on Omnigraph — recall at session start, persist durable decisions at end. |
 | [`mcp-servers-setup`](skills/mcp-servers-setup/SKILL.md) | Configure and use the self-hosted MCP stack for token-efficient coding. |
