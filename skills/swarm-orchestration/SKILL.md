@@ -92,7 +92,7 @@ The following artifacts are mandatory for non-trivial tasks:
   - `.agent-state/decisions/`
   - `.agent-state/risk/`
 
-If these artifacts exist, agents must use them instead of relying on conversation memory.
+If these artifacts exist, agents must use them instead of relying on conversation memory. All cross-agent conversational memory and long-term state must be managed exclusively by the `omnigraph` MCP server to ensure a durable graph representation of the project's evolution.
 
 ## Orchestration Flow
 
@@ -141,6 +141,15 @@ Default policy:
 - very high risk: Best-of-5 only if verification can cheaply arbitrate
 
 Never use Best-of-N as a default for all tasks.
+
+### Manual Best-of-N Execution
+If executing a high-risk task without the custom Python scaffold (e.g., interacting directly as Claude Code, Antigravity, or default OpenHands), the Architect MUST manually execute the Best-of-N pattern:
+1. Spawn N engineer sub-agents concurrently.
+2. Provide them with identical prompts and architecture contracts.
+3. Assign each a separate, isolated Git worktree or branch.
+4. Wait for all N engineers to complete their implementation.
+5. Run verification commands (tests, linters) on each isolated implementation.
+6. Arbitrate the winning implementation based on verification results and contract adherence.
 
 ## Handoffs
 
