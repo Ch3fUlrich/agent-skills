@@ -283,6 +283,179 @@ class BudgetEngine:
         return "red"
 
 
+class GateRunner:
+    def __init__(self, config: Config):
+        self.enabled = config.get("safety_gates", "enabled", default=True)
+        self.deny_list = config.get("safety_gates", "deny_list", default={})
+        self.size_ceiling = config.get("safety_gates", "size_ceiling", default={})
+
+    def run_gates(self, diff_stats: Dict[str, Any], changed_files: List[str]) -> Dict[str, Any]:
+        if not self.enabled:
+            return {"passed": True}
+
+        # Check deny list
+        import re
+        for category, pattern in self.deny_list.items():
+            regex = re.compile(pattern)
+            for file_path in changed_files:
+                if regex.search(file_path):
+                    # Fail-closed invariant: if it hits a gate, it MUST block.
+                    return {"passed": False, "reason": "DENY_LIST_MATCH", "category": category, "file": file_path}
+
+        # Check size ceiling
+        max_files = self.size_ceiling.get("max_files_changed", 30)
+        max_lines = self.size_ceiling.get("max_lines_changed", 800)
+        exemptions = self.size_ceiling.get("exemptions", [])
+
+        non_exempt_files = []
+        for file_path in changed_files:
+            if not any(re.compile(ex).search(file_path) for ex in exemptions):
+                non_exempt_files.append(file_path)
+
+        if len(non_exempt_files) > max_files:
+            return {"passed": False, "reason": "SIZE_CEILING_EXCEEDED", "metric": "files", "value": len(non_exempt_files)}
+        if diff_stats.get("lines_changed", 0) > max_lines:
+            return {"passed": False, "reason": "SIZE_CEILING_EXCEEDED", "metric": "lines", "value": diff_stats.get("lines_changed", 0)}
+
+        return {"passed": True}
+
+
+class ReviewerPanel:
+    def __init__(self, config: Config, provider_executor: ProviderExecutor):
+        self.config = config
+        self.provider_executor = provider_executor
+        self.swarm_config = config.get("swarm_review", default={})
+
+    def execute_swarm(self, diff_content: str, metadata: dict) -> List[Dict[str, Any]]:
+        if not self.swarm_config.get("enabled", True):
+            return []
+
+        perspectives = self.swarm_config.get("perspectives", {})
+        import concurrent.futures
+        results = []
+
+        # Parallel convergence execution
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_perspective = {}
+            for perspective_name, details in perspectives.items():
+                future = executor.submit(
+                    self.provider_executor.execute,
+                    role="reviewer",
+                    agent_id=f"swarm_{perspective_name}",
+                    system_prompt=f"You are a {perspective_name}. Focus on: {details.get('focus')}",
+                    user_prompt=f"Review this diff:\n{diff_content}",
+                    tools=[],
+                    mcp_servers=[],
+                    skill_ids=[],
+                    metadata=metadata,
+                    preferred_provider=details.get("model_tier")
+                )
+                future_to_perspective[future] = perspective_name
+
+            timeout = self.swarm_config.get("timeout_seconds", 600)
+            done, not_done = concurrent.futures.wait(
+                future_to_perspective.keys(), timeout=timeout
+            )
+
+            for future in done:
+                try:
+                    res = future.result()
+                    results.append({"perspective": future_to_perspective[future], "result": res})
+                except Exception as exc:
+                    results.append({"perspective": future_to_perspective[future], "error": str(exc)})
+
+            for future in not_done:
+                results.append({"perspective": future_to_perspective[future], "error": "timeout"})
+
+        return results
+
+
+class TriagePipeline:
+    def __init__(self, config: Config):
+        self.policy = config.get("triage_policy", default={})
+
+    def is_human_participating(self, thread_comments: List[Dict[str, Any]]) -> bool:
+        gate = self.policy.get("human_participation_gate", {})
+        if not gate.get("enabled", True):
+            return False
+        for comment in thread_comments:
+            if not comment.get("is_bot", False):
+                return True
+        return False
+
+    def calculate_verdict(self, swarm_findings: List[Dict[str, Any]]) -> str:
+        counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "nit": 0}
+        for finding in swarm_findings:
+            severity = finding.get("severity", "low").lower()
+            if severity in counts:
+                counts[severity] += 1
+
+        if counts["critical"] > 0:
+            return "BLOCKED"
+        if counts["high"] >= 2 or (counts["high"] >= 1 and counts["medium"] >= 2):
+            return "REQUEST_CHANGES"
+        if counts["high"] >= 1 or counts["medium"] >= 3:
+            return "APPROVE_WITH_NITS"
+        return "APPROVE"
+
+
+class BabysitState:
+    def __init__(self, config: Config, state_store: StateStore):
+        self.config = config.get("babysit_state", default={})
+        self.evidence_config = config.get("evidence_bundle", default={})
+        self.state_store = state_store
+
+    def track_ci_status(self, pr_id: str, current_status: str, logs: Optional[str] = None) -> Dict[str, Any]:
+        # Represents transient state tracking
+        state_file = self.state_store.state_dir / f"babysit_{pr_id}.json"
+        
+        state = {}
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+
+        state["last_status"] = current_status
+        if logs and self.evidence_config.get("capture_logs", True):
+            state.setdefault("evidence_bundles", []).append(logs)
+            
+        if current_status == "failed":
+            state["retries"] = state.get("retries", 0) + 1
+            
+        state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        
+        exceeds_retries = state.get("retries", 0) > self.evidence_config.get("max_retries_per_failure", 3)
+        return {"state": state, "exceeds_retries": exceeds_retries}
+
+
+class Narrator:
+    def __init__(self, config: Config):
+        self.config = config.get("narration", default={})
+
+    def format_review_comment(self, verdict: str, findings: List[Dict[str, Any]]) -> Optional[str]:
+        if self.config.get("mode") == "silent" and verdict in ["APPROVE", "APPROVE_WITH_NITS"]:
+            # In silent mode, nits are auto-fixed or ignored without posting a comment
+            return None
+
+        lines = []
+        if self.config.get("bluf_required", True):
+            lines.append(f"**Verdict:** {verdict}\n")
+
+        for finding in findings:
+            prefix = ""
+            if finding.get("autofixable", False) and self.config.get("prefix_autofixable"):
+                prefix = self.config.get("prefix_autofixable") + " "
+                
+            attribution = ""
+            if self.config.get("attribute_findings", True) and "perspective" in finding:
+                attribution = f"*(From {finding['perspective']})* "
+
+            lines.append(f"- {prefix}{attribution}{finding.get('description')}")
+
+        return "\n".join(lines)
+
+
 class MCPRouter:
     def __init__(self, config: Config):
         self.config = config
