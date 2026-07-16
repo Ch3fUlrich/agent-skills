@@ -103,22 +103,27 @@ Clients: **online** = MCP → the public API on `main`; **offline-capable** = lo
 stack + `setup/omnigraph-sync.sh` timer that pushes to a `device/<host>` branch
 and merges into `main` when reachable (`infra/mcp-servers/setup/`).
 
-### Script defaults assume the local stack, not central
+### Two stacks, one set of scripts — detected, not assumed
 
-The Omnigraph helper scripts (`infra/mcp-servers/scripts/apply-cluster.sh`,
-`dedup-graph.py`, `split-project-graph.py`, `add-project-graph.sh`) and this repo's
-`docker-compose.server.yml` were tuned against the **local** stack (compose project
-`mcp-server`, network `mcp-server_mcp-net`, MinIO named volume). Central runs compose
-project **`mcp-servers`** (network `mcp-servers_default`, MinIO **bind mount** at
-`$APPS_ROOT/omnigraph/minio` = `/home/s/apps/omnigraph/minio`, viewer bound `0.0.0.0:8090`
-for Caddy). On `coding.vm` the scripts need overrides: `OMNI_NET=mcp-servers_default`,
-`--network mcp-servers_default` / `--net mcp-servers_default`, and
-`--minio-path /home/s/apps/omnigraph/minio` (a named-volume `docker volume rm` is a no-op
-against a bind mount). Also mind `OMNIGRAPH_GRAPH_ID` (the MCP **bridge**'s graph) vs
-`OMNIGRAPH_GRAPH` (the **viewer**'s). Full table + exact flags in
-[`../infra/mcp-servers/README.md`](../infra/mcp-servers/README.md) ("Central vs local");
-to realign the defaults, see
-[`../prompts/omnigraph-align-scripts-to-central.md`](../prompts/omnigraph-align-scripts-to-central.md).
+The **local** stack (this repo's `docker-compose.server.yml`) is compose project
+`mcp-server` → network `mcp-server_mcp-net`. **Central** (`coding.vm`) is project
+`mcp-servers` → network `mcp-servers_default`, viewer bound `0.0.0.0:8090` for Caddy.
+Both keep MinIO on a **bind mount** (local `./data/minio`; central
+`$APPS_ROOT/omnigraph/minio` = `/home/s/apps/omnigraph/minio`).
+
+The helper scripts (`scripts/apply-cluster.sh`, `dedup-graph.py`,
+`split-project-graph.py`) therefore **ask docker** what is running rather than assuming a
+host — `scripts/_omni_env.py` derives the network from `docker inspect omnigraph-server`
+and the MinIO mount + **its type** from `docker inspect omnigraph-minio`, falling back to
+the local values when the stack is elsewhere. `OMNI_NET` / `--network` / `--net` /
+`--minio-path` / `--minio-volume` still override. `add-project-graph.sh` only edits
+`cluster.yaml`, so it is host-agnostic.
+
+Why the mount *type* matters: `docker volume rm` against a bind mount is a silent no-op,
+so a dedup rebuild would restart on a store it never wiped. Probe a host with
+`python3 scripts/_omni_env.py`. Also mind `OMNIGRAPH_GRAPH_ID` (the MCP **bridge**'s
+graph) vs `OMNIGRAPH_GRAPH` (the **viewer**'s). Detail:
+[`../infra/mcp-servers/README.md`](../infra/mcp-servers/README.md) ("Central vs local").
 
 ## Remote access (`infra/remote-access/`)
 

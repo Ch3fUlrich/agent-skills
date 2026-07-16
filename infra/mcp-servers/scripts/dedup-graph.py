@@ -33,6 +33,9 @@ import sys
 import time
 from collections import defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _omni_env import LOCAL_MINIO_VOLUME, LOCAL_NET, describe, detect_minio_store, detect_network  # noqa: E402
+
 LABEL = {"Project": "name", "Decision": "title", "Rule": "statement",
          "Preference": "statement", "Convention": "name", "Component": "name", "Task": "title"}
 
@@ -174,14 +177,18 @@ def node_count(a, token, graph="memory", retries=6):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="http://omnigraph-server:8080")
-    ap.add_argument("--network", default="mcp-server_mcp-net")
+    ap.add_argument("--network", default=os.environ.get("OMNI_NET"),
+                    help=f"docker network of the CLI container (default: auto-detected from the "
+                         f"running omnigraph-server, else {LOCAL_NET})")
     ap.add_argument("--image", default="modernrelay/omnigraph-server:v0.8.1")
     ap.add_argument("--token-file", default="/home/s/code/Server/server/coding/mcp-servers/.env")
     ap.add_argument("--compose-file", default="/home/s/code/Server/server/coding/mcp-servers/docker-compose.yml")
-    ap.add_argument("--minio-volume", default="mcp-servers_omnigraph_minio")
-    ap.add_argument("--minio-path", default=os.environ.get("MINIO_PATH", ""),
+    ap.add_argument("--minio-volume", default=None,
+                    help="named volume to remove on reset (default: auto-detected)")
+    ap.add_argument("--minio-path", default=os.environ.get("MINIO_PATH") or None,
                     help="bind-mount data dir to clear on reset (e.g. /home/s/apps/omnigraph/minio); "
-                         "overrides --minio-volume when the store is a bind mount, not a named volume")
+                         "overrides --minio-volume when the store is a bind mount, not a named volume. "
+                         "Default: auto-detected from the running omnigraph-minio")
     ap.add_argument("--backup-dir", default=os.path.join(os.path.dirname(__file__), "..", ".graph-backup"))
     ap.add_argument("--by-name", action="store_true", help="also treat same-type same-label nodes as duplicates")
     ap.add_argument("--map", action="append", default=[], help="force a merge, e.g. --map Invest=invest")
@@ -191,13 +198,36 @@ def main():
     a = ap.parse_args()
     a.graphs = [g.strip() for g in a.graphs.split(",") if g.strip()]
 
+    # Ask docker what is actually here rather than assuming the local stack: central
+    # (coding.vm) is compose project `mcp-servers` on `mcp-servers_default` with MinIO
+    # on a BIND MOUNT, while local is `mcp-server_mcp-net`. Explicit flags/env win.
+    a.network = a.network or detect_network(LOCAL_NET)
+    if not a.minio_path and not a.minio_volume:
+        kind, val = detect_minio_store()
+        if kind == "bind":
+            a.minio_path = val
+        elif kind == "volume":
+            a.minio_volume = val
+        else:
+            a.minio_volume = LOCAL_MINIO_VOLUME  # omnigraph-minio not on this host
+    print("[dedup] stack: " + describe(a.network,
+                                       "bind" if a.minio_path else "volume",
+                                       a.minio_path or a.minio_volume))
+
+    # --token-file defaults to CENTRAL's .env, which does not exist on a dev box, so also
+    # fall back to this repo's own .env.shared — otherwise a local run dies here.
+    here = os.path.dirname(os.path.abspath(__file__))
     token = os.environ.get("OMNIGRAPH_TOKEN")
-    if not token and os.path.exists(a.token_file):
-        for line in open(a.token_file):
+    for path in (a.token_file, os.path.join(here, "..", ".env.shared")):
+        if token:
+            break
+        if not os.path.exists(path):
+            continue
+        for line in open(path):
             if line.startswith("OMNIGRAPH_TOKEN="):
-                token = line.split("=", 1)[1].strip()
+                token = line.split("=", 1)[1].strip().strip('"').strip("'")
     if not token:
-        sys.exit("no OMNIGRAPH_TOKEN (env or --token-file)")
+        sys.exit(f"no OMNIGRAPH_TOKEN (env, --token-file {a.token_file}, or ../.env.shared)")
     forced = dict(kv.split("=", 1) for kv in a.map)
 
     all_graphs = list_graphs(a.server, a.network, a.image, token)
@@ -279,6 +309,17 @@ def main():
         if left:
             sys.exit(f"[dedup] ABORT: could not clear bind-mount {a.minio_path} (still: {left}); graphs untouched. backups under {a.backup_dir}")
     else:
+        # A volume that was never there is NOT a successful wipe: `volume rm` no-ops and
+        # the absence check below would pass, restarting on a store that still holds every
+        # graph. Both stacks actually use bind mounts, so this branch only runs when
+        # detection found a real named volume or one was passed explicitly — verify it
+        # exists before trusting its later absence.
+        vols_before = sh(["docker", "volume", "ls", "--format", "{{.Name}}"],
+                         capture_output=True, text=True).stdout.split()
+        if a.minio_volume not in vols_before:
+            sys.exit(f"[dedup] ABORT: named volume {a.minio_volume} does not exist, so nothing "
+                     f"would be wiped. Is MinIO on a bind mount? Pass --minio-path <dir>. "
+                     f"graphs untouched. backups under {a.backup_dir}")
         for c in sh(["docker", "ps", "-aq", "--filter", f"volume={a.minio_volume}"],
                     capture_output=True, text=True).stdout.split():
             sh(["docker", "rm", "-f", c], capture_output=True)
