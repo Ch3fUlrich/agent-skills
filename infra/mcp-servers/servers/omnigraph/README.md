@@ -112,13 +112,21 @@ runs over stdio and exposes the graph's tools (`query`, `mutate`, `load`,
 | Var | Value |
 |---|---|
 | `OMNIGRAPH_BASE_URL` | the server URL (e.g. `http://omnigraph-server:8080`, `http://localhost:8080`, or the public URL) |
-| `OMNIGRAPH_GRAPH_ID` | **`memory`** — required (server is cluster-only; the bridge refuses to start without it) |
+| `OMNIGRAPH_GRAPH_ID` | **the repo's own graph** (`<repo-folder-name>`) — required (server is cluster-only; the bridge refuses to start without it) |
 | `OMNIGRAPH_TOKEN` | the bearer token |
+
+> **One bridge = one graph.** `OMNIGRAPH_GRAPH_ID` pins the bridge, and no tool takes
+> a graph argument. Under per-project isolation each repo points `omnigraph` at its
+> own graph and adds a second `omnigraph-globals` server on `memory` (global-scope
+> `Preference`s only) — `memory` is *not* the right value for a project any more.
+> Don't confuse it with the **viewer's** `OMNIGRAPH_GRAPH`.
 
 **Hosts with Node** run it directly (see `config/mcp.json`, `config/mcp_antigravity.json`):
 
 ```json
-"omnigraph": { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
+"omnigraph":         { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
+  "env": { "OMNIGRAPH_BASE_URL": "http://localhost:8080", "OMNIGRAPH_GRAPH_ID": "<repo-folder-name>", "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}" } },
+"omnigraph-globals": { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
   "env": { "OMNIGRAPH_BASE_URL": "http://localhost:8080", "OMNIGRAPH_GRAPH_ID": "memory", "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}" } }
 ```
 
@@ -128,10 +136,11 @@ servers/omnigraph-mcp`) and use the docker-run form in `config/mcp-claude-code.j
 For Claude Code, register it directly:
 
 ```bash
-claude mcp add --scope user omnigraph -- \
-  docker run -i --rm --network mcp-servers_default \
+# --scope project so the graph id travels with the repo (network: `docker network ls`)
+claude mcp add --scope project omnigraph -- \
+  docker run -i --rm --network mcp-server_mcp-net \
   -e OMNIGRAPH_BASE_URL=http://omnigraph-server:8080 \
-  -e OMNIGRAPH_GRAPH_ID=memory -e OMNIGRAPH_TOKEN=<bearer> omnigraph-mcp:latest
+  -e OMNIGRAPH_GRAPH_ID=<repo-folder-name> -e OMNIGRAPH_TOKEN=<bearer> omnigraph-mcp:latest
 claude mcp get omnigraph      # -> Status: Connected
 ```
 

@@ -1,0 +1,43 @@
+{
+  "$comment": [
+    "Project-scoped MCP servers for THIS repo. Merged with the user-level servers in",
+    "~/.claude.json; a same-named server here wins, which is how this repo gets its own",
+    "Omnigraph graph instead of the shared globals graph.",
+    "",
+    "Per-project graph isolation: `omnigraph` is pinned to the `agent-skills` graph. A",
+    "bridge serves exactly one graph (no tool takes a graph argument), so reading the",
+    "global-scope Preferences in `memory` needs the second `omnigraph-globals` server.",
+    "Treat that one as read-only. See skills/structured-memory/SKILL.md.",
+    "",
+    "OMNIGRAPH_TOKEN is read from the environment and must never be written here (this",
+    "file is tracked). Set it once per machine, e.g. on Windows:",
+    "  [Environment]::SetEnvironmentVariable('OMNIGRAPH_TOKEN', '<token>', 'User')",
+    "or export it from infra/mcp-servers/.env.shared before launching your agent."
+  ],
+  "mcpServers": {
+    "omnigraph": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modernrelay/omnigraph-mcp"
+      ],
+      "env": {
+        "OMNIGRAPH_BASE_URL": "${OMNIGRAPH_BASE_URL:-http://localhost:8080}",
+        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}",
+        "OMNIGRAPH_GRAPH_ID": "agent-skills"
+      }
+    },
+    "omnigraph-globals": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modernrelay/omnigraph-mcp"
+      ],
+      "env": {
+        "OMNIGRAPH_BASE_URL": "${OMNIGRAPH_BASE_URL:-http://localhost:8080}",
+        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}",
+        "OMNIGRAPH_GRAPH_ID": "memory"
+      }
+    }
+  }
+}

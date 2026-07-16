@@ -122,11 +122,22 @@ docker compose --env-file .env.shared --env-file .env.client \
 Memory is **Omnigraph** by default: agents write typed `Decision / Rule /
 Preference / Convention / Component / Task` nodes (see the `structured-memory`
 skill) rather than Mem0's unstructured blobs. Real vector search uses a local
-**Ollama `nomic-embed-text`** embedder (768-dim; no cloud key). Mem0 is retained
+**Ollama `nomic-embed-text`** embedder (768-dim; no cloud key) — and is optional:
+without it, recall degrades to graph traversal + scalar indexes. Mem0 is retained
 as a documented fallback — rationale in
 [`docs/decisions/0001-omnigraph-over-mem0.md`](docs/decisions/0001-omnigraph-over-mem0.md).
 Full setup and per-agent wiring:
 [`infra/mcp-servers/README.md`](infra/mcp-servers/README.md).
+
+> **Per-project graph isolation.** Every repo gets its **own** graph named after the
+> repo folder; the shared **`memory`** graph holds **only** global-scope
+> `Preference`s. Point a repo at its graph with `OMNIGRAPH_GRAPH_ID=<repo>` in a
+> project-scoped `.mcp.json` — plus a second `omnigraph-globals` server for
+> `memory`, since a bridge serves exactly one graph. Keep the bearer token out of
+> the tracked file: use `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"` and export it (see
+> this repo's own [`.mcp.json`](.mcp.json)). A declared graph is not live until
+> `infra/mcp-servers/scripts/apply-cluster.sh` runs — verify with `graphs_list` /
+> `schema_get`, not by reading the config.
 
 **Client vs server, offline & auto-sync.** A server (always-on) owns the
 authoritative `main`; online clients point their MCP straight at it, and

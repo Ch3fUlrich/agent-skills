@@ -121,7 +121,7 @@ def node_count(a, token):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="http://omnigraph-server:8080")
-    ap.add_argument("--network", default="mcp-servers_default")
+    ap.add_argument("--network", default="mcp-server_mcp-net")
     ap.add_argument("--image", default="modernrelay/omnigraph-server:v0.8.1")
     ap.add_argument("--token-file", default="/home/s/code/Server/server/coding/mcp-servers/.env")
     ap.add_argument("--compose-file", default="/home/s/code/Server/server/coding/mcp-servers/docker-compose.yml")

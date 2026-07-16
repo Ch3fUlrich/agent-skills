@@ -53,6 +53,9 @@ htmlcov/
 # Graphify data (generated — regenerable, never track)
 graphify-out/
 
+# Playwright MCP output (snapshots, console logs, screenshots from UI verification)
+.playwright-mcp/
+
 # MCP server data (persistent, machine-local)
 mcp-servers/data/
 infra/mcp-servers/data/

@@ -147,23 +147,31 @@ services:
   #   Holds the bearer server-side; put Authelia in front when exposed.
   #   Local: http://127.0.0.1:8090 . Deployed instance: see
   #   Server/server/coding/mcp-servers/docker-compose.yml (coding.vm).
-  # SELF-HEALING memory backstop. After the server is healthy, merge-load
-  # every project seed (idempotent by @key slug — merge never duplicates,
-  # only fills what's missing). This guarantees all projects are present
-  # after ANY boot, so even a fully wiped/pruned MinIO volume repopulates
-  # from the versioned seed in the agent-skills repo. Harmless no-op when
-  # the store is already intact. $$f is escaped so compose leaves the shell
-  # loop variable alone (the bug that broke the old init guard).
+  # SELF-HEALING memory backstop. After the server is healthy, merge-load each
+  # seed into THE GRAPH NAMED AFTER ITS FILE (per-project isolation — cluster.yaml
+  # declares one graph per repo; `memory.jsonl` carries the global-scope
+  # Preferences). Idempotent by @key slug — merge never duplicates, only fills
+  # what's missing — so even a wiped MinIO volume repopulates from the versioned
+  # seed, and it is a harmless no-op when the store is intact.
+  #
+  # A failing seed EXITS NONZERO rather than warning-and-continuing: silent
+  # failures are how the relational-edge lines (Tracks/Affects/…) went unnoticed
+  # against a stale schema. $$f/$$g are escaped so compose leaves the shell loop
+  # variables alone (the bug that broke the old init guard).
   omnigraph-seed:
     image: modernrelay/omnigraph-server:v0.8.1
     container_name: omnigraph-seed
     depends_on:
       omnigraph-server: { condition: service_healthy }
-    entrypoint: ["sh", "-c", "for f in /cluster/seed/*.jsonl; do echo \"seeding $$f\"; omnigraph load --server http://omnigraph-server:8080 --graph memory --data \"$$f\" --mode merge --yes || echo \"WARN: seed $$f failed\"; done; echo 'omnigraph-seed complete'"]
+    entrypoint: ["sh", "-c", "rc=0; for f in /cluster/seed/*.jsonl; do g=$$(basename \"$$f\" .jsonl); echo \"seeding $$f -> graph $$g\"; omnigraph load --server http://omnigraph-server:8080 --graph \"$$g\" --data \"$$f\" --mode merge --yes || { echo \"ERROR: seed $$f -> graph $$g FAILED\"; rc=1; }; done; echo 'omnigraph-seed complete'; exit $$rc"]
     environment:
-      - OMNIGRAPH_BEARER_TOKEN=${OMNIGRAPH_TOKEN:?set in .env}
+      - OMNIGRAPH_BEARER_TOKEN=${OMNIGRAPH_TOKEN:?set in .env.shared}
     volumes:
-      - ${AGENT_SKILLS_DIR:-/home/s/code/agent-skills}/infra/mcp-servers/cluster:/cluster:ro
+      # Same relative mount omnigraph-init uses — compose resolves it from this
+      # file's directory, so no AGENT_SKILLS_* var (and no personal-path default).
+      - ./cluster:/cluster:ro
+    networks:
+      - mcp-net
     restart: "no"
 
   omnigraph-viewer:

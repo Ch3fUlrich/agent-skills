@@ -41,4 +41,7 @@ open(cfg, "w").write(s)
 PY
 
 echo "→ now run: ./scripts/apply-cluster.sh"
-echo "→ point a repo's agent at it by setting OMNIGRAPH_GRAPH=$name in that repo's MCP config."
+echo "→ then migrate any existing data out of the shared graph:"
+echo "     python3 scripts/split-project-graph.py $name --apply"
+echo "→ point a repo's agent at it by setting OMNIGRAPH_GRAPH_ID=$name in that repo's"
+echo "  .mcp.json (OMNIGRAPH_GRAPH is the *viewer's* variable, not the MCP bridge's)."
