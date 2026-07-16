@@ -1,6 +1,6 @@
 ---
 name: mcp-servers-setup
-description: Configure and use the self-hosted MCP server stack (Serena, Graphify, Omnigraph memory, Superpowers, Playwright) for token-efficient coding.
+description: Configure and use the self-hosted MCP server stack (Serena, Graphify, Omnigraph memory, Superpowers, Playwright) for token-efficient coding, and publish container images to the private Harbor registry.
 ---
 
 # MCP Servers Setup
@@ -108,6 +108,29 @@ mcp_superpowers_recommend_skills(task="debug a timeout issue")
 | Qdrant | `:6333` | — | Vector store |
 | Ollama | `:11434` | bge-m3 (566MB), qwen2.5:1.5b | Embedding + extraction |
 | OLLAMA_KEEP_ALIVE=24h | Windows env | — | Keep models in VRAM |
+
+### Harbor — Private Container Registry
+
+**Convention: any container image an agent builds to share or deploy goes to
+Harbor, never Docker Hub.** Harbor is the homelab registry (web UI, per-project
+RBAC/robot accounts, Trivy scanning) at `harbor.ohje.ooguy.com`, backed by the
+NFS share on cloud.vm. Local-only throwaway builds (e.g. `docker compose --build`
+for a stack that runs in place) do **not** need pushing — only images meant to be
+pulled elsewhere.
+
+```bash
+# build locally, then publish to Harbor under a project namespace (create the
+# project once in the UI: e.g. `agents`, `infra`)
+docker build -t myimage:latest .
+docker login harbor.ohje.ooguy.com                       # admin / project user / robot token
+docker tag  myimage:latest harbor.ohje.ooguy.com/agents/myimage:latest
+docker push harbor.ohje.ooguy.com/agents/myimage:latest
+# elsewhere: pull instead of rebuilding
+docker pull harbor.ohje.ooguy.com/agents/myimage:latest
+```
+
+Deployment / admin (installer, storage path, Caddy exposure, secrets) is the
+single source of truth in the Server repo: `server/cloud/harbor/README.md`.
 
 ## Project Initialization
 
