@@ -30,7 +30,7 @@ native instruction file each agent expects and keep each adapter short. See
 ## Infrastructure
 
 Self-hosted MCP runtime lives under `infra/` — `infra/mcp-servers/` (Serena,
-Graphify, Omnigraph memory, Superpowers, Playwright; Mem0 as fallback) and
+Graphify, Omnigraph memory, Superpowers, Playwright) and
 `infra/remote-access/` (Herdr multiplexer + Antigravity remote UI). See
 `docs/architecture.md`.
 

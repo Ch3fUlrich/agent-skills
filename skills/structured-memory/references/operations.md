@@ -46,8 +46,23 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
 
 5. **Verify every write.** `commits_list` head before/after, or re-export and
    diff. A 504 is **not** failure — the server may commit after the proxy drops
-   the response; check the head before retrying (blind retries duplicate
-   append-only nodes like `Decision`).
+   the response; check the head before retrying. What a blind retry costs depends
+   on *what* you wrote:
+   - **Nodes are safe to retry.** Every type in `memory.pg` is `@key(slug)`, so a
+     repeated `insert` of the same slug upserts rather than duplicating (verified
+     2026-07-16: two identical `insert Preference` calls → one node). Omnigraph's
+     own docs warn that "append-only types (`Signal`, `Claim`, `Decision`, …)
+     duplicate on retry" — that taxonomy is the **reference cookbook's schema, not
+     ours**; our `Decision` is slug-keyed. Don't inherit the warning blindly.
+   - **Edges are NOT.** Edges have no `@key`, so a retried edge insert duplicates
+     (rule 6). Verify edges before re-running anything that inserts them.
+   - A **`manifest_conflict` 409** (someone committed between your snapshot pin and
+     your write) and a **429** (`Retry-After`, per-actor admission control) are both
+     *always* safe to retry: the write never committed, so there is no partial state.
+   - `version drift … call sync_branch()` is a server-internal directive that leaked
+     into the error text — **`sync_branch()` is not a tool or CLI command.** Retry;
+     the next call re-pins. If it persists, write onto a fresh branch via
+     `load --from main` instead, which doesn't suffer `main`'s concurrent-commit drift.
 
 6. **Duplicate edges are the classic trap.** Edges are **not** slug-keyed, so a
    cross-store `load --mode merge` (device-branch merge, reconciling two clients)
@@ -82,13 +97,60 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
    collapse on its own (then needs `dedup-graph.py`). Reuse the same slug to make
    re-writes idempotent.
 
-10. **Embeddings = `nomic-embed-text` (768-dim), CPU-capable.** That is the
-    Omnigraph provider on local and central. `bge-m3` (1024-dim) is **only** the
-    mem0-fallback embedder — not this graph. New `Decision` nodes can arrive
-    **unembedded**; embed rationales via local Ollama and merge-load the nodes
-    (`scripts/populate-embeddings.py`, or embed 768-dim vectors and `load --merge`
-    the nodes only — no edge changes, so no dup risk). Mixed embedding spaces make
-    `nearest()` ranking inconsistent — standardize on `nomic-embed-text`.
+10. **`load --mode merge` does NOT (re)compute embeddings — merged Decisions go
+    INVISIBLE to vector search.** This is Omnigraph's documented behaviour
+    (`omnigraph://best-practices/search`): merge updates the `@embed("rationale")`
+    source but leaves the vector stale, and a `Decision` with a null `embedding` is
+    simply **dropped from `nearest()` results** — it does not rank last, it does not
+    appear. Since the persist protocol tells you to merge-load, every Decision you
+    write is unsearchable until embedded.
+
+    Not theoretical — measured 2026-07-16, after a few sessions of merge-loading:
+
+    | graph | Decisions embedded | missing |
+    |---|---|---|
+    | `agent-skills` | 3 | **3** |
+    | `basic-analysis` | 15 | **2** |
+    | `invest` | 14 | 0 |
+
+    **Worse than the upstream docs say: merge doesn't leave the vector stale, it
+    ERASES it.** Omnigraph's `best-practices/search` says the source updates while
+    "the embedding stays stale". Verified here 2026-07-16: merge-loading an existing
+    `Decision` with a record that omits `embedding` sets the field to **null** — the
+    upsert replaces the row. `omnigraph-over-mem0` had a vector, was merged with a
+    corrected rationale, and dropped out of `nearest()` entirely. So editing a
+    Decision's rationale silently un-indexes it.
+
+    **On v0.8.1 there is currently NO working way to (re)embed on a populated
+    graph.** Both documented paths hit the same Lance bug (verified 2026-07-16,
+    both failed *staged*, leaving the graph intact):
+
+    | attempt | result |
+    |---|---|
+    | `load --mode overwrite` (populated graph) | `stage_create_btree_index on node:Rule(["id"]) … all columns in a record batch must have the same length` |
+    | `load --mode merge` carrying hand-supplied vectors | `LanceError(Arrow): … all columns in a record batch must have the same length` |
+    | `omnigraph embed --reembed_all` | can't target a local endpoint on v0.8.1 |
+
+    `scripts/populate-embeddings.py` therefore only works against a **fresh/empty**
+    graph — which is why it succeeded at first seed and fails now. Until this is
+    fixed (server upgrade, or a supported re-embed path), the options are:
+    - **Accept it.** New/edited Decisions are findable by traversal and full-text,
+      just not by `nearest()`. Given a graph this small, that is usually fine.
+    - **Rebuild** via `scripts/dedup-graph.py`, which resets the store and reloads
+      each graph into an *empty* store — the one load path that works — feeding it
+      embedded data.
+
+    Whichever you pick: **don't claim semantic search covers a Decision you merged
+    without checking.** Confirm with a `nearest()` query that the slug comes back.
+
+    **Embeddings = `nomic-embed-text` (768-dim), CPU-capable** — the provider
+    declared in `cluster/cluster.yaml`, matching `Vector(768)` in `memory.pg`. Two
+    clients exist and must agree on dimension: the **load-time** one that fills
+    `@embed` fields, and the **query-time** one the server uses to auto-embed a
+    *string* passed to `nearest($v, "text")`. Point them at different-dimension
+    models and similarity search returns garbage or errors. Ollama is optional —
+    without it recall degrades to graph traversal + scalar indexes rather than
+    failing.
 
 11. **You do not manage device branches.** Write durable memory to `main`; the
     sync automation (`setup/omnigraph-sync.sh` / `sync-windows.ps1` on a timer)

@@ -67,9 +67,6 @@ mcp-servers/superpowers/tsconfig.json
 # Antigravity remote UI local dependencies
 antigravity-remote-ui/node_modules/
 
-# Mem0 MCP bridge (generated/reproducible)
-mcp-servers/servers/mem0-mcp/__pycache__/
-
 # Generated JS source maps (reproducible from TypeScript)
 mcp-servers/superpowers/build/*.map
 

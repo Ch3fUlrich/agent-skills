@@ -1,15 +1,15 @@
 ---
 name: structured-memory
-description: Store and retrieve durable, cross-project, cross-agent memory as typed nodes in the self-hosted Omnigraph graph — decisions, rules, preferences, conventions, components, and tasks. Use at session start to load what was already decided, and at session end (or when a durable decision is made) to persist it. Replaces Mem0's automatic fact extraction with an explicit, reviewable protocol. Do not use for transient scratch notes or single-session state.
+description: Store and retrieve durable, cross-project, cross-agent memory as typed nodes in the self-hosted Omnigraph graph — decisions, rules, preferences, conventions, components, and tasks. Use at session start to load what was already decided, and at session end (or when a durable decision is made) to persist it. Memory is explicit and reviewable: nothing is auto-extracted, so you choose what is durable and write it. Do not use for transient scratch notes or single-session state.
 ---
 
 # Structured Memory (Omnigraph)
 
 The self-hosted memory layer is **Omnigraph** — a graph store with combined
-graph-traversal + vector + full-text retrieval. Unlike Mem0, Omnigraph does not
-auto-extract memories from conversation. **You** decide what is durable and write
-it as a typed node. This is deliberate: typed, reviewable memory keeps rules and
-decisions integrated across future builds.
+graph-traversal + vector + full-text retrieval. It is the only memory layer; there
+is no fallback. Omnigraph does **not** auto-extract memories from conversation:
+**you** decide what is durable and write it as a typed node. This is deliberate —
+typed, reviewable memory keeps rules and decisions integrated across future builds.
 
 Schema (node/edge types, `.pg` declaration, JSONL ingest examples):
 [references/schema.md](references/schema.md).
@@ -31,10 +31,14 @@ Before editing code, load prior memory for the current project:
 
 1. Identify the project slug (the repository folder name, e.g. `agent-skills`).
 2. Query the project subgraph for `Rule`, `Decision`, `Preference`, `Convention`
-   nodes edged to that `Project`, plus global `Preference` nodes (`scope: global`).
-   Use a fused query (graph + vector + full-text) via the `query` tool, e.g.
-   ask "rules and decisions for project `<slug>`" and "conventions applying to
-   `<slug>`".
+   nodes edged to that `Project`, plus global `Preference` nodes (`scope: global`,
+   in the shared `memory` graph — needs the second bridge, see below).
+   **Scope first, rank second:** narrow by graph traversal *before* invoking
+   `nearest`/`bm25`/`rrf`, so ranking runs over the relevant set rather than every
+   node — cheaper and more relevant. Ranking ops are ordering, not filtering, so
+   they always need a trailing `limit N`.
+   For a whole-graph dump (this memory is small), prefer an export over paging
+   through read queries.
 3. Treat the returned `Rule (must)` nodes as hard constraints and `Decision`
    nodes as settled context. Do not re-litigate accepted decisions.
 
@@ -87,21 +91,49 @@ Two edge rules keep the graph correct and navigable:
 
 ## How to persist — branch, write, merge
 
-Memory writes are reviewable like code:
+**Pick the write first** (Omnigraph's rule, `omnigraph://best-practices/data`):
 
-1. Create a working branch off `main` with `branches_create`
-   (e.g. `mem/<project-slug>/<short-topic>`).
-2. Write typed nodes/edges with `load` (bulk NDJSON, `mode: merge`) or `mutate`
-   (single GQ writes), using stable **lowercase** kebab-case slugs so re-writes
-   are idempotent. Mind the edge-casing and D₂ rules in
-   [references/operations.md](references/operations.md).
-3. Merge the branch into `main` with `branches_merge` (edge-de-duplicating —
-   prefer it over a raw cross-store `load --merge`, which appends duplicate
-   edges). Prefer many small, self-describing writes over one large dump.
+| What you're writing | Use | Why |
+|---|---|---|
+| One or a few nodes/edges | `mutate` | typechecked + parameterized at call time; finishes well under the proxy timeout |
+| A bulk set, upserting by slug | `load` `mode: merge` | preserves rows not in the file |
+| A first/clean seed of a branch | `load` `mode: overwrite` | **destructive** — never on a populated `main` |
+
+`mode` is required — there is no default, because `overwrite` is destructive.
+Keep writes small: prefer `mutate` for a handful of records over a bulk `load`.
+
+Memory writes are reviewable like code. For anything risky or large:
+
+1. Fork + write in **one shot**: `load` with `from: "main"`, `branch:
+   "mem/<project-slug>/<short-topic>"`, `mode: "merge"`. (`from` forks the branch
+   if missing; without it a missing branch is a 404.) Use stable **lowercase**
+   kebab-case slugs so re-writes are idempotent. Mind the edge-casing and D₂ rules
+   in [references/operations.md](references/operations.md).
+2. **Verify on the branch** before it touches `main` — query it, and check the
+   branch head actually moved. *A branch head identical to `main`'s means the load
+   never landed and you have an empty fork.*
+3. Merge into `main` with `branches_merge` (edge-de-duplicating — prefer it over a
+   raw cross-store `load --merge`, which appends duplicate edges), then **delete the
+   branch**. Branches are for review, not for living in: create → load → verify →
+   merge → delete, same session. A week-old branch is a yellow flag — and a
+   leftover one **blocks `schema apply`**, which refuses to run while any non-main
+   branch exists (so a stray `device/<host>` or `mem/…` branch will break
+   `scripts/apply-cluster.sh`).
+
+**Know that a merged `Decision` is not semantically searchable.** `mode: merge`
+does not compute the `@embed("rationale")` vector — and if you merge a Decision that
+*had* one, it **erases** it (the upsert replaces the row). An unembedded `Decision`
+is *dropped* from `nearest()` — not ranked low, absent. On v0.8.1 there is no
+working way to re-embed a populated graph (both `overwrite` and vector-carrying
+`merge` hit a Lance bug), so this is a known limitation, not a step you can just
+run: the node stays findable by traversal and full-text, and a rebuild via
+`scripts/dedup-graph.py` is the only re-embed path. Don't claim semantic search
+covers a Decision you merged without checking it with a `nearest()` query. Detail +
+evidence: [references/operations.md](references/operations.md) rule 10.
 
 Supersede, don't overwrite, an accepted `Decision`: write the new `Decision` and
 a `Supersedes` edge to the old one; set the old one's `status` to `superseded`.
-Never `overwrite` the shared `main`.
+Never `overwrite` a populated `main`.
 
 ## You do not manage device branches — sync is automatic
 
@@ -163,13 +195,19 @@ project data.
   policy — see `cluster/users.policy.yaml.example`. Minting tokens is an admin /
   `apply-cluster.sh` step (tokens are cluster secrets, never committed).
 
-## Fallback
+## If Omnigraph is down
 
-If Omnigraph is unavailable, the `mem0-fallback` Docker Compose profile can be
-started (see `infra/mcp-servers/`). When on the fallback, apply the same protocol
-conceptually — store typed statements as memory text and scope by `user_id` =
-project slug — but prefer restoring Omnigraph. See
-`docs/decisions/0001-omnigraph-over-mem0.md`.
+**There is no fallback memory layer** (ADR
+[0003](../../docs/decisions/0003-remove-mem0-fallback.md); ADR
+[0001](../../docs/decisions/0001-omnigraph-over-mem0.md) has the original
+rationale). Work the session without recall — read the repo, its `CHANGELOG.md`
+and ADRs — and persist once the server is back. Memory is an accelerator, not a
+correctness dependency: a session without it is slower, not wrong. Don't invent a
+side-channel store; that is how memory fragments.
+
+Recovery, in order: the versioned `cluster/seed/*.jsonl` (the boot seeder
+re-merges them), then a `.graph-backup/` NDJSON export, then MinIO's bind-mounted
+store. Those backups are the real insurance — keep them working.
 
 ## Checklist
 

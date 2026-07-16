@@ -17,7 +17,7 @@ internals) and [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 ```bash
 cd infra/mcp-servers
 cp .env.shared.example .env.shared    # OMNIGRAPH_TOKEN (openssl rand -hex 32) + S3_BUCKET
-cp .env.server.example .env.server    # MINIO creds, OLLAMA_HOST_IP, ports, POSTGRES_PASSWORD
+cp .env.server.example .env.server    # MINIO creds, OLLAMA_HOST_IP, ports
 docker compose --env-file .env.shared --env-file .env.server \
   -f docker-compose.server.yml up -d omnigraph-server omnigraph-viewer
 ```
@@ -38,18 +38,12 @@ curl -fsS -H "Authorization: Bearer $OMNIGRAPH_TOKEN" http://127.0.0.1:8080/grap
 
 ### Compose gotchas (already fixed in `docker-compose.server.yml`)
 
-1. **`POSTGRES_PASSWORD` is required even for the Omnigraph-only stack.** Compose
-   interpolates *every* service (including the profile-gated `mem0-fallback`
-   ones) before applying profiles, so a bare `up` failed on the fallback
-   `postgres` service's `POSTGRES_PASSWORD:?…`. Fixed with a harmless default
-   (`${POSTGRES_PASSWORD:-changeme-mem0-fallback-only}`); still set a real value
-   before running `--profile mem0-fallback`.
-2. **MinIO host ports are configurable.** If `9000/9001` are taken on the host
+1. **MinIO host ports are configurable.** If `9000/9001` are taken on the host
    (e.g. a local MinIO/other process), set `MINIO_API_PORT` / `MINIO_CONSOLE_PORT`
    in `.env.server`. Omnigraph reaches MinIO over the **internal** Docker network
    (`minio:9000`), so the host publish is only for the console — a conflict never
    blocks the graph.
-3. **`down -v` does NOT wipe data.** MinIO data is a **bind mount**
+2. **`down -v` does NOT wipe data.** MinIO data is a **bind mount**
    (`./data/minio`), not a named volume. To truly reset the graph:
    `docker compose … down && rm -rf ./data/minio && … up`.
 

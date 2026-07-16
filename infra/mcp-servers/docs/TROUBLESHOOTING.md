@@ -2,7 +2,7 @@
 
 > **Note:** This is a detailed/legacy reference. The authoritative current
 > overview is [`../../../docs/architecture.md`](../../../docs/architecture.md);
-> the default memory layer is **Omnigraph** (Mem0 is a fallback).
+> the memory layer is **Omnigraph**.
 
 
 ## Common Issues
@@ -126,33 +126,6 @@ to it fails with `Tool 'activate_project' is not active`.
    restart. See `config/serena-project.yml` and
    docs/INSTALL-GUIDE.md#two-pitfalls-that-will-strand-a-session.
 
-### Mem0 can't connect to Qdrant
-
-**Symptom**: Mem0 tools fail with connection errors.
-
-```powershell
-# Verify Qdrant is running
-curl http://localhost:6333/health
-
-# Check Qdrant logs
-docker compose logs qdrant
-
-# Verify Mem0 config
-Get-Content config\mem0-config.yaml
-```
-
-### Mem0 embedding errors
-
-**Symptom**: Mem0 returns "embedding model unavailable".
-
-```powershell
-# Verify bge-m3 is loaded
-curl http://localhost:11434/api/tags | ConvertFrom-Json | Select-Object -ExpandProperty models
-
-# Pull if missing
-docker exec -it mcp-ollama ollama pull bge-m3
-```
-
 ### your coding agent doesn't show MCP tools
 
 **Symptom**: After starting your coding agent, MCP tools don't appear.
@@ -173,16 +146,13 @@ codewhale-tui mcp list
 
 If the config file doesn't exist:
 ```powershell
-# Run setup again
-.\scripts\setup.ps1
-
-# Or manually copy
+# Copy the template
 copy config\mcp.json $env:USERPROFILE\.codewhale\mcp.json
 ```
 
 ### Ollama uses CPU instead of GPU
 
-**Symptom**: Slow embeddings, high CPU usage during Mem0 operations.
+**Symptom**: Slow embeddings, high CPU usage during embedding operations.
 
 On Windows with NVIDIA GPU:
 ```powershell
@@ -232,8 +202,8 @@ codewhale-tui mcp tools serena
 Run these when something seems wrong:
 
 ```powershell
-# Full system check
-.\scripts\test.ps1
+# Server health
+curl -fsS http://localhost:8080/healthz
 
 # Docker health
 docker compose ps
@@ -262,9 +232,12 @@ If everything is broken and you want to start fresh:
 ```powershell
 # Stop and remove containers
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
-docker compose down -v
+docker compose --env-file .env.shared --env-file .env.server `
+  -f docker-compose.server.yml down
 
 # Remove data (warning: deletes all memories and indices)
+# NOTE: MinIO data is a bind mount (./data/minio) and survives `down -v` —
+# it has to be deleted explicitly.
 Remove-Item -Recurse -Force .\data
 
 # Remove installed tools
@@ -274,6 +247,8 @@ uv tool uninstall superpowers-mcp
 # Remove your coding agent MCP config
 Remove-Item $env:USERPROFILE\.codewhale\mcp.json
 
-# Re-run setup
-.\scripts\setup.ps1
+# Bring the stack back up
+docker compose --env-file .env.shared --env-file .env.server `
+  -f docker-compose.server.yml up -d
+curl -fsS http://localhost:8080/healthz
 ```

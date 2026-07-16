@@ -10,14 +10,14 @@ agents. Four servers are active:
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
 | **Omnigraph** | Structured, versioned cross-project memory (typed nodes + graph/vector/full-text recall) |
 
-> **IMPORTANT: Per-project graph isolation (this replaces Mem0's `user_id`)**
+> **IMPORTANT: Per-project graph isolation — scope by graph, never a per-call `user_id`**
 > Each project has its **own Omnigraph graph, named after the repo**. Point the
 > bridge at it with `OMNIGRAPH_GRAPH_ID=<repo-folder-name>` (project-scoped
 > `.mcp.json` env). The shared **`memory`** graph holds ONLY global-scope
 > `Preference`s — **never write project data there**. Inside your project graph,
 > still edge every node to its `Project` node (slug = repo folder name) and link
 > richly; a node with no `Project` edge shows as "global" — a bug for
-> project-specific info. Mem0 remains only as an off-by-default fallback.
+> project-specific info. Omnigraph is the only memory layer — there is no fallback.
 >
 > A bridge is pinned to **one** graph (no tool takes a graph argument), so reading
 > house-style globals needs a **second** server — declare `omnigraph` with

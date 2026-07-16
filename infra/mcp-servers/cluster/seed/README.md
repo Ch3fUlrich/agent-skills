@@ -13,7 +13,7 @@ repo). The `omnigraph-seed` compose service applies this mapping on every boot.
 | `memory.jsonl` | `memory` | **globals only** — cross-project `Preference {scope: global}` |
 | `agent-skills.jsonl` | `agent-skills` | this repo's ADRs / README / docs |
 | `homelab-server.jsonl` | `homelab-server` | the `Server` repo (edge / reverse-proxy / security model) |
-| `basic-analysis.jsonl` | `basic-analysis` | live graph export (originally distilled from Mem0) |
+| `basic-analysis.jsonl` | `basic-analysis` | live graph export (the `basic-analysis` repo) |
 | `invest.jsonl` | `invest` | live graph export (originally distilled from the `Invest` repo) |
 
 > **Keep seeds in sync with live.** The loader merges by `@key(slug)`, so a seed

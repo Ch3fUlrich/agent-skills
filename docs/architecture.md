@@ -20,7 +20,6 @@ infra/      ── self-hosted runtime
 | **Omnigraph** | stdio bridge (`@modernrelay/omnigraph-mcp`) → HTTP `:8080` | **Structured cross-project memory** (typed nodes; graph+vector+full-text) |
 | Superpowers | stdio (`node`) | Disciplined workflow skills (TDD, debugging, planning) |
 | Playwright | stdio (`npx`) | Browser automation |
-| ~~Mem0~~ | SSE (profile `mem0-fallback`) | Fallback memory only (off by default) |
 
 Memory vs code graph: **Graphify** answers "how is the code structured" (it
 auto-extracts from source); **Omnigraph** answers "what did we decide and why"
@@ -71,8 +70,8 @@ server (`graphs_list`, `schema_get`), never by reading `cluster.yaml` — an
 unapplied schema rejects edge types *silently*, which is how five relational edges
 went missing for weeks. Seeds load into the graph matching their file name.
 
-Default runtime = the **server** compose (`-f docker-compose.server.yml`; Omnigraph + MinIO + viewer). The Mem0
-fallback starts only with `--profile mem0-fallback`. See
+Runtime = the **server** compose (`-f docker-compose.server.yml`; Omnigraph + MinIO
++ viewer). There is no fallback memory layer — the stack requires Omnigraph. See
 `docs/decisions/0001-omnigraph-over-mem0.md`.
 
 ### Omnigraph internals
@@ -135,7 +134,7 @@ graph) vs `OMNIGRAPH_GRAPH` (the **viewer**'s). Detail:
 
 ## Data & secrets
 
-- `graphify-out/` and `infra/mcp-servers/data/` (Omnigraph/MinIO/Postgres) are
+- `graphify-out/` and `infra/mcp-servers/data/` (Omnigraph/MinIO) are
   generated and **untracked**.
 - No personal absolute paths or secrets in tracked files. Paths come from
   `${AGENT_SKILLS_ROOT}` / `${CODE_ROOT}` / `${SERENA_HOME}` and `.env`

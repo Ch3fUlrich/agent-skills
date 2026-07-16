@@ -58,14 +58,15 @@ The default memory layer. Instead of unstructured blobs, write **typed** nodes
 
 | Action | How |
 |--------|-----|
-| Recall project memory | `queries` for rules/decisions/preferences edged to the project |
-| Persist a durable fact | `ingest`/`mutations` a typed node on a branch, then merge |
-| Global preferences | `Preference` nodes with `scope: global` (recalled everywhere) |
+| Recall project memory | `query` for rules/decisions/preferences edged to the project |
+| Persist a durable fact | `mutate` (a few nodes) or `load` `mode: merge` (bulk), on a branch, then merge |
+| Global preferences | `Preference` nodes with `scope: global`, in the shared `memory` graph |
 
-Full protocol and schema: `skills/structured-memory/SKILL.md`. Project isolation
-is by `Project` edges and `scope`, not a per-call `user_id`. Mem0 remains
-available as an off-by-default fallback (`docker compose --profile mem0-fallback
-up -d`).
+Full protocol and schema: `skills/structured-memory/SKILL.md`. **Each repo has its
+own graph** named after the repo folder (`OMNIGRAPH_GRAPH_ID=<repo>`); the shared
+`memory` graph holds only global-scope `Preference`s. Isolation is by graph, plus
+`Project` edges inside it — never a per-call `user_id`. Omnigraph is the only memory
+layer; there is no fallback (ADR 0003).
 
 ### Graphify — Project Graphs
 
@@ -78,7 +79,7 @@ up -d`).
 **Usage**:
 ```
 graphify query "what connects the CLI setup to the MCP config?"
-graphify path "setup.ps1" "mcp.json"
+graphify path "apply-cluster.sh" "cluster.yaml"
 ```
 
 **Rule**: Graphify does not replace Serena. Use Serena for symbol-level navigation and Graphify for broader relationship questions when a graph exists.
@@ -145,8 +146,8 @@ single source of truth in the Server repo: `server/cloud/harbor/README.md`.
 ```bash
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d
-./scripts/linux/start.sh      # or scripts/windows/start.ps1 on Windows
-./scripts/linux/test.sh       # verify all services
+curl -fsS http://localhost:8080/healthz                  # server up
+python3 scripts/_omni_env.py                             # what stack docker actually has
 ```
 
 ## Recommended Workflow
@@ -162,7 +163,8 @@ docker compose --env-file .env.shared --env-file .env.server -f docker-compose.s
 
 ```powershell
 # Full health check
-.\windows\test.ps1
+curl -fsS http://localhost:8080/healthz                  # omnigraph server
+curl -fsS -H "Authorization: Bearer $env:OMNIGRAPH_TOKEN" http://localhost:8080/graphs
 
 # Serena
 serena project list

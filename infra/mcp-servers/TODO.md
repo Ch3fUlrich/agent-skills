@@ -7,8 +7,8 @@
 
 ## Why Migrate?
 
-- **Shared state**: Both agents (your coding agent + Claude Code) share the same Mem0
-  memory and Serena indices. No duplication.
+- **Shared state**: Both agents (your coding agent + Claude Code) share the same
+  Omnigraph memory and Serena indices. No duplication.
 - **Self-hosted**: No dependency on Claude's plugin marketplace.
 - **Consistent tools**: Same MCP tools, same behavior across agents.
 - **Privacy**: All data stays on your machine.
@@ -17,7 +17,7 @@
 
 ### Phase 1: Run Both Systems Side-by-Side (NOW)
 
-- [x] MCP servers installed and running (Serena, Mem0, Superpowers)
+- [x] MCP servers installed and running (Serena, Omnigraph, Superpowers)
 - [x] Docker services running (Qdrant + Ollama)
 - [x] your coding agent configured with `~/.codewhale/mcp.json`
 - [ ] Claude Code **still using plugins** for now
@@ -28,7 +28,7 @@
 
 ### Phase 2: Bootstrap Knowledge Transfer
 
-- [ ] Agent has built up knowledge in Mem0 through your coding agent usage
+- [ ] Agent has built up knowledge in Omnigraph through your coding agent usage
 - [ ] Serena indices exist for frequently-used repositories
 - [ ] Superpowers skills are tested via your coding agent
 
@@ -37,9 +37,9 @@ by switching.
 
 ### Phase 3: Export Claude Code Plugin Data
 
-- [ ] Export Claude Code conversation history for Mem0 import
+- [ ] Export Claude Code conversation history for Omnigraph import
   - Location: `~/.claude/` or `%APPDATA%/Claude/`
-  - Relevant conversations can be summarized and stored in Mem0
+  - Relevant conversations can be summarized and stored in Omnigraph
 - [ ] Verify Serena indices under `.serena/` are identical (shared by both)
 - [ ] Note any Superpowers skill customizations made in Claude Code
 - [ ] Export context7 data if available locally
@@ -66,11 +66,12 @@ by switching.
   - Option B: Use Claude Code's `/mcp add` commands:
     ```
     /mcp add serena uvx --from serena-agent serena start-mcp-server --context=claude-code
-    /mcp add mem0 uvx --from git+https://github.com/elvismdev/mem0-mcp-selfhosted mem0-mcp-selfhosted
     /mcp add superpowers uvx --from git+https://github.com/erophames/superpowers-mcp superpowers-mcp
     ```
+    (`omnigraph` needs `OMNIGRAPH_BASE_URL`/`TOKEN`/`GRAPH_ID` in its `env` —
+    use Option A, or see `servers/omnigraph/README.md#register-the-mcp-bridge`.)
 - [ ] Restart Claude Code
-- [ ] Test: `mcp_serena_find_symbol`, `mcp_mem0_recall`, `mcp_superpowers_*`
+- [ ] Test: `mcp_serena_find_symbol`, `mcp_omnigraph_query`, `mcp_superpowers_*`
 - [ ] Rollback if broken: restore `settings.json.backup`
 
 **Goal**: Claude Code uses the same MCP servers as your coding agent.
@@ -103,8 +104,8 @@ Claude Code's plugin system when not connected.
 
 - [ ] `mcp_serena_find_symbol` returns correct results
 - [ ] `mcp_serena_find_references` finds all usages
-- [ ] `mcp_mem0_remember` stores new memories
-- [ ] `mcp_mem0_recall` retrieves stored memories
+- [ ] `mcp_omnigraph_mutate` stores new memories
+- [ ] `mcp_omnigraph_query` retrieves stored memories
 - [ ] `mcp_superpowers_*` skills work as before
 - [ ] Same tools available in both your coding agent and Claude Code
 - [ ] Token usage is measurably lower than before (track with /cost)
@@ -115,5 +116,5 @@ Claude Code's plugin system when not connected.
   MCP equivalents yet. Keep them enabled if you use them.
 - Serena's project indices are shared between the plugin and the CLI —
   no data loss when switching.
-- Mem0 is a **new capability** — Claude Code didn't have persistent memory
+- Omnigraph is a **new capability** — Claude Code didn't have persistent memory
   before. This is an upgrade, not a replacement.

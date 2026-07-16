@@ -5,6 +5,61 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Removed — Mem0, entirely (2026-07-16)
+
+Omnigraph is the memory layer, with **no fallback** — see the new
+[ADR 0003](docs/decisions/0003-remove-mem0-fallback.md) for why the escape hatch cost
+more than it insured (ADR 0001 keeps the original Omnigraph rationale; only its fallback
+clause is void). The stack now needs no Postgres/pgvector and no LLM API key.
+
+- Deleted `servers/_fallback/` (mem0-custom, mem0-mcp, mem0-dashboard), the
+  `mem0-fallback` Compose profile and its 4 services, and the Mem0/Postgres/DeepSeek env
+  vars from `.env.server.example`.
+- **Deleted the Mem0-era orchestration scripts** — `scripts/{windows,linux}/{setup,start,
+  stop,test,migrate}.*` and `scripts/test_mcp_tools.py`. They were not merely
+  mem0-flavoured: they stood up the Mem0 stack, health-checked `localhost:8888`, and
+  their bare `docker compose` calls had been failing with "no configuration file
+  provided" ever since the server/client compose split. The documented setup path had
+  been dead for months. Docs now point at the compose commands that actually work.
+- Deleted the legacy `docs/ARCHITECTURE.md` + `docs/TOKEN_SAVINGS.md` — self-declared
+  duplicates of `docs/architecture.md`, structurally Mem0 documents.
+- Swept every remaining live reference (README, AGENTS, architecture, infra README,
+  TODO, runbook, troubleshooting, install guide, server READMEs, ignore files) and
+  removed the obsolete `ba-conv-mem0-project-isolation` Convention (`user_id=` on "every
+  Mem0 call") from the live `basic-analysis` graph. History — CHANGELOG, ADRs,
+  `docs/superpowers/**` — is left intact.
+
+### Changed — Omnigraph rules realigned to the upstream best-practices docs
+
+Checked `skills/structured-memory/` against `omnigraph://best-practices/*` and verified
+each claim against the running server rather than adopting it on faith:
+
+- **Corrected a rule that was wrong for our schema.** `operations.md` warned that "blind
+  retries duplicate append-only nodes like `Decision`" — that taxonomy is the upstream
+  *cookbook's* schema, not ours. Every type in `memory.pg` is `@key(slug)`; verified two
+  identical `insert Preference` calls produce **one** node. Nodes are safe to retry;
+  **edges** (no `@key`) are the real risk.
+- **Documented behaviour worse than upstream describes.** The docs say `load --mode
+  merge` leaves an `@embed` vector "stale". Verified: it **erases** it — merging a
+  `Decision` whose record omits `embedding` nulls the field, and an unembedded
+  `Decision` is *dropped* from `nearest()`, not ranked low. Measured 3/6 `agent-skills`
+  and 2/17 `basic-analysis` Decisions silently unsearchable this way.
+- **And that the documented fix does not work.** On v0.8.1 *both* re-embed paths fail
+  with the same Lance bug on a populated graph (`overwrite` →
+  `stage_create_btree_index`; `merge` carrying vectors → `LanceError(Arrow)`), so
+  `populate-embeddings.py` only works against a fresh graph. Recorded as a known
+  limitation instead of an unfollowable instruction. A failed overwrite can leave Lance
+  HEAD ahead of the manifest so all loads to that graph fail while reads work —
+  `docker restart omnigraph-server` recovers it, no data lost.
+- Added, from upstream: `load --from` forks a review branch in one shot; branches are
+  short-lived (create → load → verify → merge → **delete**) and a stray one **blocks
+  `schema apply`** (so a leftover `device/<host>` branch breaks `apply-cluster.sh`);
+  "scope first, rank second" before `nearest`/`bm25`/`rrf`; `409 manifest_conflict` and
+  `429` are always safe to retry; `sync_branch()` is a leaked internal directive, not a
+  tool; pick `mutate` over `load` for a handful of records.
+- Rewrote `references/schema.md`'s stale framing; `prompts/omnigraph-central-bring-up-to-date.md`
+  replaces the two narrower central prompts.
+
 ### Fixed — per-project graph isolation actually deployed (2026-07-16)
 
 The isolation model was declared in git but **never applied to a running server**.
