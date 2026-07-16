@@ -78,6 +78,13 @@ Two edge rules keep the graph correct and navigable:
    under-linked. Aim for at least one relational edge where a real relationship
    exists.
 
+   This matches Omnigraph's own guidance: the reference cookbook model (SPIKE:
+   11 node types, **24 edge types**) is richly connected — edges run *between*
+   entities (`Element→Element`, `Pattern→Pattern`, `Insight→Element`), explicitly
+   **not** a star. A hub-and-spoke graph where everything only edges to one hub is
+   the anti-pattern. (That said, connect only relationships that genuinely exist —
+   don't fabricate edges to hit a number; density should follow the information.)
+
 ## How to persist — branch, write, merge
 
 Memory writes are reviewable like code:

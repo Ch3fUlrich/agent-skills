@@ -79,6 +79,31 @@ via a `device/<host>` branch. See [`setup/`](setup/) (`client-setup.sh`,
 Authelia), `omnigraph-minio.ohje.ooguy.com` (MinIO console, Authelia). See
 [`../../docs/architecture.md`](../../docs/architecture.md).
 
+## Central vs local: script defaults & mismatches
+
+The Omnigraph helper scripts (`scripts/apply-cluster.sh`, `scripts/dedup-graph.py`,
+`scripts/split-project-graph.py`, `scripts/add-project-graph.sh`) and this repo's
+`docker-compose.server.yml` were tuned against a **local** stack (compose project
+`mcp-server`). Their defaults do **not** match the **central** deployment on `coding.vm`,
+which boots from `Server/server/coding/mcp-servers/docker-compose.yml` (compose project
+`mcp-servers`, Dockhand-managed). On central, pass these overrides:
+
+| Concern | Script default (local) | Central reality | Override on central |
+|---|---|---|---|
+| Docker network | `mcp-server_mcp-net` (`OMNI_NET` / `--network` / `--net`) | `mcp-servers_default` (project `mcp-servers`, no custom network) | `OMNI_NET=mcp-servers_default` (apply-cluster.sh) · `--network mcp-servers_default` (dedup-graph.py) · `--net mcp-servers_default` (split-project-graph.py) |
+| MinIO store (dedup reset) | named volume `mcp-servers_omnigraph_minio` (`--minio-volume`) | **bind mount** `/home/s/apps/omnigraph/minio` (`$APPS_ROOT/omnigraph/minio`); the named volume was removed | `--minio-path /home/s/apps/omnigraph/minio` — a `docker volume rm` is a **no-op** against a bind mount |
+| S3 endpoint | `http://omnigraph-minio:9000` (`OMNI_S3`) | same (`omnigraph-server`'s `AWS_ENDPOINT_URL_S3`) | none — already matches |
+| Env / token | `apply-cluster.sh` sources `.env.shared` + `.env.server`; `split-project-graph.py` reads the same | central token/MinIO creds live in `Server/server/coding/mcp-servers/.env` | make `.env.shared`/`.env.server` resolve to central's values (or `export OMNIGRAPH_TOKEN=…`). `dedup-graph.py` already defaults `--token-file`/`--compose-file` to central's `.env`/compose, but its `--network`/`--minio-volume` are still local |
+| Boot compose | `docker-compose.server.yml` (project `mcp-server`, viewer `127.0.0.1:8090`) | `Server/server/coding/mcp-servers/docker-compose.yml` (project `mcp-servers`, viewer `0.0.0.0:8090` for Caddy) | manage central via that compose, not this repo's `docker-compose.server.yml` (a local/dev variant) |
+
+**Variable-name trap:** `OMNIGRAPH_GRAPH_ID` pins the graph for the **MCP bridge**;
+`OMNIGRAPH_GRAPH` is the **viewer** app's variable. They are different — don't swap them.
+
+To realign the scripts to central — run with the overrides above, or change the defaults to
+auto-detect — verify against the live stack first (`docker inspect omnigraph-server` for the
+real network, `docker inspect omnigraph-minio` for the MinIO mount). See
+[`../../prompts/omnigraph-align-scripts-to-central.md`](../../prompts/omnigraph-align-scripts-to-central.md).
+
 ## Container Registry (Harbor)
 
 To store and share Docker images (like `graphify-mcp` or other custom agents), we use **Harbor**, an open-source trusted cloud native registry. 

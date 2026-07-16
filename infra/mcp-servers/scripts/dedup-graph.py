@@ -127,7 +127,10 @@ def clean_records(nodes, edges, dupes, forced):
     for n in nodes:
         s = n["data"]["slug"]
         canon = slug_map.get(s, s)
-        d = {k: v for k, v in n["data"].items() if k != "id"}
+        # drop id + embedding: the reload is `overwrite` into a fresh graph, and
+        # hand-supplying vectors can trip a Lance ingest error on v0.8.1. @embed
+        # regenerates the Decision embedding from `rationale` on load (provider up).
+        d = {k: v for k, v in n["data"].items() if k not in ("id", "embedding")}
         d["slug"] = canon
         if canon in merged:
             for k, v in d.items():
@@ -148,20 +151,24 @@ def clean_records(nodes, edges, dupes, forced):
     return merged, out_edges, edge_dupes
 
 
-def node_count(a, token, graph="memory"):
-    """Total node rows in the graph (via snapshot). -1 on failure."""
-    r = subprocess.run(
-        ["docker", "run", "--rm", "-i", "--network", a.network,
-         "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
-         "--entrypoint", "sh", a.image, "-c",
-         'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-         f'omnigraph snapshot --server local --graph {graph} 2>/dev/null'],
-        capture_output=True, text=True)
-    try:
-        d = json.loads(r.stdout[r.stdout.index("{"):])
-        return sum(t["rowCount"] for t in d.get("tables", []) if t["tableKey"].startswith("node"))
-    except Exception:  # noqa: BLE001
-        return -1
+def node_count(a, token, graph="memory", retries=6):
+    """Total node rows in the graph (via snapshot). -1 on failure. Retries so a
+    just-restarted server (HTTP not ready yet) doesn't spuriously report -1."""
+    for attempt in range(retries):
+        r = subprocess.run(
+            ["docker", "run", "--rm", "-i", "--network", a.network,
+             "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
+             "--entrypoint", "sh", a.image, "-c",
+             'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
+             f'omnigraph snapshot --server local --graph {graph} 2>/dev/null'],
+            capture_output=True, text=True)
+        try:
+            d = json.loads(r.stdout[r.stdout.index("{"):])
+            return sum(t["rowCount"] for t in d.get("tables", []) if t["tableKey"].startswith("node"))
+        except Exception:  # noqa: BLE001
+            if attempt < retries - 1:
+                time.sleep(3)
+    return -1
 
 
 def main():
@@ -193,28 +200,41 @@ def main():
         sys.exit("no OMNIGRAPH_TOKEN (env or --token-file)")
     forced = dict(kv.split("=", 1) for kv in a.map)
 
-    graphs = a.graphs or list_graphs(a.server, a.network, a.image, token)
-    if not graphs:
-        sys.exit("[dedup] could not discover any graphs (GET /graphs) — pass --graphs or set GRAPHS=")
-    print(f"[dedup] graphs: {graphs}")
+    all_graphs = list_graphs(a.server, a.network, a.image, token)
+    if not all_graphs:
+        sys.exit("[dedup] could not discover any graphs (GET /graphs)")
+    target = set(a.graphs) if a.graphs else set(all_graphs)
+    unknown = target - set(all_graphs)
+    if unknown:
+        sys.exit(f"[dedup] unknown graph(s) in --graphs/GRAPHS: {sorted(unknown)}; server has {all_graphs}")
+    print(f"[dedup] graphs: {all_graphs}  (dedup targets: {sorted(target)})")
 
-    # 1. Export + clean EVERY graph up front. The rebuild resets the whole MinIO
-    #    volume (overwrite is unreliable on a populated v0.8.1 graph), which wipes
-    #    all graphs — so every graph must be reloaded afterward, even clean ones.
+    # 1. Export EVERY graph up front. The rebuild resets the whole MinIO volume
+    #    (overwrite is unreliable on a populated v0.8.1 graph), which wipes ALL
+    #    graphs — so every graph must be reloaded afterward, even ones we don't
+    #    dedup. Non-target graphs pass through unchanged (reload == original).
     ts = time.strftime("%Y%m%d-%H%M%S")
     os.makedirs(a.backup_dir, exist_ok=True)
     plan = {}
-    for g in graphs:
+    for g in all_graphs:
         recs = export_graph(a.server, a.network, a.image, token, g)
         nodes = [r for r in recs if "type" in r]
         edges = [r for r in recs if "edge" in r]
-        dupes = find_dupes(nodes, a.by_name)
-        merged, out_edges, edge_dupes = clean_records(nodes, edges, dupes, forced)
+        if g in target:
+            dupes = find_dupes(nodes, a.by_name)
+            merged, out_edges, edge_dupes = clean_records(nodes, edges, dupes, forced)
+        else:  # pass-through: still must be reloaded after the global reset
+            dupes = []
+            merged = {n["data"]["slug"]: {"type": n["type"],
+                      "data": {k: v for k, v in n["data"].items() if k not in ("id", "embedding")}} for n in nodes}
+            out_edges = [{"edge": e["edge"], "from": e["from"], "to": e["to"]} for e in edges]
+            edge_dupes = 0
         dirty = bool(dupes or edge_dupes)
         plan[g] = dict(recs=recs, merged=merged, out_edges=out_edges,
                        dupes=dupes, edge_dupes=edge_dupes, dirty=dirty)
         print(f"[dedup]   {g}: {len(nodes)} nodes, {len(edges)} edges — "
-              + (f"{len(dupes)} node-dup group(s), {edge_dupes} dup edge(s)" if dirty else "clean"))
+              + (f"{len(dupes)} node-dup group(s), {edge_dupes} dup edge(s)" if dirty
+                 else ("clean" if g in target else "pass-through")))
 
     if not any(p["dirty"] for p in plan.values()):
         print("[dedup] no duplicates in any graph — nothing to do.")
