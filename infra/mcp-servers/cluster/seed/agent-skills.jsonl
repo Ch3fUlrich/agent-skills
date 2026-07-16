@@ -13,7 +13,7 @@
 {"type": "Convention", "data": {"id": "changelog-adr-backtracking", "example": "Record notable changes in CHANGELOG.md and non-obvious decisions as docs/decisions/NNNN-*.md; small revertible commits.", "name": "Backtracking via CHANGELOG + ADRs", "slug": "changelog-adr-backtracking"}}
 {"type": "Decision", "data": {"id": "herdr-multiplexer", "date": "2026-07-09", "rationale": "Per-agent status, detach/reattach over SSH, socket API for agent-to-agent orchestration. antigravity-remote-ui kept for the distinct IDE-streaming case.", "slug": "herdr-multiplexer", "status": "accepted", "title": "Herdr is the recommended agent multiplexer over raw tmux"}}
 {"type": "Rule", "data": {"id": "no-secrets-in-git", "severity": "must", "slug": "no-secrets-in-git", "statement": "No personal absolute paths or secrets in tracked files; use ${AGENT_SKILLS_ROOT}/${CODE_ROOT}/${SERENA_HOME} and gitignored .env."}}
-{"type": "Decision", "data": {"id": "omnigraph-over-mem0", "date": "2026-07-09", "rationale": "Typed, queryable, reviewable memory keeps rules integrated across future builds; fused graph+vector+full-text retrieval beats pure vector similarity, and writes are versioned and reversible (ADR 0001, 2026-07-09). This decision stands. The Mem0 fallback it originally retained was removed entirely on 2026-07-16 (ADR 0003 / decision as-dec-remove-mem0-fallback) \u2014 Omnigraph is now the only memory layer, with no fallback.", "slug": "omnigraph-over-mem0", "status": "accepted", "title": "Omnigraph replaces Mem0 as default memory"}}
+{"type": "Decision", "data": {"id": "omnigraph-over-mem0", "date": "2026-07-09", "rationale": "Typed, queryable, reviewable memory keeps rules/decisions integrated; Mem0 auto-extracts opaque vector blobs. Mem0 kept as off-by-default fallback profile.", "slug": "omnigraph-over-mem0", "status": "accepted", "title": "Omnigraph replaces Mem0 as default memory"}}
 {"type": "Rule", "data": {"id": "skill-single-source", "severity": "must", "slug": "skill-single-source", "statement": "A skill's SKILL.md is the single source of truth; starters and root instruction files are thin pointers, never copies of the workflow."}}
 {"type": "Decision", "data": {"id": "three-pillar-restructure", "date": "2026-07-09", "rationale": "Consolidated loose dirs (Gen/prompt/repositories -> prompts/), moved mcp-servers + antigravity under infra/, untracked graphify-out, de-personalized paths.", "slug": "three-pillar-restructure", "status": "accepted", "title": "Repo restructured into skills/ starters/ infra/"}}
 {"edge": "Affects", "from": "as-dec-per-project-split-executed", "to": "as-omnigraph-cluster"}
@@ -22,24 +22,24 @@
 {"edge": "Affects", "from": "as-dec-remove-mem0-fallback", "to": "as-omnigraph-cluster"}
 {"edge": "AppliesTo", "from": "changelog-adr-backtracking", "to": "agent-skills"}
 {"edge": "ConstrainsComponent", "from": "as-rule-seeds-track-live", "to": "as-omnigraph-cluster"}
-{"edge": "ConstrainsComponent", "from": "as-rule-declared-is-not-live", "to": "as-omnigraph-cluster"}
 {"edge": "ConstrainsComponent", "from": "as-rule-sync-dedup-single-graph", "to": "as-sync-automation"}
+{"edge": "ConstrainsComponent", "from": "as-rule-declared-is-not-live", "to": "as-omnigraph-cluster"}
 {"edge": "ConstrainsComponent", "from": "as-rule-no-memory-fallback", "to": "as-omnigraph-cluster"}
 {"edge": "ConstrainsComponent", "from": "as-rule-embed-after-merge", "to": "as-omnigraph-cluster"}
-{"edge": "ConstrainsProject", "from": "no-secrets-in-git", "to": "agent-skills"}
-{"edge": "ConstrainsProject", "from": "skill-single-source", "to": "agent-skills"}
 {"edge": "ConstrainsProject", "from": "as-rule-declared-is-not-live", "to": "agent-skills"}
-{"edge": "ConstrainsProject", "from": "as-rule-seeds-track-live", "to": "agent-skills"}
+{"edge": "ConstrainsProject", "from": "no-secrets-in-git", "to": "agent-skills"}
 {"edge": "ConstrainsProject", "from": "as-rule-sync-dedup-single-graph", "to": "agent-skills"}
+{"edge": "ConstrainsProject", "from": "skill-single-source", "to": "agent-skills"}
+{"edge": "ConstrainsProject", "from": "as-rule-seeds-track-live", "to": "agent-skills"}
 {"edge": "ConstrainsProject", "from": "as-rule-embed-after-merge", "to": "agent-skills"}
 {"edge": "ConstrainsProject", "from": "as-rule-no-memory-fallback", "to": "agent-skills"}
-{"edge": "DecidedIn", "from": "three-pillar-restructure", "to": "agent-skills"}
-{"edge": "DecidedIn", "from": "omnigraph-over-mem0", "to": "agent-skills"}
-{"edge": "DecidedIn", "from": "herdr-multiplexer", "to": "agent-skills"}
-{"edge": "DecidedIn", "from": "as-dec-two-bridge-globals", "to": "agent-skills"}
-{"edge": "DecidedIn", "from": "as-dec-per-project-split-executed", "to": "agent-skills"}
 {"edge": "DecidedIn", "from": "as-dec-memory-globals-only", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "herdr-multiplexer", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "omnigraph-over-mem0", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "as-dec-two-bridge-globals", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "three-pillar-restructure", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "as-dec-per-project-split-executed", "to": "agent-skills"}
 {"edge": "DecidedIn", "from": "as-dec-remove-mem0-fallback", "to": "agent-skills"}
 {"edge": "DependsOn", "from": "as-sync-automation", "to": "as-omnigraph-cluster"}
-{"edge": "PartOf", "from": "as-omnigraph-cluster", "to": "agent-skills"}
 {"edge": "PartOf", "from": "as-sync-automation", "to": "agent-skills"}
+{"edge": "PartOf", "from": "as-omnigraph-cluster", "to": "agent-skills"}

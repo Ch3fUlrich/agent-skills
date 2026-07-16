@@ -1,4 +1,5 @@
 {"type": "Component", "data": {"id": "ba-agent-config", "kind": "config", "location": ".mcp.json (serena; omnigraph -> graph `basic-analysis`; omnigraph-globals -> graph `memory`), CLAUDE.md, AGENTS.md, .agents/AGENTS.md (Antigravity swarm roles).", "name": "Agent instruction + MCP config", "slug": "ba-agent-config"}}
+{"type": "Component", "data": {"id": "ba-analysis-pkg", "kind": "library", "location": "basic_analysis/analysis/ \u2014 graphs, sttc, maxent, decoding/decoders, assemblies, sequences, registration, spatial_qc, clustering, place_cells, grid_cells, comparison, behavior_coupling, behavior_states, kinematics.", "name": "Analysis algorithms package", "slug": "ba-analysis-pkg"}}
 {"type": "Component", "data": {"id": "ba-batch-engine", "kind": "cli", "location": "basic_analysis/analysis/batch.py (Click) \u2014 run as `python -m basic_analysis.analysis.batch <subcommand>` (degree-distributions, laplacian-spectra, network-summaries, sttc, trace-statistics, population-rates...).", "name": "Batch engine + CLI", "slug": "ba-batch-engine"}}
 {"type": "Component", "data": {"id": "ba-bp-behavior", "kind": "flask-blueprint", "location": "app/blueprints/behavior/ \u2014 behavioral (pupil/paw/velocity/twitch) analysis cards + ROI overlay.", "name": "Behavior page", "slug": "ba-bp-behavior"}}
 {"type": "Component", "data": {"id": "ba-bp-comparison", "kind": "flask-blueprint", "location": "app/blueprints/comparison/ \u2014 cross-group / cross-dataset comparison cards.", "name": "Group comparison page", "slug": "ba-bp-comparison"}}
@@ -11,11 +12,14 @@
 {"type": "Component", "data": {"id": "ba-bp-results", "kind": "flask-blueprint", "location": "app/blueprints/results/ \u2014 browse/load persisted analysis results from the master HDF5.", "name": "Results browser", "slug": "ba-bp-results"}}
 {"type": "Component", "data": {"id": "ba-bp-structure-index", "kind": "flask-blueprint", "location": "app/blueprints/structure_index/ \u2014 Structure Index result views.", "name": "Structure Index page", "slug": "ba-bp-structure-index"}}
 {"type": "Component", "data": {"id": "ba-bp-video-analyzer", "kind": "flask-blueprint", "location": "app/blueprints/video_analyzer/ \u2014 interactive pupil/paw/ROI video analysis UI.", "name": "Video analyzer page", "slug": "ba-bp-video-analyzer"}}
+{"type": "Component", "data": {"id": "ba-config", "kind": "config", "location": "configs/pipeline.yaml (single source); basic_analysis/config.py; app/services/{config_schema,config_help,config_store}.py; docs/src/configuration.md is the reference.", "name": "Config single-source + validation", "slug": "ba-config"}}
 {"type": "Convention", "data": {"id": "ba-conv-boxplots-not-violins", "example": "boxplot_with_points: box + jittered scatter; Tukey outer-fence outliers kept in plot but coloured, legend-flagged, and EXCLUDED from box statistics + significance tests; show significant group differences on the plot.", "name": "Boxplots with scattered points, never violin plots", "slug": "ba-conv-boxplots-not-violins"}}
 {"type": "Convention", "data": {"id": "ba-conv-changelog-discipline", "example": "Append a concise dated entry under '## [Unreleased] - <date>' in changelog.md for every big task (feature / fix / refactor / migration / coverage push) before considering it done (AGENTS.md rule 3).", "name": "Changelog discipline", "slug": "ba-conv-changelog-discipline"}}
 {"type": "Convention", "data": {"id": "ba-conv-generalized-batch", "example": "run_session_batch(animal_dataset, fn, *, desc, skip_none, parallel, n_jobs) in analysis/batch.py \u2014 single-item logic separated from bulk-loop boilerplate; orchestrators generate_* reuse it (AGENTS.md rule 1).", "name": "Generalized batch processing accepts a callable", "slug": "ba-conv-generalized-batch"}}
+{"type": "Convention", "data": {"id": "ba-conv-mem0-project-isolation", "example": "Always pass user_id='basic-analysis' (this repo's folder name) on every Mem0 call to prevent cross-project memory spillover (CLAUDE.md / AGENTS.md).", "name": "Mem0 project isolation", "slug": "ba-conv-mem0-project-isolation"}}
 {"type": "Convention", "data": {"id": "ba-conv-serena-for-nav", "example": "get_symbols_overview / find_symbol / find_referencing_symbols to read; replace_symbol_body / insert_after_symbol / rename_symbol / safe_delete_symbol to edit. Reserve raw Read/Edit for non-code files or a few-line in-symbol tweak (AGENTS.md).", "name": "Use Serena semantic tools for all code navigation & editing", "slug": "ba-conv-serena-for-nav"}}
 {"type": "Convention", "data": {"id": "ba-conv-web-help-popover", "example": "Single HELP registry co-located with the AnalysisSpec registry: {title, algorithm, what_it_shows, docs_url, optional mermaid}. Never hard-code descriptions in templates; the popover summarizes, the docs/ page is source of truth (AGENTS.md rule 4).", "name": "Every analysis/plot ships a ? help popover", "slug": "ba-conv-web-help-popover"}}
+{"type": "Rule", "data": {"id": "ba-coverage-lint", "severity": "should", "slug": "ba-coverage-lint", "statement": "Aim for >95% test coverage per file; Ruff (rules E,F,I,W, line-length 100) must be clean before done."}}
 {"type": "Decision", "data": {"id": "ba-dec-best-dataset-selection", "date": "2026-07-08", "rationale": "Default to only the best wheel dataset per animal+date (config-overridable): manual quality rank first; if unavailable a composite score gated at >=200 cells AND >=10 min, then more-cells > longer-duration, SNR-weighted. Full ranking formula in configs/pipeline.yaml (Plan 06 Task 4.2.1).", "slug": "ba-dec-best-dataset-selection", "status": "accepted", "title": "Analyse the best wheel dataset per animal+date by default"}}
 {"type": "Decision", "data": {"id": "ba-dec-canonical-event-accessor", "date": "2026-07-08", "rationale": "io/dataset.py::Session.load_event_traces(prefer='spks', clean=True, version=None) returns deconvolved suite2p spikes when prefer='spks' and present, else the Plan-03 fluor-step array. Every addon seam (Plan 08 _geometry_signal, 09, 10 load_deconvolved, 12 _drift_signal) resolves to THIS accessor.", "slug": "ba-dec-canonical-event-accessor", "status": "accepted", "title": "Session.load_event_traces is the single canonical event/signal accessor"}}
 {"type": "Decision", "data": {"id": "ba-dec-dtw-tracker-dead", "date": "2026-07-08", "rationale": "analysis/registration.py IoU+Hungarian engine (register_sessions/register_sessions_aligned) is the well-tested live tracker. Paul's DTW tracker is dead/incomplete (missing find_overlaps/normalize_dtw_distances/store_*; scorer wrong without normalization; method='weighted' mislabeled). Plan 07 renames method to 'iou_hungarian' (weighted alias) + adds 'dtw' after porting/fixing 4 funcs + ground truth.", "slug": "ba-dec-dtw-tracker-dead", "status": "accepted", "title": "IoU+Hungarian is the live longitudinal tracker; Paul's DTW tracker is dead code"}}
@@ -89,109 +93,129 @@
 {"type": "Decision", "data": {"id": "ba-vendor-binarize2p", "date": "2026-06-30", "rationale": "Calcium preprocessing (binarization / dF/F) migrated from the external binarize2pcalcium repo into basic_analysis/preprocessing/.", "slug": "ba-vendor-binarize2p", "status": "accepted", "title": "Migrate binarize2pcalcium preprocessing into the package"}}
 {"type": "Decision", "data": {"id": "ba-vendor-ngmd", "date": "2026-06-29", "rationale": "Ported ngmd (Rodrigo C. G. Pena, ceda-unibas, BSD-3) graph/STTC/network analysis into basic_analysis/analysis (graphs.py, sttc.py), removing the editable external dependency; credited in NOTICE + README.", "slug": "ba-vendor-ngmd", "status": "accepted", "title": "Vendor ngmd graph/STTC/network code into the package"}}
 {"type": "Decision", "data": {"id": "ba-video-classical-cv", "date": "2026-06-23", "rationale": "OpenCV over scikit-image (hardware decode, MOG2, contour/ellipse); Otsu bright-pupil threshold over deep learning (IR pupil is the brightest blob); MOG2 over DeepLabCut (zero training data).", "slug": "ba-video-classical-cv", "status": "accepted", "title": "Classical computer vision for video behavior extraction"}}
+{"type": "Component", "data": {"id": "ba-video-pipeline", "kind": "pipeline", "location": "basic_analysis/video/ \u2014 pupil (Otsu bright-pupil + ellipse fit), paw (MOG2 / GPU tracker); planned myoclonic-twitch detection from motion energy.", "name": "Video behavior pipeline", "slug": "ba-video-pipeline"}}
 {"type": "Convention", "data": {"id": "ba-viz-publication", "example": "SciencePlots no-latex, 8pt sans-serif font, 300 DPI PDF output, colorblind-friendly palette.", "name": "Publication figure defaults", "slug": "ba-viz-publication"}}
 {"type": "Decision", "data": {"id": "ba-web-components", "date": "2026-07-01", "rationale": "UI built from native Web Components (ba-header/ba-filter/ba-help/ba-run-panel/ba-palette...) hosted by a thin Jinja base.html; dataset selection persisted in localStorage; no build step.", "slug": "ba-web-components", "status": "accepted", "title": "Native Web Components for the UI (no bundler)"}}
 {"type": "Component", "data": {"id": "ba-webapp", "kind": "web-app", "location": "app/ blueprints (core, neural, behavior, video_analyzer, maxent, running, config); services (analysis_registry, result_store, analysis_runner, job_queue). 4-card dashboard + generic run->HDF5->auto-load lifecycle.", "name": "Flask web dashboard", "slug": "ba-webapp"}}
 {"type": "Convention", "data": {"id": "ba-windows-shell", "example": "Use pwsh.exe; YAML paths use backslashes; the F: network data drive is slow for I/O.", "name": "Windows dev environment notes", "slug": "ba-windows-shell"}}
 {"type": "Project", "data": {"id": "basic-analysis", "name": "Basic Analysis", "path": "~/code/basic-analysis", "slug": "basic-analysis", "summary": "Flexible pipeline extracting information from neural + behavioral recordings (2P calcium imaging). Research goal: intrinsic activity in hippocampus CA3 in mice, in darkness, no task. Python 3.10.19 + uv. Data on F:\\Experiments\\Steffen\\Intrinsic_Imaging (32 animals, 525 sessions). Importable package basic_analysis/ + Flask web app app/."}}
+{"edge": "Addresses", "from": "ba-task-twitch-detection", "to": "ba-video-pipeline"}
+{"edge": "Addresses", "from": "ba-task-suite2p-runner", "to": "ba-analysis-pkg"}
+{"edge": "Affects", "from": "ba-video-classical-cv", "to": "ba-video-pipeline"}
+{"edge": "Affects", "from": "ba-web-components", "to": "ba-webapp"}
 {"edge": "Affects", "from": "ba-dec-own-omnigraph-graph", "to": "ba-agent-config"}
-{"edge": "AppliesTo", "from": "ba-test-command", "to": "basic-analysis"}
+{"edge": "Affects", "from": "ba-hdf5-single-source", "to": "ba-master-hdf5"}
 {"edge": "AppliesTo", "from": "ba-conv-boxplots-not-violins", "to": "basic-analysis"}
-{"edge": "AppliesTo", "from": "ba-pipeline-analysis-split", "to": "basic-analysis"}
-{"edge": "AppliesTo", "from": "ba-conv-web-help-popover", "to": "basic-analysis"}
-{"edge": "AppliesTo", "from": "ba-windows-shell", "to": "basic-analysis"}
 {"edge": "AppliesTo", "from": "ba-qc-tukey", "to": "basic-analysis"}
-{"edge": "AppliesTo", "from": "ba-ruff-check", "to": "basic-analysis"}
-{"edge": "AppliesTo", "from": "ba-viz-publication", "to": "basic-analysis"}
 {"edge": "AppliesTo", "from": "ba-conv-serena-for-nav", "to": "basic-analysis"}
+{"edge": "AppliesTo", "from": "ba-conv-web-help-popover", "to": "basic-analysis"}
+{"edge": "AppliesTo", "from": "ba-test-command", "to": "basic-analysis"}
 {"edge": "AppliesTo", "from": "ba-conv-changelog-discipline", "to": "basic-analysis"}
+{"edge": "AppliesTo", "from": "ba-conv-mem0-project-isolation", "to": "basic-analysis"}
+{"edge": "AppliesTo", "from": "ba-viz-publication", "to": "basic-analysis"}
 {"edge": "AppliesTo", "from": "ba-conv-generalized-batch", "to": "basic-analysis"}
-{"edge": "ConstrainsComponent", "from": "ba-rule-fluor-version-keying", "to": "ba-pkg-preprocessing"}
-{"edge": "ConstrainsComponent", "from": "ba-rule-config-ssot-translator", "to": "ba-pkg-config"}
+{"edge": "AppliesTo", "from": "ba-ruff-check", "to": "basic-analysis"}
+{"edge": "AppliesTo", "from": "ba-pipeline-analysis-split", "to": "basic-analysis"}
+{"edge": "AppliesTo", "from": "ba-windows-shell", "to": "basic-analysis"}
 {"edge": "ConstrainsComponent", "from": "ba-rule-load-if-cached", "to": "ba-master-hdf5"}
-{"edge": "ConstrainsComponent", "from": "ba-rule-store-subsession-isolation", "to": "ba-svc-h5-paths"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-config-ssot-translator", "to": "ba-pkg-config"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-store-subsession-isolation", "to": "ba-master-hdf5"}
 {"edge": "ConstrainsComponent", "from": "ba-rule-fluor-version-keying", "to": "ba-pkg-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-shuffle-null-everywhere", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-load-if-cached", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-qc-versioned-partitions", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-help-mandatory", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-global-seed", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-mi-bits", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-citations", "to": "basic-analysis"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-fluor-version-keying", "to": "ba-analysis-pkg"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-fluor-version-keying", "to": "ba-pkg-preprocessing"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-config-ssot-translator", "to": "ba-config"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-store-subsession-isolation", "to": "ba-svc-h5-paths"}
 {"edge": "ConstrainsProject", "from": "ba-never-delete-raw", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-global-seed", "to": "basic-analysis"}
 {"edge": "ConstrainsProject", "from": "ba-rule-coverage-95", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-numba-torch-benchmark", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-honest-labeling", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-fluor-version-keying", "to": "basic-analysis"}
-{"edge": "ConstrainsProject", "from": "ba-rule-config-ssot-translator", "to": "basic-analysis"}
 {"edge": "ConstrainsProject", "from": "ba-rule-store-subsession-isolation", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-versioned-fluor-pipeline", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-load-if-cached", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-best-dataset-selection", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-suite2p-per-subsession", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-vendor-ngmd", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-maxent-migration", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-canonical-event-accessor", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-web-components", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-serbra-kinematics", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-vendor-binarize2p", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-dtw-tracker-dead", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-src-to-package", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-merge-target-basic-analysis", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-shuffle-null-everywhere", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-numba-torch-benchmark", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-qc-versioned-partitions", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-honest-labeling", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-load-if-cached", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-coverage-lint", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-config-ssot-translator", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-help-mandatory", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-fluor-version-keying", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-citations", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-mi-bits", "to": "basic-analysis"}
 {"edge": "DecidedIn", "from": "ba-intrinsic-overhaul", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-serbra-kinematics", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-merge-target-basic-analysis", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-suite2p-per-subsession", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-own-omnigraph-graph", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-versioned-fluor-pipeline", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-best-dataset-selection", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-maxent-migration", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-vendor-ngmd", "to": "basic-analysis"}
 {"edge": "DecidedIn", "from": "ba-video-classical-cv", "to": "basic-analysis"}
 {"edge": "DecidedIn", "from": "ba-hdf5-single-source", "to": "basic-analysis"}
-{"edge": "DecidedIn", "from": "ba-dec-own-omnigraph-graph", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-cli", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-config", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-04-suite2p", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-02-statistics", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-structure-index", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-master-hdf5", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-comparison", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-08-population-geometry", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-15-lead-lag", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-simulation", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-svc-analysis-registry", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-preprocessing", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-scripts-pipeline", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-behavior", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-video-analyzer", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-pipeline-flow", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-events", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-14-neural-page", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-09-topology", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-01-config-translator", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-visualization", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-results", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-svc-pipeline-scheduler", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-svc-help", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-06-analysis-rerun", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-longitudinal", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-03-fluorescence", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-docs", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-io", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-structure-index", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-maxent", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-neural", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-13-overview-page", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-07-longitudinal", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-pipeline", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-10-decoders", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-maxent", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-webapp", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-16-notebooks", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-11-behaviour-coupling", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-docs", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-svc-config-store", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-12-drift", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-plan-05-video-twitch", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-bp-config", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-web-components", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-load-if-cached", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-canonical-event-accessor", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-vendor-binarize2p", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-src-to-package", "to": "basic-analysis"}
+{"edge": "DecidedIn", "from": "ba-dec-dtw-tracker-dead", "to": "basic-analysis"}
+{"edge": "DependsOn", "from": "ba-analysis-pkg", "to": "ba-master-hdf5"}
+{"edge": "DependsOn", "from": "ba-batch-engine", "to": "ba-analysis-pkg"}
+{"edge": "DependsOn", "from": "ba-video-pipeline", "to": "ba-master-hdf5"}
+{"edge": "DependsOn", "from": "ba-webapp", "to": "ba-master-hdf5"}
+{"edge": "DependsOn", "from": "ba-analysis-pkg", "to": "ba-config"}
+{"edge": "Implements", "from": "ba-task-intrinsic-overhaul", "to": "ba-intrinsic-overhaul"}
 {"edge": "PartOf", "from": "ba-batch-engine", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-svc-h5-paths", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-video", "to": "basic-analysis"}
-{"edge": "PartOf", "from": "ba-pkg-analysis", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-02-statistics", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-neural", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-04-suite2p", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-analysis-pkg", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-maxent", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-pipeline-flow", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-10-decoders", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-longitudinal", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-07-longitudinal", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-docs", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-pipeline", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-preprocessing", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-cli", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-video-pipeline", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-svc-analysis-registry", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-05-video-twitch", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-config", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-io", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-16-notebooks", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-maxent", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-09-topology", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-webapp", "to": "basic-analysis"}
 {"edge": "PartOf", "from": "ba-agent-config", "to": "basic-analysis"}
-{"edge": "Tracks", "from": "ba-task-twitch-detection", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-svc-pipeline-scheduler", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-15-lead-lag", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-structure-index", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-06-analysis-rerun", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-svc-help", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-svc-config-store", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-08-population-geometry", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-config", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-comparison", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-master-hdf5", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-analysis", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-events", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-behavior", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-11-behaviour-coupling", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-docs", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-01-config-translator", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-12-drift", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-video-analyzer", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-structure-index", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-svc-h5-paths", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-visualization", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-scripts-pipeline", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-03-fluorescence", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-simulation", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-14-neural-page", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-config", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-pkg-video", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-bp-results", "to": "basic-analysis"}
+{"edge": "PartOf", "from": "ba-plan-13-overview-page", "to": "basic-analysis"}
 {"edge": "Tracks", "from": "ba-task-intrinsic-overhaul", "to": "basic-analysis"}
+{"edge": "Tracks", "from": "ba-task-twitch-detection", "to": "basic-analysis"}
 {"edge": "Tracks", "from": "ba-task-suite2p-runner", "to": "basic-analysis"}
