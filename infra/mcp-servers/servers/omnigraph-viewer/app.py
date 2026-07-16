@@ -150,11 +150,12 @@ svg{width:100%;height:100%;display:block}
 .link.hl{stroke:var(--acc);stroke-opacity:1;stroke-width:2px}
 .link.dim{stroke-opacity:.06}
 .node{cursor:pointer}
-.node circle{stroke:var(--bg);stroke-width:2px}
+.node circle{paint-order:stroke}   /* stroke = project-cluster ring (set per-node); fill drawn on top */
 .node text{font-size:11px;fill:var(--fg);pointer-events:none}
 .node.dim{opacity:.12}
 .node.hl circle{stroke:var(--acc);stroke-width:3px}
 .elabel{font-size:9px;fill:var(--mut);pointer-events:none}
+.clabel{font-size:15px;font-weight:700;text-anchor:middle;opacity:.85;pointer-events:none;text-transform:uppercase;letter-spacing:.5px}
 #side{width:320px;border-left:1px solid var(--bd);background:var(--panel);overflow:auto;padding:14px}
 #side h3{margin:.1em 0 .4em;font-size:14px}
 #side .k{color:var(--mut);font-size:12px;margin-top:8px}
@@ -192,7 +193,7 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
 <div class="tabs" id="tabs"></div>
 <main>
   <div id="stage">
-    <svg id="svg"><g id="viewport"><g id="links"></g><g id="elabels"></g><g id="nodes"></g></g></svg>
+    <svg id="svg"><g id="viewport"><g id="hulls"></g><g id="clabels"></g><g id="links"></g><g id="elabels"></g><g id="nodes"></g></g></svg>
     <div id="hint">scroll = zoom · drag empty space = pan · drag node = move</div>
     <div id="legend"></div>
   </div>
@@ -203,6 +204,36 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
 const S={data:null,branch:"main",tab:"all",view:"graph",q:"",types:new Set(),sim:null};
 const TYPES=["Project","Decision","Rule","Preference","Convention","Component","Task"];
 const COLOR=t=>getComputedStyle(document.documentElement).getPropertyValue("--"+t).trim()||"#888";
+// ---- project clustering: group nodes by their primary project so clusters are obvious ----
+const CPAL=["#f6c453","#6ea8fe","#e5675f","#57c98a","#b98cf0","#4bc4d6","#f78fb3","#7bd389","#ffa94d","#a0a7b4"];
+function clusterOf(n){                                   // which cluster a node lives in
+  if(n.type==="Project")return n.id;                     // a Project node anchors its own cluster
+  if(n.projects&&n.projects.length)return n.projects[0]; // primary project
+  if(n.global)return "__global";
+  return "__misc";
+}
+function clusterName(cid){
+  if(cid==="__global")return "global";
+  if(cid==="__misc")return "unassigned";
+  const p=(S.data.projects||[]).find(x=>x.id===cid);
+  return p?p.name:cid;
+}
+// a project keeps the SAME color everywhere: index into a stable global cluster order
+function clusterColor(cid){
+  const order=(S.data.projects||[]).map(p=>p.id).concat("__global","__misc");
+  const i=order.indexOf(cid);return CPAL[(i<0?0:i)%CPAL.length];
+}
+// build cluster colors/anchors for the currently visible nodes (anchors spread on a ring)
+function buildClusters(vis,W,H){
+  const ids=[...new Set(vis.map(clusterOf))].sort();     // deterministic layout order
+  const info={},n=ids.length,R=Math.min(W,H)*0.34;
+  ids.forEach((cid,i)=>{
+    const a=n>1?(-Math.PI/2+i*2*Math.PI/n):0;            // spread anchors on a ring
+    info[cid]={color:clusterColor(cid),name:clusterName(cid),
+      anchor:n>1?{x:W/2+R*Math.cos(a),y:H/2+R*Math.sin(a)}:{x:W/2,y:H/2}};
+  });
+  return {ids,info,multi:n>1};
+}
 const $=s=>document.querySelector(s);
 const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
@@ -218,8 +249,9 @@ async function loadBranches(){
   $("#branch").innerHTML=b.map(x=>`<option ${x===S.branch?"selected":""}>${esc(x)}</option>`).join("");
 }
 function buildTabs(){
-  const t=[{id:"all",name:"All"},{id:"global",name:"Global"}].concat((S.data.projects||[]).map(p=>({id:p.id,name:p.name})));
-  $("#tabs").innerHTML=t.map(x=>`<div class="tab ${x.id===S.tab?"on":""}" data-id="${esc(x.id)}">${esc(x.name)}</div>`).join("");
+  const t=[{id:"all",name:"All"},{id:"global",name:"Global",c:clusterColor("__global")}]
+    .concat((S.data.projects||[]).map(p=>({id:p.id,name:p.name,c:clusterColor(p.id)})));   // tab dot = cluster color
+  $("#tabs").innerHTML=t.map(x=>`<div class="tab ${x.id===S.tab?"on":""}" data-id="${esc(x.id)}">${x.c?`<span class=dot style="background:${x.c}"></span>`:""}${esc(x.name)}</div>`).join("");
   $("#tabs").querySelectorAll(".tab").forEach(el=>el.onclick=()=>{S.tab=el.dataset.id;buildTabs();render();});
 }
 function buildLegend(){
@@ -263,8 +295,10 @@ function renderGraph(){
   const vis=visibleNodes(),ids=new Set(vis.map(n=>n.id));
   const links=(S.data.edges||[]).filter(e=>ids.has(e.from)&&ids.has(e.to));
   S.curVis=vis;S.curLinks=links;
+  S.cl=buildClusters(vis,W,H);                            // cluster colors + anchors for this view
   const prev=S.pos||{};S.pos={};
-  vis.forEach(n=>{const p=prev[n.id];S.pos[n.id]={x:p?p.x:W/2+(Math.random()-.5)*W*.6,y:p?p.y:H/2+(Math.random()-.5)*H*.6,vx:0,vy:0};});
+  vis.forEach(n=>{const p=prev[n.id],a=S.cl.info[clusterOf(n)].anchor;   // seed new nodes near their cluster
+    S.pos[n.id]={x:p?p.x:a.x+(Math.random()-.5)*120,y:p?p.y:a.y+(Math.random()-.5)*120,vx:0,vy:0};});
   if(!S.vp)S.vp={tx:0,ty:0,k:1};
   if(S.sim)cancelAnimationFrame(S.sim);
 
@@ -283,6 +317,7 @@ function renderGraph(){
     const g=document.createElementNS(NS,"g");g.setAttribute("class","node");
     const r=n.type==="Project"?13:9;
     const c=document.createElementNS(NS,"circle");c.setAttribute("r",r);c.setAttribute("fill",COLOR(n.type));
+    c.setAttribute("stroke",S.cl.info[clusterOf(n)].color);c.setAttribute("stroke-width",n.type==="Project"?3.5:2.5);  // project-cluster ring
     const t=document.createElementNS(NS,"text");t.setAttribute("x",r+3);t.setAttribute("y",4);t.textContent=(n.label||n.id).slice(0,22);
     g.append(c,t);nodeG.append(g);
     g.addEventListener("mousedown",ev=>{ev.stopPropagation();ev.preventDefault();
@@ -318,7 +353,8 @@ function renderGraph(){
       let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,f=(d-90)*0.01;
       pa.vx+=dx/d*f;pa.vy+=dy/d*f;pb.vx-=dx/d*f;pb.vy-=dy/d*f;}
     for(const n of vis){const p=P[n.id];if(n._drag){p.vx=p.vy=0;continue;}
-      p.vx+=(W/2-p.x)*0.002;p.vy+=(H/2-p.y)*0.002;p.x+=p.vx*=.85;p.y+=p.vy*=.85;}
+      const a=S.cl.multi?S.cl.info[clusterOf(n)].anchor:{x:W/2,y:H/2};   // pull toward cluster anchor
+      p.vx+=(a.x-p.x)*0.012;p.vy+=(a.y-p.y)*0.012;p.x+=p.vx*=.85;p.y+=p.vy*=.85;}
     paint();
     if(++ticks<400)S.sim=requestAnimationFrame(tick);
   })();
@@ -329,6 +365,23 @@ function paint(){
     for(const L of [ln,hit]){L.setAttribute("x1",a.x);L.setAttribute("y1",a.y);L.setAttribute("x2",b.x);L.setAttribute("y2",b.y);}
     tx.setAttribute("x",(a.x+b.x)/2);tx.setAttribute("y",(a.y+b.y)/2);}
   for(const {n,g} of S.els.nodeEls){const p=P[n.id];g.setAttribute("transform",`translate(${p.x},${p.y})`);}
+  paintHulls();
+}
+// translucent tinted circle + name behind each project cluster, so groups read at a glance
+function paintHulls(){
+  const hg=$("#hulls"),lg=$("#clabels");if(!hg||!S.cl)return;
+  hg.innerHTML="";lg.innerHTML="";
+  if(!S.cl.multi)return;                                  // single cluster => no hull needed
+  const by={};for(const {n} of S.els.nodeEls){const p=S.pos[n.id];if(!p)continue;(by[clusterOf(n)]=by[clusterOf(n)]||[]).push(p);}
+  for(const cid of S.cl.ids){const pts=by[cid];if(!pts||!pts.length)continue;
+    let cx=0,cy=0;for(const p of pts){cx+=p.x;cy+=p.y;}cx/=pts.length;cy/=pts.length;
+    let rad=0;for(const p of pts)rad=Math.max(rad,Math.hypot(p.x-cx,p.y-cy));rad+=34;
+    const col=S.cl.info[cid].color;
+    const ci=document.createElementNS(NS,"circle");ci.setAttribute("cx",cx);ci.setAttribute("cy",cy);ci.setAttribute("r",rad);
+    ci.setAttribute("fill",col);ci.setAttribute("fill-opacity",".06");ci.setAttribute("stroke",col);
+    ci.setAttribute("stroke-opacity",".55");ci.setAttribute("stroke-width","1.5");ci.setAttribute("stroke-dasharray","6 5");hg.append(ci);
+    const tx=document.createElementNS(NS,"text");tx.setAttribute("x",cx);tx.setAttribute("y",cy-rad-7);
+    tx.setAttribute("class","clabel");tx.setAttribute("fill",col);tx.textContent=S.cl.info[cid].name;lg.append(tx);}
 }
 function onNodeClick(n){if(S.q)toggleRemoved(n.id);showNode(n,S.curLinks);}
 function onEdgeClick(e){if(S.q)toggleRemoved(edgeKey(e));showEdge(e.type,e.from,e.to);}
