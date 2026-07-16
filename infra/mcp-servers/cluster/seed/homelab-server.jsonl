@@ -13,3 +13,9 @@
 {"edge":"ConstrainsProject","from":"srv-authelia-sso","to":"homelab-server"}
 {"edge":"AppliesTo","from":"srv-caddy-source-of-truth","to":"homelab-server"}
 {"edge":"DecidedIn","from":"srv-haproxy-to-caddy","to":"homelab-server"}
+{"type": "Rule", "data": {"slug": "hs-rule-stateful-nvme-not-named-volume", "statement": "Stateful container data (MinIO, DBs) must use an NVMe bind mount under $APPS_ROOT (/home/s/apps), NEVER a Docker named volume: the Semaphore prune-docker playbook runs `docker volume prune -f` every ~3 days and deletes any unreferenced named volume, wiping data whenever the stack is briefly down (this is what repeatedly wiped the Omnigraph graph).", "severity": "must"}}
+{"type": "Rule", "data": {"slug": "hs-rule-omnigraph-canonical-compose", "statement": "Deploy/rebuild the Omnigraph stack ONLY from Server/server/coding/mcp-servers/docker-compose.yml (canonical, Dockhand; binds 0.0.0.0:8090 for Caddy). Never rebuild it from agent-skills/infra/mcp-servers/docker-compose.server.yml \u2014 that dev variant binds 127.0.0.1 and shares the compose project name, so it clobbers the live viewer and takes omnigraph-ui.ohje.ooguy.com down.", "severity": "must"}}
+{"type": "Rule", "data": {"slug": "hs-rule-no-overwrite-shared-graph", "statement": "Never `load --mode overwrite` the shared `memory` graph or `main` (it truncates the branch). Use a per-project graph (OMNIGRAPH_GRAPH=<project>) or a branch, and apply cluster changes via scripts/apply-cluster.sh, which snapshots and verifies the node count.", "severity": "must"}}
+{"edge": "ConstrainsProject", "from": "hs-rule-stateful-nvme-not-named-volume", "to": "homelab-server"}
+{"edge": "ConstrainsProject", "from": "hs-rule-omnigraph-canonical-compose", "to": "homelab-server"}
+{"edge": "ConstrainsProject", "from": "hs-rule-no-overwrite-shared-graph", "to": "homelab-server"}

@@ -54,3 +54,18 @@
 {"edge":"PartOf","from":"ba-batch-engine","to":"basic-analysis"}
 {"edge":"PartOf","from":"ba-config","to":"basic-analysis"}
 {"edge":"PartOf","from":"ba-docs","to":"basic-analysis"}
+{"type": "Rule", "data": {"slug": "ba-rule-config-ssot-translator", "statement": "No compute function reads a raw nested YAML path; all config access goes through the translator seam (config/translate.py), which mirrors app/services/h5_paths.py::resolve_group as one mapping table.", "severity": "must"}}
+{"type": "Rule", "data": {"slug": "ba-rule-fluor-version-keying", "statement": "Every analysis is saved AND loaded keyed to the fluorescence-pipeline version (fluor_version) it consumed; analyses run on any fluor version via Session.load_event_traces and metrics not comparable across versions are flagged.", "severity": "must"}}
+{"type": "Rule", "data": {"slug": "ba-rule-store-subsession-isolation", "statement": "The master HDF5 gives every animal/date/subsession its own isolated space with no spillover \u2014 no merged-fluorescence-in-place-of-split-data (the current defect being fixed).", "severity": "must"}}
+{"edge": "ConstrainsProject", "from": "ba-rule-config-ssot-translator", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-fluor-version-keying", "to": "basic-analysis"}
+{"edge": "ConstrainsProject", "from": "ba-rule-store-subsession-isolation", "to": "basic-analysis"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-config-ssot-translator", "to": "ba-config"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-fluor-version-keying", "to": "ba-analysis-pkg"}
+{"edge": "ConstrainsComponent", "from": "ba-rule-store-subsession-isolation", "to": "ba-master-hdf5"}
+{"edge": "Tracks", "from": "ba-task-intrinsic-overhaul", "to": "basic-analysis"}
+{"edge": "Tracks", "from": "ba-task-suite2p-runner", "to": "basic-analysis"}
+{"edge": "Tracks", "from": "ba-task-twitch-detection", "to": "basic-analysis"}
+{"edge": "Implements", "from": "ba-task-intrinsic-overhaul", "to": "ba-intrinsic-overhaul"}
+{"edge": "Addresses", "from": "ba-task-suite2p-runner", "to": "ba-analysis-pkg"}
+{"edge": "Addresses", "from": "ba-task-twitch-detection", "to": "ba-video-pipeline"}

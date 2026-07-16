@@ -97,3 +97,5 @@
 {"edge": "DecidedIn", "from": "invest-omnigraph-selfheal", "to": "invest"}
 {"type": "Decision", "data": {"slug": "invest-ui-databinding-fix", "title": "UI no-data fix: latest-null health + silent-catch fragility, plus money headline/perf overlay/interactive Learn", "rationale": "Feeds had data; Overview health used null pipeline.json 'latest' + panels swallowed errors. Fixed with per-panel error banners, history-derived health, money headline, carry-forward Performance overlay, interactive Learn. 364 tests. Pot now +5.8% mirrored to Alpaca paper (self-reconciled to SPY/QQQ/DIA/IWM).", "status": "accepted", "date": "2026-07-16"}}
 {"edge": "DecidedIn", "from": "invest-ui-databinding-fix", "to": "invest"}
+{"edge": "Tracks", "from": "inv-task-finetuning", "to": "invest"}
+{"edge": "Tracks", "from": "invest-post-month-review", "to": "invest"}

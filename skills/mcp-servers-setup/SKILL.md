@@ -134,6 +134,14 @@ single source of truth in the Server repo: `server/cloud/harbor/README.md`.
 
 ## Project Initialization
 
+> ⚠️ **On coding.vm the Omnigraph stack is already deployed from
+> `Server/server/coding/mcp-servers/docker-compose.yml`** (canonical, Dockhand,
+> viewer bound to `0.0.0.0:8090` for Caddy). The compose below is a **local/dev**
+> variant — it binds `127.0.0.1` and shares the project name `mcp-servers`, so
+> running it on coding.vm clobbers the live viewer and takes
+> `omnigraph-ui.ohje.ooguy.com` down. On coding.vm, manage the stack from the
+> canonical Server compose instead. Use the below only for a standalone/dev host.
+
 ```bash
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d
