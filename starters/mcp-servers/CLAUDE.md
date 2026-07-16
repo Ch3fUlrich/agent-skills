@@ -8,10 +8,15 @@ servers are active when Claude Code connects:
 | **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
 | **Graphify** | Queryable project graph for code, docs, and cross-file relationships |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
-| **Mem0** | Unified persistent cross-session memory (uses stdio transport for robustness) |
+| **Omnigraph** | Structured, versioned cross-project memory (typed nodes + graph/vector/full-text recall) |
 
-> **IMPORTANT: Project Isolation for Mem0**
-> To prevent cross-project memory spillover, you **MUST** always specify the project's folder name as the `user_id` when calling any Mem0 tools (e.g. `user_id="MaxEnt"`, `user_id="SERBRA"`, etc.).
+> **IMPORTANT: Project scoping in Omnigraph (this replaces Mem0's `user_id`)**
+> Memory is a shared graph. Isolate a project by **edging its nodes to a
+> `Project` node** (slug = the repo folder name, e.g. `Project(basic-analysis)`),
+> **not** a per-call `user_id`. Cross-project facts are `Preference` nodes with
+> `scope: global`. A node with **no** edge to its `Project` renders as "global" —
+> that is a bug for anything project-specific.
+> Mem0 remains only as an off-by-default fallback.
 
 ---
 
@@ -21,13 +26,14 @@ Serena automatically activates and indexes the workspace via the client's `--pro
 
 Graphify does not need activation, but the repo should have a built graph at `graphify-out/graph.json`. Use the Graphify initializer when onboarding a new repo or after significant code changes.
 
-To verify Serena and Mem0 connection:
+To verify Serena and Omnigraph connection:
 ```
 # Verify Serena code navigation
 mcp_serena_find_symbol(name_path_pattern="main")
 
-# Verify Mem0 connection
-mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
+# Verify Omnigraph memory (recall this project's rules/decisions) — see the
+# structured-memory skill for the exact GQ; read omnigraph://schema first.
+mcp_omnigraph_query(...)  # rules/decisions/preferences edged to Project(<repo-folder-name>)
 ```
 If these return results, the stack is ready.
 
@@ -58,15 +64,31 @@ list a class's methods; add `include_body=True` only when you need code.
 
 ---
 
-## Mem0 Tools (Unified Memory)
+## Omnigraph (Structured Memory)
 
-- `mcp_mem0_add_memory` — Store a fact, pattern, or decision
-- `mcp_mem0_get_memories` — List all memories for this project
-- `mcp_mem0_search_memories` — Retrieve memories by semantic query
-- `mcp_mem0_delete_memory` — Remove a memory by its ID
+The single memory layer. Write **typed** nodes — `Decision / Rule / Preference /
+Convention / Component / Task` — edged to this repo's `Project` node, and recall
+them via fused graph + vector + full-text queries. Tools:
+`schema_get / query / mutate / load / branches_* / commits_list`.
 
-**Rule**: After learning anything reusable (architecture, preferences,
-patterns, build commands, test frameworks), store it with `mcp_mem0_add_memory` (always specify the project name as `user_id`).
+**Full protocol is the single source of truth** — follow
+`skills/structured-memory/SKILL.md` (and read `omnigraph://schema` before any
+query/mutate). The essentials:
+
+1. **Recall at session start (pull from remote):** query the rules, decisions,
+   preferences, and conventions edged to `Project(<repo-folder-name>)`, plus
+   global `Preference`s (`scope: global`). This is your ground truth for how the
+   repo works.
+2. **Persist durable facts:** anything reusable (architecture, build/test
+   commands, constraints, decisions-with-rationale) → a typed node edged to the
+   `Project`. Use stable lowercase kebab-case slugs so re-writes are idempotent.
+3. **Link richly — make it a graph, not a star:** always attach a node to its
+   `Project` (else it's wrongly "global"), **and** add at least one relational
+   edge to the specific node it touches (`ConstrainsComponent`, `Affects`,
+   `Addresses`, `Implements`, `DependsOn`, `Supersedes`).
+4. **Never `overwrite` the shared `main`.** Supersede accepted `Decision`s (new
+   node + `Supersedes` edge; set old `status: superseded`). Verify writes with
+   `commits_list` (head before/after).
 
 ---
 

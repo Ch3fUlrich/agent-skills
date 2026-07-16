@@ -8,10 +8,14 @@ agents. Four servers are active:
 | **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
 | **Graphify** | Queryable project graph for code, docs, and cross-file relationships |
 | **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
-| **Mem0** | Unified persistent cross-session memory (uses stdio transport for robustness) |
+| **Omnigraph** | Structured, versioned cross-project memory (typed nodes + graph/vector/full-text recall) |
 
-> **IMPORTANT: Project Isolation for Mem0**
-> To prevent cross-project memory spillover, you **MUST** always specify the project's folder name as the `user_id` when calling any Mem0 tools (e.g. `user_id="MaxEnt"`, `user_id="SERBRA"`, etc.).
+> **IMPORTANT: Project scoping in Omnigraph (this replaces Mem0's `user_id`)**
+> Memory is a shared graph. Isolate a project by **edging its nodes to a
+> `Project` node** (slug = the repo folder name), **not** a per-call `user_id`.
+> Cross-project facts are `Preference` nodes with `scope: global`. A node with
+> **no** edge to its `Project` renders as "global" — a bug for anything
+> project-specific. Mem0 remains only as an off-by-default fallback.
 
 ---
 
@@ -21,13 +25,14 @@ When starting in a new repository, Serena automatically activates and indexes th
 
 Graphify does not need activation, but it does need a graph build. Run the repo-scoped Graphify initializer after Serena onboarding so `graphify-out/graph.json` exists for later sessions.
 
-To verify Serena and Mem0 connection:
+To verify Serena and Omnigraph connection:
 ```
 # Verify Serena code navigation
 mcp_serena_find_symbol(name_path_pattern="main")
 
-# Verify Mem0 connection
-mcp_mem0_get_memories(user_id="<current-repo-folder-name>")
+# Verify Omnigraph memory: recall this project's rules/decisions (read
+# omnigraph://schema first; see the structured-memory skill for the GQ).
+mcp_omnigraph_query(...)  # nodes edged to Project(<repo-folder-name>)
 ```
 If these return results, the stack is ready.
 
@@ -62,18 +67,30 @@ Use these **instead of reading entire files**. They return precise results with 
 
 ---
 
-## Mem0 Tools — Unified Persistent Memory
+## Omnigraph — Structured Memory
 
-Mem0 is the single source of truth for persistent repository and user memory.
+Omnigraph is the single source of truth for persistent memory. Write **typed**
+nodes (`Decision / Rule / Preference / Convention / Component / Task`) edged to
+this repo's `Project`, and recall them via fused graph + vector + full-text
+queries.
 
 | Tool | What it does |
 |---|---|
-| `mcp_mem0_add_memory` | Store a fact, pattern, or decision about the project |
-| `mcp_mem0_get_memories` | List all stored memories for this project |
-| `mcp_mem0_search_memories` | Retrieve stored memories by semantic search query |
-| `mcp_mem0_delete_memory` | Remove a memory by its ID |
+| `mcp_omnigraph_schema_get` | Read the node/edge schema — do this **before** any query/mutate |
+| `mcp_omnigraph_query` | Recall: rules/decisions/preferences edged to `Project(<repo>)` + global prefs |
+| `mcp_omnigraph_mutate` | Write a typed node/edge (GQ; edge casing + insert-xor-delete rules apply) |
+| `mcp_omnigraph_load` | Bulk NDJSON upsert (`mode: merge`); never `overwrite` shared `main` |
+| `mcp_omnigraph_commits_list` | Verify a write landed (head before/after) |
 
-**Use memories for**: architecture decisions, build commands, test patterns, user preferences, known pitfalls. Memories persist across sessions and agents.
+**Handling rules** (full protocol: `skills/structured-memory/SKILL.md`):
+1. **Recall at session start** — pull this project's memory before changing code.
+2. **Persist durable facts** — reusable architecture/commands/decisions → a typed
+   node edged to the `Project` (stable lowercase kebab-case slugs; idempotent).
+3. **Link richly — a graph, not a star** — always attach to the `Project`, and add
+   at least one relational edge (`ConstrainsComponent`, `Affects`, `Addresses`,
+   `Implements`, `DependsOn`, `Supersedes`) to the node it actually touches.
+4. **Never `overwrite` the shared `main`**; supersede accepted decisions; verify
+   writes with `commits_list`.
 
 ## Graphify Tooling — Project Graphs
 
@@ -123,7 +140,7 @@ If your environment enables observability MCPs, use them for error debugging and
 ## Best Practices
 
 1. **Read less code, use Serena** — You **MUST** use Serena's `find_symbol` and `get_symbols_overview` instead of `read_file` or `grep_search` to understand codebase structure. Use `replace_symbol_body` and other Serena refactoring tools for code updates instead of generic file editing tools where possible.
-2. **Store what you learn** — Every significant discovery, architecture pattern, or decision **MUST** go into `mcp_mem0_add_memory` (always specify the project name as `user_id`). Rely on Mem0 instead of keeping track in your scratchpad.
+2. **Store what you learn** — Every significant discovery, architecture pattern, or decision **MUST** become a typed Omnigraph node edged to this repo's `Project` (see the Omnigraph section). Rely on the graph instead of keeping track in your scratchpad.
 3. **Use workflows** — Complex tasks benefit from structured approaches via Superpowers.
 4. **Verify with evidence** — Tool results are ground truth; verify before acting.
 

@@ -2,7 +2,7 @@
 
 Copy this directory into the root of any repository to enable the self-hosted
 MCP server stack for that repo. Graphify adds a project graph layer on top of
-the base Serena + Mem0 + Superpowers setup.
+the base Serena + Omnigraph + Superpowers setup.
 
 ## What Gets Installed
 
@@ -103,7 +103,7 @@ additional_workspace_folders:
 | [Serena](https://github.com/oraios/serena) | stdio (`uvx`) | ✅ Active — LSP code navigation, refactoring |
 | [Graphify](https://github.com/safishamsi/graphify) | stdio (`uv`) | ✅ Active — queryable project graph |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | stdio (`node`) | ✅ Active — workflow skills |
-| **Mem0** | SSE / stdio | ✅ Active — unified cross-session memory |
+| **Omnigraph** | HTTP (bearer) | ✅ Active — structured cross-project memory (typed graph) |
 | **Sentry** | stdio (`npx`) | ⚠️ Default Observability — runtime errors |
 | **Datadog** | stdio (`npx`) | ⚠️ Conditional Observability — distributed traces |
 
