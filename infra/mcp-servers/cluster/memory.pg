@@ -65,9 +65,19 @@ node Task {
   @key(slug)
 }
 
+// ── hub edges: attach a node to its Project (required so it is NOT "global") ──
 edge DecidedIn: Decision -> Project
 edge ConstrainsProject: Rule -> Project
-edge ConstrainsComponent: Rule -> Component
 edge AppliesTo: Convention -> Project
 edge PartOf: Component -> Project
-edge Supersedes: Decision -> Decision
+edge Tracks: Task -> Project
+
+// ── relational edges: connect knowledge nodes TO EACH OTHER, not just the hub.
+//    Populate these so the graph forms real clusters instead of a star — a rule
+//    to the component it governs, a decision to the component it changes, etc.
+edge ConstrainsComponent: Rule -> Component      // a rule governs a specific component
+edge Affects: Decision -> Component              // a decision changes a component
+edge Addresses: Task -> Component                // a task works on a component
+edge Implements: Task -> Decision                // a task realizes a decision
+edge DependsOn: Component -> Component           // component depends on another
+edge Supersedes: Decision -> Decision            // a decision replaces an earlier one

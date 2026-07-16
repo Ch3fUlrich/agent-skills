@@ -45,15 +45,38 @@ Persist) — that is the signal this repo hasn't been onboarded to memory.
 
 Write a node when something is **durable** — true beyond this session:
 
-- A decision with a rationale → `Decision` (+ `decided-in` → `Project`).
-- A hard constraint the team must follow → `Rule` (+ `constrains`).
+- A decision with a rationale → `Decision` (+ `DecidedIn` → `Project`).
+- A hard constraint the team must follow → `Rule` (+ `ConstrainsProject`).
 - A soft, overridable inclination → `Preference` (`scope: global` or project).
-- A repeatable pattern → `Convention` (+ `applies-to`).
-- A notable system part → `Component` (+ `part-of`).
-- Planned/ongoing work worth remembering → `Task`.
+- A repeatable pattern → `Convention` (+ `AppliesTo`).
+- A notable system part → `Component` (+ `PartOf` → `Project`).
+- Planned/ongoing work worth remembering → `Task` (+ `Tracks` → `Project`).
 
 Do **not** persist: transient reasoning, one-off file paths, or anything already
 captured in code, `CHANGELOG.md`, or an ADR (link to those instead).
+
+## Link richly — make it a graph, not a star
+
+Two edge rules keep the graph correct and navigable:
+
+1. **Always attach a project-specific node to its `Project`** (the hub edge above).
+   A node with **no** edge to a `Project` renders as **"global"** — and *global is
+   reserved for genuinely cross-project facts* (a handful of `Preference`s like
+   "prefer TDD"). A project-specific `Rule`/`Decision`/`Task` showing as global is
+   a **bug**: it means you forgot the hub edge. Never mark project-specific info
+   global.
+2. **Also link a node to the specific nodes it relates to** — not only the hub.
+   Most memory is a star (everything → `Project`) because agents add just the hub
+   edge; that graph is unnavigable. When you add a node, ask *"what existing
+   component/decision does this touch?"* and add the relational edge too:
+   - `ConstrainsComponent`: Rule → the Component it governs
+   - `Affects`: Decision → the Component it changes
+   - `Addresses`: Task → the Component it works on · `Implements`: Task → the Decision it realizes
+   - `DependsOn`: Component → Component · `Supersedes`: Decision → the Decision it replaces
+
+   Smell test: a new node whose **only** edge is to the `Project` is probably
+   under-linked. Aim for at least one relational edge where a real relationship
+   exists.
 
 ## How to persist — branch, write, merge
 
