@@ -1,15 +1,13 @@
-{"type":"Project","data":{"slug":"agent-skills","name":"Agent Skills","path":"~/code/agent-skills","summary":"Reusable agent skills, per-repo starters, and a self-hosted MCP runtime (Serena/Graphify/Omnigraph/Superpowers/Playwright)."}}
-{"type":"Decision","data":{"slug":"omnigraph-over-mem0","title":"Omnigraph replaces Mem0 as default memory","rationale":"Typed, queryable, reviewable memory keeps rules/decisions integrated; Mem0 auto-extracts opaque vector blobs. Mem0 kept as off-by-default fallback profile.","status":"accepted","date":"2026-07-09"}}
-{"type":"Decision","data":{"slug":"herdr-multiplexer","title":"Herdr is the recommended agent multiplexer over raw tmux","rationale":"Per-agent status, detach/reattach over SSH, socket API for agent-to-agent orchestration. antigravity-remote-ui kept for the distinct IDE-streaming case.","status":"accepted","date":"2026-07-09"}}
-{"type":"Decision","data":{"slug":"three-pillar-restructure","title":"Repo restructured into skills/ starters/ infra/","rationale":"Consolidated loose dirs (Gen/prompt/repositories -> prompts/), moved mcp-servers + antigravity under infra/, untracked graphify-out, de-personalized paths.","status":"accepted","date":"2026-07-09"}}
-{"type":"Rule","data":{"slug":"skill-single-source","statement":"A skill's SKILL.md is the single source of truth; starters and root instruction files are thin pointers, never copies of the workflow.","severity":"must"}}
-{"type":"Rule","data":{"slug":"no-secrets-in-git","statement":"No personal absolute paths or secrets in tracked files; use ${AGENT_SKILLS_ROOT}/${CODE_ROOT}/${SERENA_HOME} and gitignored .env.","severity":"must"}}
-{"type":"Convention","data":{"slug":"changelog-adr-backtracking","name":"Backtracking via CHANGELOG + ADRs","example":"Record notable changes in CHANGELOG.md and non-obvious decisions as docs/decisions/NNNN-*.md; small revertible commits."}}
-{"type":"Preference","data":{"slug":"mcp-first-nav","statement":"Prefer Serena/Graphify/Omnigraph over brute-force file reads.","scope":"global"}}
-{"type":"Preference","data":{"slug":"tdd-default","statement":"Write a failing test before implementation; red-green-refactor.","scope":"global"}}
-{"edge":"DecidedIn","from":"omnigraph-over-mem0","to":"agent-skills"}
-{"edge":"DecidedIn","from":"herdr-multiplexer","to":"agent-skills"}
-{"edge":"DecidedIn","from":"three-pillar-restructure","to":"agent-skills"}
-{"edge":"ConstrainsProject","from":"skill-single-source","to":"agent-skills"}
-{"edge":"ConstrainsProject","from":"no-secrets-in-git","to":"agent-skills"}
-{"edge":"AppliesTo","from":"changelog-adr-backtracking","to":"agent-skills"}
+{"type": "Project", "data": {"slug": "agent-skills", "name": "Agent Skills", "path": "~/code/agent-skills", "summary": "Reusable agent skills, per-repo starters, and a self-hosted MCP runtime (Serena/Graphify/Omnigraph/Superpowers/Playwright)."}}
+{"type": "Decision", "data": {"slug": "omnigraph-over-mem0", "title": "Omnigraph replaces Mem0 as default memory", "rationale": "Typed, queryable, reviewable memory keeps rules/decisions integrated; Mem0 auto-extracts opaque vector blobs. Mem0 kept as off-by-default fallback profile.", "status": "accepted", "date": "2026-07-09"}}
+{"type": "Decision", "data": {"slug": "herdr-multiplexer", "title": "Herdr is the recommended agent multiplexer over raw tmux", "rationale": "Per-agent status, detach/reattach over SSH, socket API for agent-to-agent orchestration. antigravity-remote-ui kept for the distinct IDE-streaming case.", "status": "accepted", "date": "2026-07-09"}}
+{"type": "Decision", "data": {"slug": "three-pillar-restructure", "title": "Repo restructured into skills/ starters/ infra/", "rationale": "Consolidated loose dirs (Gen/prompt/repositories -> prompts/), moved mcp-servers + antigravity under infra/, untracked graphify-out, de-personalized paths.", "status": "accepted", "date": "2026-07-09"}}
+{"type": "Rule", "data": {"slug": "skill-single-source", "statement": "A skill's SKILL.md is the single source of truth; starters and root instruction files are thin pointers, never copies of the workflow.", "severity": "must"}}
+{"type": "Rule", "data": {"slug": "no-secrets-in-git", "statement": "No personal absolute paths or secrets in tracked files; use ${AGENT_SKILLS_ROOT}/${CODE_ROOT}/${SERENA_HOME} and gitignored .env.", "severity": "must"}}
+{"type": "Convention", "data": {"slug": "changelog-adr-backtracking", "name": "Backtracking via CHANGELOG + ADRs", "example": "Record notable changes in CHANGELOG.md and non-obvious decisions as docs/decisions/NNNN-*.md; small revertible commits."}}
+{"edge": "DecidedIn", "from": "omnigraph-over-mem0", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "herdr-multiplexer", "to": "agent-skills"}
+{"edge": "DecidedIn", "from": "three-pillar-restructure", "to": "agent-skills"}
+{"edge": "ConstrainsProject", "from": "skill-single-source", "to": "agent-skills"}
+{"edge": "ConstrainsProject", "from": "no-secrets-in-git", "to": "agent-skills"}
+{"edge": "AppliesTo", "from": "changelog-adr-backtracking", "to": "agent-skills"}

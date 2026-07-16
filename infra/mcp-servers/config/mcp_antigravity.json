@@ -35,7 +35,7 @@
       ],
       "env": {
         "OMNIGRAPH_BASE_URL": "http://localhost:8080",
-        "OMNIGRAPH_GRAPH_ID": "memory",
+        "OMNIGRAPH_GRAPH_ID": "${OMNIGRAPH_GRAPH_ID:-memory}",
         "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"
       }
     },

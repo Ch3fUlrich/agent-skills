@@ -107,28 +107,28 @@ back — resolving node conflicts by slug-keyed upsert. So just write durable
 memory to `main`; the automation handles branching, pushing, and merging. See
 `infra/mcp-servers/setup/README.md`.
 
-## Cross-project model — two levels of isolation
+## Cross-project model — one graph per project (hard isolation)
 
-**Level 1 — scoping inside the shared `memory` graph (default).** Every project
-is a `Project` node; project-specific memory edges back to it, and a move between
-repos is just a different project scope. Global facts (user preferences, house
-style) are `Preference` nodes with `scope: global`, recalled in every project.
-This replaces Mem0's `user_id` isolation: scope by `Project` edges and the
-`scope` field, not by a per-call user id.
+**Each project's memory lives in its OWN Omnigraph graph, named after the repo**
+(`agent-skills`, `invest`, `basic-analysis`, `homelab-server`, …). Projects are
+never merged into one shared store — a `load mode: overwrite` or a bad write in
+one project's graph can't touch another's. The shared **`memory`** graph now
+holds **only** global-scope `Preference`s (house style, TDD-default) — never
+project data.
 
-**Level 2 — a hard, separate graph per project.** The cluster also exposes one
-graph per project (`agent-skills`, `invest`, …) alongside the shared `memory`
-graph. Because a `load mode: overwrite` truncates only its own graph, writes in
-one project can **never** wipe another's — the failure mode that once wiped
-everything. Use this for anything you want fully firewalled.
-
-- **Point an agent at a project graph**: set `OMNIGRAPH_GRAPH=<project>` in that
-  repo's MCP config (the shared `memory` graph stays the home for `scope: global`
-  facts, queried alongside).
-- **Add a project graph**: `infra/mcp-servers/scripts/add-project-graph.sh
-  <name>` then `./scripts/apply-cluster.sh` (declared in
-  `cluster/cluster.yaml`, converged into the live cluster; the script snapshots
-  `memory` and verifies its node count is unchanged before/after).
+- **Point your agent at its project graph**: set `OMNIGRAPH_GRAPH_ID=<repo>` for
+  the omnigraph MCP bridge (a project-scoped `.mcp.json` env, or export it before
+  launching). If it is still `memory`, you are on the globals graph — switch it.
+  **Never write project-specific nodes to the shared `memory` graph.**
+- **Inside your project graph, still scope + link:** every project-specific node
+  is a `Project` node's satellite — edge it to the `Project` (slug = repo folder
+  name) and add relational edges (see "Link richly" above). Recall global
+  `Preference`s from the `memory` graph when you need house style.
+- **Add a new project graph**: `infra/mcp-servers/scripts/add-project-graph.sh
+  <name>` then `./scripts/apply-cluster.sh` (declared in `cluster/cluster.yaml`,
+  converged into the live cluster with a snapshot + node-count verify).
+- **Seeds** (`cluster/seed/<name>.jsonl`) load into the graph matching the file
+  name, so a rebuild stays isolated — never re-merged. `memory.jsonl` = globals.
 - **Browse any graph**: the viewer's **graph** selector switches between them.
 
 ## Multi-user

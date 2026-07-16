@@ -42,7 +42,7 @@
         "-e",
         "OMNIGRAPH_BASE_URL=http://omnigraph-server:8080",
         "-e",
-        "OMNIGRAPH_GRAPH_ID=memory",
+        "OMNIGRAPH_GRAPH_ID=${OMNIGRAPH_GRAPH_ID:-memory}",
         "-e",
         "OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN}",
         "omnigraph-mcp:latest"
