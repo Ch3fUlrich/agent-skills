@@ -79,29 +79,44 @@ via a `device/<host>` branch. See [`setup/`](setup/) (`client-setup.sh`,
 Authelia), `omnigraph-minio.ohje.ooguy.com` (MinIO console, Authelia). See
 [`../../docs/architecture.md`](../../docs/architecture.md).
 
-## Central vs local: script defaults & mismatches
+## Central vs local: the scripts auto-detect the stack
 
-The Omnigraph helper scripts (`scripts/apply-cluster.sh`, `scripts/dedup-graph.py`,
-`scripts/split-project-graph.py`, `scripts/add-project-graph.sh`) and this repo's
-`docker-compose.server.yml` were tuned against a **local** stack (compose project
-`mcp-server`). Their defaults do **not** match the **central** deployment on `coding.vm`,
-which boots from `Server/server/coding/mcp-servers/docker-compose.yml` (compose project
-`mcp-servers`, Dockhand-managed). On central, pass these overrides:
+Two deployments exist and their docker wiring differs. **Local** = this repo's
+`docker-compose.server.yml` (compose project `mcp-server` → network `mcp-server_mcp-net`).
+**Central** (`coding.vm`) boots from `Server/server/coding/mcp-servers/docker-compose.yml`
+(compose project `mcp-servers` → network `mcp-servers_default`, Dockhand-managed).
 
-| Concern | Script default (local) | Central reality | Override on central |
-|---|---|---|---|
-| Docker network | `mcp-server_mcp-net` (`OMNI_NET` / `--network` / `--net`) | `mcp-servers_default` (project `mcp-servers`, no custom network) | `OMNI_NET=mcp-servers_default` (apply-cluster.sh) · `--network mcp-servers_default` (dedup-graph.py) · `--net mcp-servers_default` (split-project-graph.py) |
-| MinIO store (dedup reset) | named volume `mcp-servers_omnigraph_minio` (`--minio-volume`) | **bind mount** `/home/s/apps/omnigraph/minio` (`$APPS_ROOT/omnigraph/minio`); the named volume was removed | `--minio-path /home/s/apps/omnigraph/minio` — a `docker volume rm` is a **no-op** against a bind mount |
-| S3 endpoint | `http://omnigraph-minio:9000` (`OMNI_S3`) | same (`omnigraph-server`'s `AWS_ENDPOINT_URL_S3`) | none — already matches |
-| Env / token | `apply-cluster.sh` sources `.env.shared` + `.env.server`; `split-project-graph.py` reads the same | central token/MinIO creds live in `Server/server/coding/mcp-servers/.env` | make `.env.shared`/`.env.server` resolve to central's values (or `export OMNIGRAPH_TOKEN=…`). `dedup-graph.py` already defaults `--token-file`/`--compose-file` to central's `.env`/compose, but its `--network`/`--minio-volume` are still local |
-| Boot compose | `docker-compose.server.yml` (project `mcp-server`, viewer `127.0.0.1:8090`) | `Server/server/coding/mcp-servers/docker-compose.yml` (project `mcp-servers`, viewer `0.0.0.0:8090` for Caddy) | manage central via that compose, not this repo's `docker-compose.server.yml` (a local/dev variant) |
+The helper scripts no longer assume either. They ask docker what is actually running
+(`scripts/_omni_env.py`, and the same `docker inspect` inline in `apply-cluster.sh`):
+
+| Concern | How it is resolved | Explicit override |
+|---|---|---|
+| Docker network | `docker inspect omnigraph-server` → the network it is attached to; falls back to `mcp-server_mcp-net` when the stack is not on this host | `OMNI_NET=…` · `--network …` (dedup) · `--net …` (split) |
+| MinIO store (dedup reset only) | `docker inspect omnigraph-minio` → the mount backing `/data`, **and its type**: a bind mount is cleared with `rm -rf` in a container, a named volume with `docker volume rm` | `--minio-path <dir>` or `--minio-volume <name>` |
+| S3 endpoint | `http://omnigraph-minio:9000` — identical on both | `OMNI_S3=…` |
+| Token | `$OMNIGRAPH_TOKEN`, else `--token-file` (defaults to central's `.env`), else this repo's `.env.shared` | `export OMNIGRAPH_TOKEN=…` |
+| Boot compose | manage central via **its own** compose; this repo's `docker-compose.server.yml` is the local/dev variant (viewer `127.0.0.1:8090` vs central's `0.0.0.0:8090` for Caddy) | `--compose-file …` (dedup) |
+
+`add-project-graph.sh` only rewrites `cluster.yaml`, so it has no host-specific default.
+
+**Both stacks put MinIO on a bind mount** — local at `./data/minio`, central at
+`$APPS_ROOT/omnigraph/minio` (`/home/s/apps/omnigraph/minio`). A named volume is therefore
+the *unusual* case. This matters because `docker volume rm` against a bind mount is a
+**silent no-op**: dedup would restart on a store it never wiped. Detection picks the right
+mechanism; if you force `--minio-volume` at a volume that does not exist, dedup now aborts
+rather than treating "absent" as "removed".
 
 **Variable-name trap:** `OMNIGRAPH_GRAPH_ID` pins the graph for the **MCP bridge**;
 `OMNIGRAPH_GRAPH` is the **viewer** app's variable. They are different — don't swap them.
 
-To realign the scripts to central — run with the overrides above, or change the defaults to
-auto-detect — verify against the live stack first (`docker inspect omnigraph-server` for the
-real network, `docker inspect omnigraph-minio` for the MinIO mount). See
+Check what a host resolves to before running anything destructive:
+
+```bash
+python3 scripts/_omni_env.py     # -> network=… bind=…/volume=…
+```
+
+Detection reads the **live** stack, which is the point: a declaration is not reality
+(see `docs/architecture.md`). Background:
 [`../../prompts/omnigraph-align-scripts-to-central.md`](../../prompts/omnigraph-align-scripts-to-central.md).
 
 ## Container Registry (Harbor)

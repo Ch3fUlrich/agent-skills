@@ -14,7 +14,14 @@ here="$(cd "$(dirname "$0")/.." && pwd)"        # infra/mcp-servers
 cd "$here"
 set -a; . ./.env.shared; . ./.env.server; set +a # OMNIGRAPH_TOKEN/S3_BUCKET + MINIO_ROOT_USER/PASSWORD
 IMAGE="modernrelay/omnigraph-server:v0.8.1"
-NET="${OMNI_NET:-mcp-server_mcp-net}"           # compose project `mcp-server`, network `mcp-net`
+# Ask docker which network the live server is on rather than assuming: local is
+# `mcp-server_mcp-net` (compose project `mcp-server`), central/coding.vm is
+# `mcp-servers_default` (project `mcp-servers`). A wrong network is a quiet failure —
+# the CLI container simply can't resolve omnigraph-minio. OMNI_NET overrides.
+NET="${OMNI_NET:-$(docker inspect omnigraph-server \
+      --format '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}} {{end}}' 2>/dev/null \
+      | awk '{print $1}')}"
+NET="${NET:-mcp-server_mcp-net}"                # fall back when the stack isn't on this host
 S3="${OMNI_S3:-http://omnigraph-minio:9000}"    # must match omnigraph-server's AWS_ENDPOINT_URL_S3
 BK=".graph-backup/pre-apply-$(date -u +%Y%m%d-%H%M%S).jsonl"
 

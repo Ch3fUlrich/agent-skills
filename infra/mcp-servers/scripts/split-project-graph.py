@@ -23,6 +23,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _omni_env import LOCAL_NET, detect_network  # noqa: E402
+
 HUB_EDGES = {"DecidedIn", "ConstrainsProject", "AppliesTo", "PartOf", "Tracks"}
 HERE = Path(__file__).resolve().parent.parent  # infra/mcp-servers
 IMAGE = "modernrelay/omnigraph-server:v0.8.1"
@@ -173,7 +176,9 @@ def main() -> None:
     )
     ap.add_argument("--target", help="destination graph (default: same as slug)")
     ap.add_argument("--base-url", default="http://127.0.0.1:8080")
-    ap.add_argument("--net", default="mcp-server_mcp-net")
+    ap.add_argument("--net", default=os.environ.get("OMNI_NET"),
+                    help=f"docker network for the load container (default: auto-detected from "
+                         f"the running omnigraph-server, else {LOCAL_NET})")
     ap.add_argument("--apply", action="store_true", help="write; otherwise dry-run")
     ap.add_argument(
         "--prune-source",
@@ -198,6 +203,9 @@ def main() -> None:
         raise SystemExit("OMNIGRAPH_TOKEN not found in .env.shared or the environment")
     target = args.target or args.slug
     source = args.source or args.slug
+    # central (coding.vm) is `mcp-servers_default`, local is `mcp-server_mcp-net` —
+    # ask docker instead of assuming. An explicit --net/OMNI_NET wins.
+    args.net = args.net or detect_network(LOCAL_NET)
 
     if source == target and args.apply:
         raise SystemExit(
