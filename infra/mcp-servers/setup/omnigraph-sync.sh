@@ -18,7 +18,7 @@
 #
 # Config via env (or a .env next to this script):
 #   CENTRAL_URL, CENTRAL_TOKEN, LOCAL_URL(=http://127.0.0.1:8080), LOCAL_TOKEN
-#   GRAPH(=memory)  DEVICE(=hostname)  OMNIGRAPH_IMAGE(=modernrelay/omnigraph-server:v0.8.1)
+#   GRAPHS(=all graphs central exposes)  GRAPH(=memory; legacy single-graph)  DEVICE(=hostname)  OMNIGRAPH_IMAGE(=…)
 #   DOCKER_NET(=host)          CLI-container network (Linux: host; see sync-windows.ps1 for Docker Desktop)
 #   BACKUP_DIR(=<here>/backups)
 #   DRY_RUN(=)                 set to 1 to only snapshot + verify BOTH sides, no writes
@@ -54,49 +54,75 @@ if ! curl -fsS --max-time 8 "${CENTRAL_URL%/}/healthz" >/dev/null 2>&1; then
   log "central unreachable — offline, skipping"; exit 0
 fi
 
-# 0. BACKUP local main (authoritative/newest copy) BEFORE touching anything
-ts="$(date -u +%Y%m%dT%H%M%SZ)"; backup="$BACKUP_DIR/local-main-$ts.jsonl"
-og "$LOCAL_TOKEN" export --server local --graph "$GRAPH" > "$backup" 2>/dev/null || {
-  log "local export/backup failed (is the local server up?)"; exit 1; }
-cp "$backup" "$work/local.jsonl"
-log "backed up local main -> $backup ($(wc -l < "$work/local.jsonl") records)"
-log "local pre-sync verify:"; "$PY" "$JQ" verify < "$work/local.jsonl" || true
-
-if [ -n "${DRY_RUN:-}" ]; then
-  og "$CENTRAL_TOKEN" export --server central --graph "$GRAPH" > "$work/central.jsonl" 2>/dev/null || { log "central export failed"; exit 1; }
-  log "central verify:"; "$PY" "$JQ" verify < "$work/central.jsonl" || true
-  log "DRY_RUN complete — no writes made. Backup at $backup"; exit 0
+# Which graphs to sync. Per-project isolation means the four project graphs must
+# sync too, not just `memory`. Default: every graph central exposes. Override with
+# GRAPHS="a,b" (or legacy GRAPH=<one> for a single non-memory graph).
+if [ -n "${GRAPHS:-}" ]; then
+  read -r -a GRAPH_LIST <<< "${GRAPHS//,/ }"
+elif [ "${GRAPH}" != "memory" ]; then
+  GRAPH_LIST=("$GRAPH")
+else
+  read -r -a GRAPH_LIST <<< "$(curl -fsS "${CENTRAL_URL%/}/graphs" -H "Authorization: Bearer $CENTRAL_TOKEN" \
+    | grep -o '"graph_id":"[^"]*"' | cut -d'"' -f4 | tr '\n' ' ')"
 fi
+[ "${#GRAPH_LIST[@]}" -gt 0 ] || { log "no graphs to sync (GET /graphs empty?)"; exit 1; }
+log "syncing graphs: ${GRAPH_LIST[*]}"
 
-# 1-3. push local onto central device branch, then native merge -> main
-og "$CENTRAL_TOKEN" branch create "$BRANCH" --server central --graph "$GRAPH" 2>/dev/null || true
-og "$CENTRAL_TOKEN" load   "$BRANCH" --server central --graph "$GRAPH" --branch "$BRANCH" --data /w/local.jsonl --mode merge --yes >/dev/null 2>&1 \
-  || og "$CENTRAL_TOKEN" load --server central --graph "$GRAPH" --branch "$BRANCH" --data /w/local.jsonl --mode merge --yes >/dev/null
-og "$CENTRAL_TOKEN" branch merge "$BRANCH" --into main --server central --graph "$GRAPH" --yes >/dev/null
-log "merged $BRANCH -> main on central"
+# Reconcile ONE graph: backup local, push to a central device branch, native-merge
+# to central main, verify no dupes, then overwrite local with clean central. Every
+# guarantee (local backup first, no-dup gate before overwrite, restore-on-failure)
+# is preserved per graph. Returns nonzero on failure without aborting the others.
+sync_graph() {
+  local GRAPH="$1" ts backup
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"; backup="$BACKUP_DIR/local-${GRAPH}-$ts.jsonl"
+  og "$LOCAL_TOKEN" export --server local --graph "$GRAPH" > "$backup" 2>/dev/null || {
+    log "[$GRAPH] local export/backup failed (is the local server up?)"; return 1; }
+  cp "$backup" "$work/local.jsonl"
+  log "[$GRAPH] backed up local -> $backup ($(wc -l < "$work/local.jsonl") records)"
 
-# 4. export central + verify NO duplicates before we trust it
-og "$CENTRAL_TOKEN" export --server central --graph "$GRAPH" > "$work/central.jsonl" 2>/dev/null
-if ! "$PY" "$JQ" verify < "$work/central.jsonl"; then
-  log "!! central main has DUPLICATES after merge — NOT overwriting local. Backup kept: $backup"
-  exit 2
-fi
+  if [ -n "${DRY_RUN:-}" ]; then
+    og "$CENTRAL_TOKEN" export --server central --graph "$GRAPH" > "$work/central.jsonl" 2>/dev/null || { log "[$GRAPH] central export failed"; return 1; }
+    log "[$GRAPH] central verify:"; "$PY" "$JQ" verify < "$work/central.jsonl" || true
+    return 0
+  fi
 
-# 5. pull central -> local via OVERWRITE (deduped input; local := clean central)
-"$PY" "$JQ" dedup < "$work/central.jsonl" > "$work/central.clean.jsonl"
-if ! og "$LOCAL_TOKEN" load --server local --graph "$GRAPH" --data /w/central.clean.jsonl --mode overwrite --yes >/dev/null; then
-  log "!! local overwrite failed — restoring local from backup"
-  og "$LOCAL_TOKEN" load --server local --graph "$GRAPH" --data /w/local.jsonl --mode overwrite --yes >/dev/null || \
-    log "!! restore also failed — rebuild local from cluster/seed + populate-embeddings.py (backup: $backup)"
-  exit 3
-fi
-log "pulled central main -> local main (overwrite, deduped)"
+  # 1-3. push local onto central device branch, then native merge -> main
+  og "$CENTRAL_TOKEN" branch create "$BRANCH" --server central --graph "$GRAPH" 2>/dev/null || true
+  og "$CENTRAL_TOKEN" load   "$BRANCH" --server central --graph "$GRAPH" --branch "$BRANCH" --data /w/local.jsonl --mode merge --yes >/dev/null 2>&1 \
+    || og "$CENTRAL_TOKEN" load --server central --graph "$GRAPH" --branch "$BRANCH" --data /w/local.jsonl --mode merge --yes >/dev/null
+  og "$CENTRAL_TOKEN" branch merge "$BRANCH" --into main --server central --graph "$GRAPH" --yes >/dev/null
+  log "[$GRAPH] merged $BRANCH -> main on central"
 
-# 6. verify local + optional branch cleanup
-og "$LOCAL_TOKEN" export --server local --graph "$GRAPH" > "$work/local.after.jsonl" 2>/dev/null
-log "local post-sync verify:"; "$PY" "$JQ" verify < "$work/local.after.jsonl"
-if [ -z "${KEEP_DEVICE_BRANCH:-}" ]; then
-  og "$CENTRAL_TOKEN" branch delete "$BRANCH" --server central --graph "$GRAPH" --yes >/dev/null 2>&1 || true
-  log "deleted device branch $BRANCH on central"
-fi
-log "sync complete. Local backup: $backup"
+  # 4. export central + verify NO duplicates before we trust it
+  og "$CENTRAL_TOKEN" export --server central --graph "$GRAPH" > "$work/central.jsonl" 2>/dev/null
+  if ! "$PY" "$JQ" verify < "$work/central.jsonl"; then
+    log "[$GRAPH] !! central has DUPLICATES after merge — NOT overwriting local. Backup kept: $backup"; return 2
+  fi
+
+  # 5. pull central -> local via OVERWRITE (deduped input; local := clean central)
+  "$PY" "$JQ" dedup < "$work/central.jsonl" > "$work/central.clean.jsonl"
+  if ! og "$LOCAL_TOKEN" load --server local --graph "$GRAPH" --data /w/central.clean.jsonl --mode overwrite --yes >/dev/null; then
+    log "[$GRAPH] !! local overwrite failed — restoring local from backup"
+    og "$LOCAL_TOKEN" load --server local --graph "$GRAPH" --data /w/local.jsonl --mode overwrite --yes >/dev/null || \
+      log "[$GRAPH] !! restore also failed — rebuild from cluster/seed + populate-embeddings.py (backup: $backup)"
+    return 3
+  fi
+  log "[$GRAPH] pulled central main -> local main (overwrite, deduped)"
+
+  # 6. verify local + optional branch cleanup
+  og "$LOCAL_TOKEN" export --server local --graph "$GRAPH" > "$work/local.after.jsonl" 2>/dev/null
+  log "[$GRAPH] post-sync verify:"; "$PY" "$JQ" verify < "$work/local.after.jsonl"
+  if [ -z "${KEEP_DEVICE_BRANCH:-}" ]; then
+    og "$CENTRAL_TOKEN" branch delete "$BRANCH" --server central --graph "$GRAPH" --yes >/dev/null 2>&1 || true
+  fi
+  log "[$GRAPH] sync complete. Local backup: $backup"
+  return 0
+}
+
+rc=0
+for g in "${GRAPH_LIST[@]}"; do
+  sync_graph "$g" || { rc=$?; log "[$g] sync returned $rc — continuing with remaining graphs"; }
+done
+[ -n "${DRY_RUN:-}" ] && log "DRY_RUN complete — no writes made."
+log "sync finished for: ${GRAPH_LIST[*]} (rc=$rc)"
+exit "$rc"

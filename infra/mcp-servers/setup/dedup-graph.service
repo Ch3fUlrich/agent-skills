@@ -10,5 +10,5 @@ After=network-online.target docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 %h/code/agent-skills/infra/mcp-servers/scripts/dedup-graph.py
+ExecStart=/usr/bin/python3 %h/code/agent-skills/infra/mcp-servers/scripts/dedup-graph.py --network mcp-servers_default --minio-path /home/s/apps/omnigraph/minio
 Nice=15
