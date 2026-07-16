@@ -1,11 +1,11 @@
 # Omnigraph — Structured Memory Server
 
-Omnigraph is the **default** memory layer for this stack: a lakehouse-native
+Omnigraph is the memory layer for this stack: a lakehouse-native
 graph engine with combined graph-traversal + vector + full-text retrieval,
-backed by an S3-compatible store (MinIO here). It replaces Mem0 as the source of
-truth for cross-project, cross-agent memory. See
+backed by an S3-compatible store (MinIO here). It is the source of truth for
+cross-project, cross-agent memory. See
 [`../../../../docs/decisions/0001-omnigraph-over-mem0.md`](../../../../docs/decisions/0001-omnigraph-over-mem0.md)
-for the rationale and the fallback plan, and the
+for the rationale, and the
 [`structured-memory`](../../../../skills/structured-memory/SKILL.md) skill for the
 usage protocol.
 
@@ -146,15 +146,3 @@ claude mcp get omnigraph      # -> Status: Connected
 
 **Full procedure, handshake test, and tool-usage norms:**
 [`../../docs/OMNIGRAPH-LOCAL-RUNBOOK.md`](../../docs/OMNIGRAPH-LOCAL-RUNBOOK.md).
-
-## Mem0 fallback (off by default)
-
-Mem0 remains available for when Omnigraph is unavailable. Its services live under
-`servers/_fallback/` and only start with the compose profile:
-
-```bash
-docker compose --profile mem0-fallback up -d   # postgres + mem0 API + mem0-mcp + dashboard
-```
-
-Then register an SSE MCP server at `http://localhost:8001/sse`. Prefer restoring
-Omnigraph over running on the fallback — see the ADR switch-back criteria.

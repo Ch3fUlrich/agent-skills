@@ -61,14 +61,13 @@ persistent, structured memory. Runs on your own hardware; no OpenAI key required
 |---|---|
 | [Serena](https://github.com/oraios/serena) | LSP semantic code navigation |
 | [Graphify](https://github.com/safishamsi/graphify) | Auto-extracted code-structure graph |
-| **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | Structured cross-project memory (default), + MinIO object store |
+| **[Omnigraph](https://github.com/ModernRelay/omnigraph)** | Structured cross-project memory + MinIO object store |
 | [Superpowers](https://github.com/erophames/superpowers-mcp) | Disciplined workflow skills |
 | [Playwright](https://github.com/microsoft/playwright-mcp) | Browser automation |
 | [Context7](https://context7.com/) | Advanced contextual retrieval for agents |
 | Sentry | Runtime error debugging and early error detection (Default Observability) |
 | Datadog | Cross-service context for distributed setups (Conditional Observability) |
 | [Omnigraph viewer](infra/mcp-servers/servers/omnigraph-viewer/) | Read-only web UI for the memory graph (tabs, interactive graph, table, search) |
-| Mem0 | Fallback memory only — off by default (`--profile mem0-fallback`) |
 
 ### Setup: there are TWO roles — pick yours
 
@@ -115,16 +114,12 @@ docker compose --env-file .env.shared --env-file .env.client \
 #   … -f docker-compose.client.yml --profile offline up -d
 ```
 
-> **Mem0 is retired** (Omnigraph replaced it — ADR 0001). It is off by default;
-> start it only for the fallback with
-> `-f docker-compose.server.yml --profile mem0-fallback up -d`.
-
-Memory is **Omnigraph** by default: agents write typed `Decision / Rule /
+Memory is **Omnigraph**: agents write typed `Decision / Rule /
 Preference / Convention / Component / Task` nodes (see the `structured-memory`
-skill) rather than Mem0's unstructured blobs. Real vector search uses a local
+skill) rather than unstructured blobs. Real vector search uses a local
 **Ollama `nomic-embed-text`** embedder (768-dim; no cloud key) — and is optional:
-without it, recall degrades to graph traversal + scalar indexes. Mem0 is retained
-as a documented fallback — rationale in
+without it, recall degrades to graph traversal + scalar indexes. There is no
+fallback memory layer; the stack requires Omnigraph — rationale in
 [`docs/decisions/0001-omnigraph-over-mem0.md`](docs/decisions/0001-omnigraph-over-mem0.md).
 Full setup and per-agent wiring:
 [`infra/mcp-servers/README.md`](infra/mcp-servers/README.md).

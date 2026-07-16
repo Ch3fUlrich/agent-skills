@@ -10,9 +10,9 @@ Docker is required.
 ## Why `docker run -i`, not docker-compose
 
 `graphify.serve` (see `graphify/serve.py` in the package) is stdio-only —
-there is no built-in SSE/HTTP transport, unlike serena or the mem0 bridge in
-this repo. That means it can't be a long-running compose service the way
-`serena`/`mem0` are; it has to be spawned fresh per Claude Code session,
+there is no built-in SSE/HTTP transport, unlike serena in this repo. That
+means it can't be a long-running compose service the way `serena` is; it
+has to be spawned fresh per Claude Code session,
 exactly like the `uv run ...` command it replaces. Claude Code (and any
 other MCP client) is fine with `docker run -i` as the spawned command — it's
 just a subprocess with stdin/stdout piped, same as `uv`/`npx`/`uvx`.

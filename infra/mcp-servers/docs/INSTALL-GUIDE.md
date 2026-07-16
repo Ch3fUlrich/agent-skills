@@ -2,7 +2,7 @@
 
 > **Note:** This is a detailed/legacy reference. The authoritative current
 > overview is [`../../../docs/architecture.md`](../../../docs/architecture.md);
-> the default memory layer is **Omnigraph** (Mem0 is a fallback).
+> the memory layer is **Omnigraph**.
 
 
 ### Where Indices Are Stored
@@ -39,7 +39,7 @@ depending on repo size.
 
 Once a project is indexed, any your coding agent session can use it. This assumes
 Serena is running in multi-project mode (the current default -- see
-`docs/ARCHITECTURE.md#serena-mcp-server`); if it's set up with
+`../../../docs/architecture.md`); if it's set up with
 `--project-from-cwd` instead, `activate_project` isn't exposed and the
 session is pinned to whichever repo it started in.
 

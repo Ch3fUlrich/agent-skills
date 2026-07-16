@@ -1,6 +1,11 @@
 # 0001. Omnigraph over Mem0 for cross-project memory
 
 - **Status:** Accepted (2026-07-09)
+- **Amended (2026-07-16):** the Mem0 fallback described under
+  "Fallback / switch-back criteria" was **removed** — see
+  [0003-remove-mem0-fallback.md](0003-remove-mem0-fallback.md). The decision to adopt
+  Omnigraph stands; only the escape hatch is gone. The rest of this record is left as
+  written on 2026-07-09.
 
 ## Context
 
@@ -44,6 +49,10 @@ not; the two are complementary (code graph vs memory graph).
   Mem0's `user_id` model onto project-scoped subgraphs.
 
 ## Fallback / switch-back criteria
+
+> **Superseded 2026-07-16 by [ADR 0003](0003-remove-mem0-fallback.md) — the fallback
+> was removed and none of the criteria below can be met any more.** Kept verbatim as
+> the record of what was originally decided.
 
 Mem0 is retained, wired alongside but **off by default**, under the
 `mem0-fallback` Docker Compose profile (`docker compose --profile mem0-fallback

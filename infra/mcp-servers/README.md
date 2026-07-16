@@ -5,10 +5,11 @@ Antigravity, …) that reduces token usage by 40–60% on code-heavy tasks throu
 semantic navigation, disciplined coding workflows, and **structured cross-project
 memory**.
 
-Runs on your own hardware with Docker + uv + Node.js. The default memory layer is
+Runs on your own hardware with Docker + uv + Node.js. The memory layer is
 **Omnigraph** (typed graph + vector + full-text) backed by MinIO — no OpenAI key
-required. **Mem0** is retained as an off-by-default fallback (it uses DeepSeek for
-fact extraction + Ollama `bge-m3` for embeddings). For the authoritative overview
+required. There is **no fallback memory**: the stack requires Omnigraph (Mem0 was
+removed — see [`../../docs/decisions/0001-omnigraph-over-mem0.md`](../../docs/decisions/0001-omnigraph-over-mem0.md)).
+For the authoritative overview
 see [`../../docs/architecture.md`](../../docs/architecture.md); for the memory
 protocol see [`../../skills/structured-memory/SKILL.md`](../../skills/structured-memory/SKILL.md).
 
@@ -21,13 +22,13 @@ carries the values that link them (`OMNIGRAPH_TOKEN`, `S3_BUCKET`).
 ```bash
 cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 cp .env.shared.example .env.shared    # OMNIGRAPH_TOKEN + S3_BUCKET (both roles)
-cp .env.server.example .env.server    # MinIO creds, embeddings, mem0-fallback
+cp .env.server.example .env.server    # MinIO creds, embeddings
 cp .env.client.example .env.client    # CODE_ROOT, OMNIGRAPH_URL
 
 # SERVER — omnigraph-server + minio + minio-init + omnigraph-init + viewer
 docker compose --env-file .env.shared --env-file .env.server \
   -f docker-compose.server.yml up -d
-#   Mem0 fallback:  … -f docker-compose.server.yml --profile mem0-fallback up -d
+curl -fsS http://localhost:8080/healthz
 
 # CLIENT — serena (SSE code-nav). Build the stdio graphify image:
 docker compose --env-file .env.shared --env-file .env.client \
@@ -60,7 +61,6 @@ every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 | Sentry | stdio (`npx` / Docker) | Runtime error debugging and early error detection ([Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)) | Default (Observability) |
 | Datadog | stdio (`npx` / Docker) | Cross-service context for distributed setups ([Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)) | Conditional (Observability) |
 | [Omnigraph viewer](servers/omnigraph-viewer/) | HTTP `:8090` | Read-only web UI for the memory graph (tabs, interactive graph, table, search) | Default |
-| Mem0 | SSE (`docker`) | Cross-session memory (REST API + pgvector) | Fallback (`--profile mem0-fallback`) |
 
 > **Note on Observability MCPs**: Sentry and Datadog require specific token scoping and security configurations. See the **[Observability MCP Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)** before enabling them.
 
@@ -142,7 +142,7 @@ alongside the default `uv`-based `graphify` entry (register whichever one
 you actually built/want with `register-claude-code-mcp.ps1 -Server
 graphify-docker`). Because `graphify.serve` is stdio-only, this is a
 `docker run -i --rm` subprocess per session, not a long-running compose
-service like `serena`/`mem0`.
+service like `serena`.
 
 ## Graphify + Local Ollama — Known Gotchas
 
@@ -221,87 +221,13 @@ it finds (`uv cache dir` + `archive-v0/*/**/graphify/{__main__,ids}.py`), so
 this is handled automatically, but it's why you can't just patch "the"
 graphify install once and be done.
 
-## Mem0 — Fallback Memory (off by default)
+## Why a dedicated memory server (not Serena's local memory)?
 
-> Omnigraph is the default memory layer (see the top of this file). The Mem0
-> stack below runs only under `docker compose --profile mem0-fallback up -d` and
-> is documented here for that fallback case.
+While Serena includes basic local memory capabilities, **Omnigraph is the designated single source of truth for all cross-session memory in this stack.**
 
-Mem0 runs as a three-container Docker stack using the official `mem0/mem0-api-server`
-image, PostgreSQL with pgvector for embeddings, and a custom MCP SSE bridge that lets
-your coding agent and Claude Code connect without the stdio timeout issue.
-
-### Architecture
-
-```
-your coding agent / Claude Code
-  │
-  │ SSE (http://localhost:8001/sse)
-  ▼
-┌──────────────────┐
-│  mem0-mcp bridge │  ← Custom Python MCP server (Docker, port 8001)
-│  (FastMCP + SSE) │    Translates MCP tools ↔ REST API calls
-└────────┬─────────┘
-         │ HTTP (internal Docker network)
-         ▼
-┌──────────────────┐
-│  mem0 REST API   │  ← Official mem0/mem0-api-server (Docker, port 8888)
-│  (FastAPI)       │    Fact extraction, embedding, memory CRUD
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  PostgreSQL 17   │  ← pgvector/pgvector:pg17 (Docker, port 5432)
-│  + pgvector      │    Vector embeddings + memory metadata
-└──────────────────┘
-```
-
-### Why This Fixes the Old Problem
-
-The previous setup used a third-party MCP server (`mem0-mcp-selfhosted` by elvismdev)
-over stdio transport. your coding agent's hardcoded 120-second MCP stdio timeout killed every
-`tools/call` before mem0 could respond. The new approach:
-
-- **SSE transport** — the MCP bridge runs as a persistent Docker service with an HTTP
-  SSE endpoint. No stdio timeout applies.
-- **Official images** — uses `mem0/mem0-api-server:latest` and `pgvector/pgvector:pg17`,
-  the same stack documented at docs.mem0.ai.
-- **Separation of concerns** — the mem0 REST API handles fact extraction and vector
-  storage; the MCP bridge only translates tool calls. If the API is slow, the bridge
-  waits (no 120s deadline).
-
-### Available MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `add_memory` | Store text or conversation as a memory |
-| `search_memories` | Semantic search across memories with scores |
-| `get_memories` | List all memories for a user |
-| `delete_memory` | Delete a memory by ID |
-| `health` | Check bridge and API health |
-
-### Quick Verification
-
-```powershell
-# Check the REST API
-curl http://localhost:8888/health
-
-# Check the MCP bridge
-curl http://localhost:8001/sse
-
-# Add a test memory
-curl -X POST http://localhost:8888/memories `
-  -H "Content-Type: application/json" `
-  -d '{"messages":[{"role":"user","content":"Test memory"}],"user_id":"your-username"}'
-```
-
-### Why a dedicated memory server (not Serena's local memory)?
-
-While Serena includes basic local memory capabilities, **Mem0 is the designated single source of truth for all cross-session memory in this stack.** 
-
-1. **Intelligence:** Mem0 automatically extracts entities, handles summarization, and uses vector search natively. It removes the cognitive overhead of manually formatting knowledge graphs.
-2. **Project Isolation:** Mem0 supports strict project isolation natively via the `user_id` parameter (mapping to your repository folder name), which is crucial for preventing memory spillover across different projects.
-3. **Reliability:** Mem0 is a production-grade infrastructure layer that reliably persists data and scales.
+1. **Structure:** memory is written as typed nodes (`Decision`/`Rule`/`Preference`/`Convention`/`Component`/`Task`) that are queryable and reviewable, not free-text blobs — see the [`structured-memory`](../../skills/structured-memory/SKILL.md) skill.
+2. **Project Isolation:** each repo gets its **own** graph, pinned per-agent via `OMNIGRAPH_GRAPH_ID`, so a bad write in one project cannot touch another.
+3. **Retrieval:** graph traversal + vector + full-text in one engine, with a local Ollama embedder (no cloud key).
 
 To prevent agent confusion and overlapping functionality, Serena's memory tools (`write_memory`, `read_memory`, etc.) are explicitly **disabled** using the `excludeTools` configuration in all provided JSON setup files. Do not re-enable them.
 
@@ -316,8 +242,8 @@ your coding agent Agent
   │     ├── LSP servers (per-language) ──► Project source code
   │     └── Memories (JSON, local disk) ──► ~/.serena/memories/
   │
-  ├── Mem0 (Docker, SSE)
-  │     └── mem0-mcp bridge ──► mem0 REST API ──► PostgreSQL + pgvector
+  ├── Omnigraph (stdio bridge ──► HTTP :8080)
+  │     └── omnigraph-server ──► MinIO (S3 object store)
   │
   └── Superpowers (Node.js, stdio)
         └── Skills (discovered from Claude Code cache)
@@ -332,10 +258,10 @@ your coding agent Agent
 
 ```
 docker compose ps
-NAME              STATUS                    PORTS
-mem0-postgres     running (healthy)         127.0.0.1:5433→5432
-mem0-api          running (healthy)         127.0.0.1:8888→8000
-mem0-mcp          running (healthy)         127.0.0.1:8001→8001
+NAME                STATUS                    PORTS
+omnigraph-minio     running (healthy)         127.0.0.1:9000→9000, 127.0.0.1:9001→9001
+omnigraph-server    running (healthy)         127.0.0.1:8080→8080
+omnigraph-viewer    running (healthy)         127.0.0.1:8090→8090
 ```
 
 ## MCP Endpoints
@@ -344,10 +270,10 @@ mem0-mcp          running (healthy)         127.0.0.1:8001→8001
 |--------|--------------------|
 | **Serena** | `uvx` stdio — no web UI |
 | **Playwright** | `npx` stdio — headed browser, no API key needed ([docs](https://playwright.dev/docs/getting-started-mcp)) |
-| **Mem0 REST API** | [http://localhost:8888/docs](http://localhost:8888/docs) (OpenAPI), `/health` |
-| **Mem0 MCP Bridge** | [http://localhost:8001/sse](http://localhost:8001/sse) (SSE), `/health` |
+| **Omnigraph API** | [http://localhost:8080](http://localhost:8080) (bearer), `/healthz` (open) |
+| **Omnigraph viewer** | [http://localhost:8090](http://localhost:8090) (read-only web UI) |
 | **Superpowers** | `node` stdio — no web UI |
-| **PostgreSQL** | `localhost:5433` (pgvector, credentials in `.env`) |
+| **MinIO console** | `http://localhost:9001` (credentials in `.env.server`) |
 
 ## Playwright — Browser Automation for DeepSeek
 
@@ -375,91 +301,62 @@ Playwright scripts. No API key required.
 - `--port 8931` — run as standalone HTTP server
 - `--isolated` — fresh session each time (no persistent cookies)
 
-## Mem0 Dashboard — Web UI
-
-The self-hosted dashboard runs at **[http://localhost:3000](http://localhost:3000)**.
-
-### Authentication
-
-| Mode | When | How |
-|------|------|-----|
-| **Open access** (current) | `AUTH_DISABLED=true` in `docker-compose.yml` | Dashboard loads without login. All API endpoints are open. Production: set to `false`. |
-| **Authentication enabled** | `AUTH_DISABLED=false` | Visit `/setup` to create the first admin account, then log in with email + password. |
-
-### Enabling auth (production)
-
-1. Set in `.env`:
-   ```
-   ADMIN_API_KEY=<random-string-16+-chars>
-   JWT_SECRET=<openssl-rand-base64-48>
-   ```
-2. Change `AUTH_DISABLED=false` in `docker-compose.yml` (mem0 service `environment:` block)
-3. Rebuild: `docker compose up -d --build mem0`
-4. Visit `http://localhost:3000/setup` → create admin account
-5. Use `X-API-Key: <ADMIN_API_KEY>` header for admin API operations
-
-### Creating API keys for agents
-
-Once auth is enabled:
-1. Log into the dashboard
-2. Go to **API Keys** → **Create Key**
-3. Give it a label (e.g. "your coding agent")
-4. Copy the generated key
-5. Pass it to the MCP bridge or REST API calls as `X-API-Key` header
-
-### Default credentials
-
-There are **no default credentials**. The setup wizard at `/setup` creates the first admin account. Until then, with `AUTH_DISABLED=true`, the dashboard is open.
-
 ## Directory Structure
 
 ```
 mcp-servers/
 ├── config/                              # your coding agent MCP configs
-│   ├── mcp.json                         # Production config (Serena + Mem0 + Superpowers)
+│   ├── mcp.json                         # Production config (Serena + Omnigraph + Superpowers)
 │   ├── mcp-claude-code.json             # Claude Code equivalent config
+│   ├── mcp_antigravity.json             # Google Antigravity config
 │   └── serena-project.yml               # Per-repo template for Serena
 │
+├── cluster/                             # Declared Omnigraph cluster (see servers/omnigraph/)
+│   ├── cluster.yaml                     # Graphs + embedding provider
+│   ├── memory.pg                        # Structured-memory schema
+│   └── seed/                            # NDJSON seeds, one file per graph
+│
 ├── scripts/                             # Platform scripts
-│   ├── test_mcp_tools.py                # Python tool-level test (via stdio client connection)
+│   ├── _omni_env.py                     # Resolve the LIVE stack (network, MinIO store)
+│   ├── add-project-graph.sh             # Declare a new per-repo graph in cluster.yaml
+│   ├── apply-cluster.sh                 # Converge the declaration into the server
+│   ├── split-project-graph.py           # Split a repo out of a shared graph / refresh a seed
+│   ├── dedup-graph.py                   # Remove duplicate edges (node-delete + merge-load)
+│   ├── populate-embeddings.py           # Compute Decision vectors via local Ollama, overwrite-load
+│   ├── patch-graphify-ollama-bugs.py    # Patch graphify's malformed-response crashes
 │   ├── windows/                         # PowerShell scripts for Windows
-│   │   ├── setup.ps1                    # One-time: install tools, validate .env,
-│   │   │                                #   pull Docker images, start stack
-│   │   ├── start.ps1                    # Daily: start Docker stack, verify health
-│   │   ├── stop.ps1                     # Stop Docker services, preserve data
-│   │   ├── test.ps1                     # Health test suite (checks Docker containers + API ports)
 │   │   ├── init-serena-projects.ps1     # Pre-index all repos with Serena
-│   │   ├── init-graphify-projects.ps1    # Build or refresh repo graphs with Graphify
-│   │   └── migrate.ps1                  # Migrate data from Claude Code plugins
+│   │   ├── init-graphify-projects.ps1   # Build or refresh repo graphs with Graphify
+│   │   └── register-claude-code-mcp.ps1 # Register a server into Claude Code's config
 │   └── linux/                           # Bash scripts for Linux/macOS
-│       ├── setup.sh, start.sh, stop.sh, test.sh
-│       └── init-serena-projects.sh, migrate.sh
+│       └── init-serena-projects.sh, init-graphify-projects.sh
 │
 ├── servers/                             # MCP server source packages
-│   ├── mem0-mcp/                        # MCP SSE bridge for mem0 REST API
-│   │   ├── server.py                    # FastMCP bridge (5 memory tools)
-│   │   ├── Dockerfile                   # Python 3.12 slim image
-│   │   └── requirements.txt            # mcp>=1.6.0
-│   │
+│   ├── omnigraph/                       # Docs for the upstream server + MCP bridge wiring
+│   ├── omnigraph-mcp/                   # Container build of the stdio bridge (hosts without Node)
+│   ├── omnigraph-viewer/                # Read-only web UI (:8090)
+│   ├── graphify-mcp/                    # Container build of the graphify stdio server
 │   └── superpowers/                     # Node.js MCP server for coding workflows
 │       ├── build/index.js               # Compiled server binary
 │       ├── src/                         # TypeScript source
 │       ├── package.json
 │       └── node_modules/
 │
+├── setup/                               # Server/client setup + offline sync
+│
 ├── docs/                                # Documentation files
-│   ├── ARCHITECTURE.md                  # Full system architecture
-│   ├── TOKEN_SAVINGS.md                 # Detailed token savings analysis
+│   ├── OMNIGRAPH-LOCAL-RUNBOOK.md       # Verified local setup + every fix
 │   ├── TROUBLESHOOTING.md               # Known issues and fixes
-│   └── INSTALL-GUIDE.md                 # Manual step-by-step setup
+│   ├── INSTALL-GUIDE.md                 # Manual step-by-step setup
+│   └── OBSERVABILITY-MCP-SETUP.md       # Sentry / Datadog
 │
 ├── data/                                # Persistent runtime data (auto-created)
-│   ├── postgres/                        # PostgreSQL data (pgvector embeddings)
-│   └── mem0-history/                    # Mem0 request history
+│   └── minio/                           # MinIO object store (bind mount — survives `down -v`)
 │
-├── docker-compose.yml                   # Mem0 stack (postgres + mem0 API + MCP bridge)
-├── .env                                 # Secrets (DEEPSEEK_API_KEY, POSTGRES_PASSWORD, etc.)
-├── .env.example                         # Template (safe to commit)
+├── docker-compose.server.yml            # Memory backend (omnigraph-server + minio + viewer)
+├── docker-compose.client.yml            # Developer-machine tools (serena, graphify image)
+├── .env.shared / .env.server / .env.client          # Secrets (OMNIGRAPH_TOKEN, MinIO creds, …)
+├── .env.shared.example / .env.server.example / .env.client.example   # Templates (safe to commit)
 └── README.md                            # This file
 ```
 
@@ -474,8 +371,6 @@ comparing before/after Serena:
 | Token consumption | ~45K | ~18K | **-60%** |
 | Turn count | 18 | 8 | **-56%** |
 | Time | ~3 min | ~1 min | **-67%** |
-
-See [TOKEN_SAVINGS.md](docs/TOKEN_SAVINGS.md) for detailed cases.
 
 ## Per-Repository Starter
 
@@ -497,12 +392,8 @@ For Google Antigravity, configuration is loaded from the global `mcp_config.json
 On Windows, Antigravity reads its config from:
 `C:\Users\<username>\.gemini\config\mcp_config.json` (which is symlinked to `C:\Users\<username>\.gemini\antigravity\mcp_config.json`).
 
-### 2. Transport Optimization
-While your coding agent uses SSE transport for Mem0 to bypass its 120s stdio timeout, Antigravity has native SSE client issues that cause `Method Not Allowed` (405) errors. To resolve this, **Mem0 is run as a stdio process** for Antigravity using `uv run`, connecting to the same running Mem0 Docker containers on port `8888`.
+### 2. Tool Filtering (excludeTools)
+To prevent agent confusion and tool redundancy (e.g., memory tools exposed by both Serena and Omnigraph), we filter out unused/unneeded tools using the client-side `excludeTools` property:
 
-### 3. Tool Filtering (excludeTools)
-To prevent agent confusion and tool redundancy (e.g., memory tools exposed by both Serena and Mem0), we filter out unused/unneeded tools using the client-side `excludeTools` property:
-
-*   **Serena**: Memory tools (`write_memory`, `read_memory`, `list_memories`, `delete_memory`, `rename_memory`, `edit_memory`) and GUI/setup tools (`onboarding`, `open_dashboard`, `initial_instructions`) are **excluded**, leaving Serena focused on LSP semantic search, refactoring, and project switching. `activate_project`/`get_current_config` are **kept** — Serena runs in multi-project mode (see `docs/ARCHITECTURE.md`), and excluding those two would strand a session on whichever repo activates first with no way to switch to another.
-*   **Mem0**: The `health` check tool is **excluded**, leaving only the 4 core memory storage and search tools.
+*   **Serena**: Memory tools (`write_memory`, `read_memory`, `list_memories`, `delete_memory`, `rename_memory`, `edit_memory`) and GUI/setup tools (`onboarding`, `open_dashboard`, `initial_instructions`) are **excluded**, leaving Serena focused on LSP semantic search, refactoring, and project switching. `activate_project`/`get_current_config` are **kept** — Serena runs in multi-project mode (see [`../../docs/architecture.md`](../../docs/architecture.md)), and excluding those two would strand a session on whichever repo activates first with no way to switch to another.
 *   **Superpowers**: All workflow tools are left active.

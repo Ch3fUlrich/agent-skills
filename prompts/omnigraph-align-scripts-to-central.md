@@ -1,5 +1,17 @@
 # Prompt — align the Omnigraph helper scripts to CENTRAL (coding.vm)
 
+> **DONE (2026-07-16) — kept as the record; do not re-run.** Option **(b)** was taken:
+> the scripts now auto-detect the live stack via `scripts/_omni_env.py` (network from
+> `docker inspect omnigraph-server`, MinIO mount **and type** from
+> `docker inspect omnigraph-minio`), falling back to the local values off-host, with
+> `OMNI_NET` / `--network` / `--net` / `--minio-path` / `--minio-volume` still
+> overriding. The override table below is therefore obsolete — no hand-passed flags are
+> needed on central any more. Probe a host with `python3 scripts/_omni_env.py`.
+> Two bugs found doing it: the `--minio-volume` default was wrong for **both** stacks
+> (local MinIO is also a bind mount), and dedup treated a volume's *absence* as proof of
+> removal. For the current central handoff see
+> [`omnigraph-central-bring-up-to-date.md`](omnigraph-central-bring-up-to-date.md).
+
 Send this to an agent **with shell + docker access on `coding.vm`** (the host running
 the authoritative Omnigraph instance behind `omnigraph.ohje.ooguy.com`).
 

@@ -210,7 +210,7 @@ Write-Host "  Serena - Initialize Projects (per-repo language autodetection)" -F
 Write-Host "======================================================================" -ForegroundColor Cyan
 
 if (-not $DryRun -and -not (Get-Command serena -ErrorAction SilentlyContinue)) {
-    Write-Host "X 'serena' is not on PATH. Run setup.ps1 first (uv tool install serena-agent)." -ForegroundColor Red
+    Write-Host "X 'serena' is not on PATH. Install it first: uv tool install serena-agent" -ForegroundColor Red
     exit 1
 }
 

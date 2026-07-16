@@ -17,19 +17,26 @@ the base Serena + Omnigraph + Superpowers setup.
 
 ## Prerequisites
 
-The MCP servers must be installed first. From the parent `mcp-servers/` directory:
+The MCP stack must be running first. From `infra/mcp-servers/` (same on Windows and
+Linux — Docker does the work):
 
-**Windows:**
-```powershell
-.\windows\setup.ps1       # One-time: installs uv, node deps, Qdrant, Ollama
-.\windows\start.ps1       # Each session: start Qdrant, pre-warm Ollama models
-```
-
-**Linux:**
 ```bash
-./linux/setup.sh
-./linux/start.sh
+cp .env.shared.example .env.shared    # OMNIGRAPH_TOKEN (openssl rand -hex 32) + S3_BUCKET
+cp .env.server.example .env.server    # MinIO creds, embeddings
+
+# SERVER (one always-on host) — omnigraph + minio + viewer
+docker compose --env-file .env.shared --env-file .env.server \
+  -f docker-compose.server.yml up -d
+curl -fsS http://localhost:8080/healthz
+
+# CLIENT (each dev machine) — serena; build the graphify image
+docker compose --env-file .env.shared --env-file .env.client \
+  -f docker-compose.client.yml up -d
 ```
+
+Then point this repo at **its own** Omnigraph graph — see `AGENTS.md`/`CLAUDE.md` in
+this starter for the two-server `.mcp.json` block. Full setup:
+[`infra/mcp-servers/README.md`](../../infra/mcp-servers/README.md).
 
 ## Per-Repository Setup (Agent Does This)
 

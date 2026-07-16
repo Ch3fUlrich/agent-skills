@@ -1,8 +1,8 @@
 # Structured Memory Schema (Omnigraph)
 
-The memory graph is **typed**. Instead of storing unstructured conversation blobs
-(Mem0's model), agents write specific node types with explicit edges, so memory is
-queryable, reviewable, and stays "rules-integrated".
+The memory graph is **typed**. Rather than storing unstructured conversation blobs,
+agents write specific node types with explicit edges, so memory is queryable,
+reviewable, and stays "rules-integrated".
 
 **One graph per project** (hard isolation). Each repo's memory lives in its own graph
 named after the repo folder — `agent-skills`, `basic-analysis`, `invest`,
@@ -95,7 +95,7 @@ Note each node gets its hub edge **and** at least one relational edge:
 ```jsonl
 {"type":"Project","data":{"slug":"agent-skills","name":"Agent Skills","path":"~/code/agent-skills","summary":"Reusable agent skills + self-hosted MCP stack"}}
 {"type":"Component","data":{"slug":"as-omnigraph-cluster","name":"Omnigraph cluster","kind":"infra","location":"infra/mcp-servers/cluster/"}}
-{"type":"Decision","data":{"slug":"omnigraph-over-mem0","title":"Omnigraph replaces Mem0 as default memory","rationale":"Typed, queryable, reviewable memory keeps rules integrated; Mem0 kept as fallback","status":"accepted","date":"2026-07-09"}}
+{"type":"Decision","data":{"slug":"omnigraph-over-mem0","title":"Omnigraph replaces Mem0 as default memory","rationale":"Typed, queryable, reviewable memory keeps rules integrated (ADR 0001). The fallback it originally kept was removed in ADR 0003 — Omnigraph is the only memory layer.","status":"accepted","date":"2026-07-09"}}
 {"type":"Rule","data":{"slug":"skill-single-source","statement":"A skill's SKILL.md is the source of truth; starters/instructions are thin pointers","severity":"must"}}
 {"edge":"PartOf","from":"as-omnigraph-cluster","to":"agent-skills"}
 {"edge":"DecidedIn","from":"omnigraph-over-mem0","to":"agent-skills"}

@@ -22,9 +22,10 @@ on top. Group by `Added / Changed / Fixed / Removed / Deprecated / Security`.
 
 ## [Unreleased]
 
-### Changed
-- Default MCP memory layer switched from Mem0 to Omnigraph; Mem0 retained as an
-  off-by-default Docker Compose fallback profile. See docs/decisions/0001-omnigraph-over-mem0.md.
+### Removed
+- The Mem0 fallback, entirely — Omnigraph is the only memory layer. The escape hatch
+  was never exercised but kept leaking back into docs as a live option. See
+  docs/decisions/0003-remove-mem0-fallback.md.
 
 ### Added
 - `coding-principles` and `structured-memory` skills with starters.
@@ -57,6 +58,24 @@ Path: `docs/decisions/NNNN-kebab-title.md` (zero-padded, monotonic).
 - **Switch-back criteria:** If operating Omnigraph proves unsustainable, re-enable
   the `mem0-fallback` compose profile and layer the structured protocol on top.
 ```
+
+**Amend, don't rewrite.** When reality moves on, an ADR is a record of what was decided
+*then* — so leave the text and add a dated note pointing at the ADR that changed it. The
+real 0001 above later had its fallback clause voided; the fix was a header amendment plus
+a `> Superseded by ADR 0003` note above that section — **not** a silent edit. Write the
+new ADR for the new decision (0003 here), and keep the old one findable:
+
+```markdown
+# 0001. Omnigraph over Mem0 for cross-project memory
+
+- **Status:** Accepted (2026-07-09)
+- **Amended (2026-07-16):** the Mem0 fallback below was removed — see
+  docs/decisions/0003-remove-mem0-fallback.md. The decision to adopt Omnigraph stands;
+  only the escape hatch is gone.
+```
+
+The same rule applies to memory: supersede an accepted `Decision` with a new node plus a
+`Supersedes` edge rather than overwriting its rationale (`skills/structured-memory/SKILL.md`).
 
 Statuses: `Proposed → Accepted → Superseded by NNNN → Deprecated`. Never edit the
 decision of an accepted ADR — supersede it with a new one and link both ways.
