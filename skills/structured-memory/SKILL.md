@@ -120,10 +120,24 @@ project data.
   the omnigraph MCP bridge (a project-scoped `.mcp.json` env, or export it before
   launching). If it is still `memory`, you are on the globals graph — switch it.
   **Never write project-specific nodes to the shared `memory` graph.**
+- **Reading globals needs a SECOND bridge.** `OMNIGRAPH_GRAPH_ID` pins a bridge to
+  exactly one graph, and no tool (`query`/`mutate`/`load`) takes a graph argument —
+  so a project-scoped agent cannot reach `memory` at all. To recall house style,
+  declare a second server in the same `.mcp.json`:
+
+  ```jsonc
+  "omnigraph":         { /* … */ "env": { "OMNIGRAPH_GRAPH_ID": "<repo>" } },  // read+write
+  "omnigraph-globals": { /* … */ "env": { "OMNIGRAPH_GRAPH_ID": "memory" } }   // read only
+  ```
+
+  Treat `omnigraph-globals` as read-only: the only writes `memory` should ever take
+  are new genuinely-global `Preference`s.
 - **Inside your project graph, still scope + link:** every project-specific node
   is a `Project` node's satellite — edge it to the `Project` (slug = repo folder
-  name) and add relational edges (see "Link richly" above). Recall global
-  `Preference`s from the `memory` graph when you need house style.
+  name) and add relational edges (see "Link richly" above).
+- **Migrate a project off the shared graph** with
+  `infra/mcp-servers/scripts/split-project-graph.py <repo> --apply` (additive: it
+  copies the subgraph and leaves the source intact, so verify before pruning).
 - **Add a new project graph**: `infra/mcp-servers/scripts/add-project-graph.sh
   <name>` then `./scripts/apply-cluster.sh` (declared in `cluster/cluster.yaml`,
   converged into the live cluster with a snapshot + node-count verify).

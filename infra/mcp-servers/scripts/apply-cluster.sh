@@ -12,11 +12,21 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"        # infra/mcp-servers
 cd "$here"
-set -a; . ./.env; set +a                        # MINIO_ROOT_USER/PASSWORD, S3_BUCKET, OMNIGRAPH_TOKEN
+set -a; . ./.env.shared; . ./.env.server; set +a # OMNIGRAPH_TOKEN/S3_BUCKET + MINIO_ROOT_USER/PASSWORD
 IMAGE="modernrelay/omnigraph-server:v0.8.1"
-NET="${OMNI_NET:-mcp-servers_default}"          # network where the minio container resolves
+NET="${OMNI_NET:-mcp-server_mcp-net}"           # compose project `mcp-server`, network `mcp-net`
 S3="${OMNI_S3:-http://omnigraph-minio:9000}"    # must match omnigraph-server's AWS_ENDPOINT_URL_S3
 BK=".graph-backup/pre-apply-$(date -u +%Y%m%d-%H%M%S).jsonl"
+
+# Git Bash (MSYS) rewrites container-side absolute paths — `--config /cluster`
+# arrives as `C:/Program Files/Git/cluster`. Pass the host side in Windows form
+# and switch MSYS argument conversion off for the docker call below.
+if command -v cygpath >/dev/null 2>&1; then
+  CLUSTER_SRC="$(cygpath -m "$here/cluster")"
+  export MSYS2_ARG_CONV_EXCL='*'
+else
+  CLUSTER_SRC="$here/cluster"
+fi
 
 count() { # node count of the memory graph (nodes have "type"; edges have "from")
   curl -s -X POST "http://127.0.0.1:8080/graphs/memory/export" \
@@ -35,7 +45,7 @@ echo "› stopping omnigraph-server (releases the state lock)…"
 docker stop omnigraph-server >/dev/null
 
 echo "› applying cluster config…"
-docker run --rm --network "$NET" -v "$here/cluster:/cluster:ro" --entrypoint omnigraph \
+docker run --rm --network "$NET" -v "$CLUSTER_SRC:/cluster:ro" --entrypoint omnigraph \
   -e AWS_ACCESS_KEY_ID="$MINIO_ROOT_USER" -e AWS_SECRET_ACCESS_KEY="$MINIO_ROOT_PASSWORD" \
   -e AWS_REGION="${AWS_REGION:-us-east-1}" -e AWS_ENDPOINT_URL_S3="$S3" \
   -e AWS_ALLOW_HTTP=true -e AWS_S3_FORCE_PATH_STYLE=true \

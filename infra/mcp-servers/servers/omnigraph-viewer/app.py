@@ -1,12 +1,18 @@
-"""Read-only web viewer for the Omnigraph memory graph.
+"""Read-only web viewer for the Omnigraph memory graphs.
 
-Holds the Omnigraph bearer token server-side (the browser never sees it) and
-exposes the graph to the browser as JSON. The frontend (index.html-in-a-string
-below) renders project tabs, an interactive force-directed graph with node/edge
-details, a filterable/sortable table, and search highlighting.
+Holds the Omnigraph bearer token server-side (the browser never sees it) and exposes the
+graphs to the browser as JSON. The frontend (index.html-in-a-string below) renders graph
+chips, an interactive force-directed graph with focus-on-click exploration, a
+filterable/sortable table, and search highlighting.
 
-Human auth is handled in front of this service (Authelia via Caddy); the app has
-no auth of its own — never expose it without the SSO/proxy in front.
+Per-project isolation means one graph per repo, so **graph ≈ project**. The chips in the
+tab bar select which graphs are on screen: click one to switch fast, ctrl/cmd/shift-click
+to add more and compare several at once. Node ids are namespaced `<graph>::<slug>` so
+slugs from different graphs can never collide or appear to be joined — edges only ever
+exist inside one graph.
+
+Human auth is handled in front of this service (Authelia via Caddy); the app has no auth
+of its own — never expose it without the SSO/proxy in front.
 """
 import html
 import json
@@ -17,6 +23,8 @@ from flask import Flask, Response, jsonify, request
 
 OMNIGRAPH_URL = os.environ.get("OMNIGRAPH_URL", "http://omnigraph-server:8080").rstrip("/")
 OMNIGRAPH_TOKEN = os.environ.get("OMNIGRAPH_TOKEN", "")
+# Default graph the page opens on. `memory` now holds ONLY global-scope Preferences, so it
+# is deliberately small — the chips switch to the project graphs where the content lives.
 GRAPH_ID = os.environ.get("OMNIGRAPH_GRAPH", "memory")
 TIMEOUT = float(os.environ.get("OMNIGRAPH_TIMEOUT", "15"))
 
@@ -29,22 +37,26 @@ LABEL_FIELD = {
     "Project": "name", "Decision": "title", "Rule": "statement",
     "Preference": "statement", "Convention": "name", "Component": "name", "Task": "title",
 }
+HUB_EDGES = {"DecidedIn", "ConstrainsProject", "AppliesTo", "PartOf", "Tracks"}
 
 
 def _graphs():
-    """All graph IDs the cluster exposes (for the project/graph selector)."""
+    """All graph IDs the cluster exposes (for the graph chips)."""
     try:
         r = requests.get(f"{OMNIGRAPH_URL}/graphs", headers=_headers, timeout=TIMEOUT)
         r.raise_for_status()
         ids = [g.get("graph_id") or g.get("graphId") for g in r.json().get("graphs", [])]
-        return [g for g in ids if g] or [GRAPH_ID]
+        return sorted(g for g in ids if g) or [GRAPH_ID]
     except Exception:  # noqa: BLE001
         return [GRAPH_ID]
 
 
-def _resolve_graph(graph):
-    """Only serve a graph the cluster actually exposes; fall back to the default."""
-    return graph if graph in _graphs() else GRAPH_ID
+def _resolve_graphs(raw):
+    """Parse ?graph=a,b,c -> only the graphs the cluster actually exposes."""
+    known = _graphs()
+    want = [g.strip() for g in (raw or GRAPH_ID).split(",") if g.strip()]
+    out = [g for g in want if g in known]
+    return out or [GRAPH_ID if GRAPH_ID in known else known[0]]
 
 
 def _branches(graph):
@@ -70,18 +82,19 @@ def _export(branch, graph):
     return out
 
 
-def _build_graph(branch, graph):
+def _build_one(branch, graph):
+    """Nodes + edges for a single graph, with ids namespaced `<graph>::<slug>`."""
     records = _export(branch, graph)
-    nodes = {}
-    edges_seen = set()
-    edges = []
+    nid = lambda slug: f"{graph}::{slug}"  # noqa: E731
+    nodes, edges, edges_seen = {}, [], set()
     for rec in records:
         if "edge" in rec:
             key = (rec["edge"], rec.get("from"), rec.get("to"))
             if key in edges_seen:
                 continue  # de-dup (edges aren't slug-keyed, merges can duplicate)
             edges_seen.add(key)
-            edges.append({"type": rec["edge"], "from": rec.get("from"), "to": rec.get("to")})
+            edges.append({"type": rec["edge"], "from": nid(rec.get("from")),
+                          "to": nid(rec.get("to")), "graph": graph})
         elif "type" in rec:
             data = rec.get("data", {})
             slug = data.get("slug")
@@ -89,11 +102,11 @@ def _build_graph(branch, graph):
                 nodes[slug] = {"type": rec["type"], "data": data}
 
     project_slugs = {s for s, n in nodes.items() if n["type"] == "Project"}
-    # attribute each node to the project(s) it edges into
     proj_of = {s: set() for s in nodes}
-    for e in edges:
-        if e["to"] in project_slugs and e["from"] in proj_of:
-            proj_of[e["from"]].add(e["to"])
+    for rec in records:  # attribute each node to the project(s) it hub-edges into
+        if "edge" in rec and rec.get("edge") in HUB_EDGES:
+            if rec.get("to") in project_slugs and rec.get("from") in proj_of:
+                proj_of[rec["from"]].add(rec["to"])
     for s in project_slugs:
         proj_of[s].add(s)
 
@@ -104,14 +117,29 @@ def _build_graph(branch, graph):
         projs = sorted(proj_of.get(slug, set()))
         is_global = (data.get("scope") == "global") or (not projs and n["type"] != "Project")
         out_nodes.append({
-            "id": slug, "type": n["type"], "label": label,
-            "fields": data, "projects": projs, "global": is_global,
+            "id": nid(slug), "slug": slug, "graph": graph, "type": n["type"], "label": label,
+            "fields": data, "projects": [nid(p) for p in projs], "global": is_global,
         })
-    projects = sorted(
-        ({"id": s, "name": nodes[s]["data"].get("name", s)} for s in project_slugs),
-        key=lambda p: p["name"],
-    )
-    return {"nodes": out_nodes, "edges": edges, "projects": projects, "branch": branch}
+    projects = [{"id": nid(s), "name": nodes[s]["data"].get("name", s), "graph": graph}
+                for s in sorted(project_slugs)]
+    return out_nodes, edges, projects
+
+
+def _build_graph(branch, graphs):
+    """Merge several graphs into one view. Ids are namespaced, so no cross-graph edges."""
+    all_nodes, all_edges, all_projects, errors = [], [], [], {}
+    for g in graphs:
+        try:
+            # A branch only exists within its own graph; fall back to main elsewhere.
+            b = branch if (len(graphs) == 1 and branch in _branches(g)) else "main"
+            n, e, p = _build_one(b, g)
+            all_nodes += n
+            all_edges += e
+            all_projects += p
+        except Exception as exc:  # noqa: BLE001 — one bad graph must not blank the page
+            errors[g] = str(exc)
+    return {"nodes": all_nodes, "edges": all_edges, "projects": all_projects,
+            "branch": branch, "graphs": graphs, "errors": errors}
 
 
 @app.get("/healthz")
@@ -121,21 +149,20 @@ def healthz():
 
 @app.get("/api/graph")
 def api_graph():
-    graph = _resolve_graph(request.args.get("graph", GRAPH_ID))
+    graphs = _resolve_graphs(request.args.get("graph"))
     branch = request.args.get("branch", "main")
-    if branch not in _branches(graph):
-        branch = "main"
     try:
-        data = _build_graph(branch, graph)
-        data["graph"] = graph
-        return jsonify(data)
+        return jsonify(_build_graph(branch, graphs))
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": str(exc), "nodes": [], "edges": [], "projects": [], "branch": branch, "graph": graph}), 200
+        return jsonify({"error": str(exc), "nodes": [], "edges": [], "projects": [],
+                        "branch": branch, "graphs": graphs, "errors": {}}), 200
 
 
 @app.get("/api/branches")
 def api_branches():
-    return jsonify({"branches": _branches(_resolve_graph(request.args.get("graph", GRAPH_ID)))})
+    graphs = _resolve_graphs(request.args.get("graph"))
+    # Branch switching only makes sense against a single graph.
+    return jsonify({"branches": _branches(graphs[0]) if len(graphs) == 1 else ["main"]})
 
 
 @app.get("/api/graphs")
@@ -163,10 +190,17 @@ header h1{font-size:15px;margin:0;font-weight:650}
 header .sp{flex:1}
 input,select,button{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:6px 10px;font:inherit}
 button{cursor:pointer}button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+button:disabled,select:disabled{opacity:.45;cursor:not-allowed}
 #search{min-width:220px}
-.tabs{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--bd);flex-wrap:wrap;background:var(--panel)}
-.tab{padding:5px 12px;border-radius:999px;border:1px solid var(--bd);cursor:pointer;font-size:13px;background:var(--card)}
-.tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+/* ---- graph chips (replaces the old dropdown + project tabs: graph == project now) ---- */
+.tabs{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--bd);flex-wrap:wrap;background:var(--panel);align-items:center}
+.tab{padding:5px 12px;border-radius:999px;border:1px solid var(--bd);cursor:pointer;font-size:13px;background:var(--card);
+     display:inline-flex;align-items:center;gap:6px;user-select:none;white-space:nowrap}
+.tab:hover{border-color:var(--acc)}
+.tab.on{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+.tab .n{color:var(--mut);font-size:11px}
+.tab.on .n{color:var(--fg)}
+.tabs .hint{color:var(--mut);font-size:11px;margin-left:4px}
 main{flex:1;display:flex;min-height:0}
 #stage{flex:1;position:relative;overflow:hidden}
 svg{width:100%;height:100%;display:block}
@@ -174,11 +208,18 @@ svg{width:100%;height:100%;display:block}
 .link.hl{stroke:var(--acc);stroke-opacity:1;stroke-width:2px}
 .link.dim{stroke-opacity:.06}
 .node{cursor:pointer}
-.node circle{paint-order:stroke}   /* stroke = project-cluster ring (set per-node); fill drawn on top */
+.node circle{paint-order:stroke}   /* stroke = graph-cluster ring (set per-node); fill drawn on top */
 .node text{font-size:11px;fill:var(--fg);pointer-events:none}
 .node.dim{opacity:.12}
 .node.hl circle{stroke:var(--acc);stroke-width:3px}
+/* ---- focus mode: clicked node + its neighbours stay; everything else fades and drifts out ---- */
+.node.focus circle{stroke:var(--acc);stroke-width:4px}
+.node.near text{font-weight:650}
+.node.far{opacity:.18}
+.link.far{stroke-opacity:.04}
+.link.near{stroke-opacity:.9;stroke-width:1.6px}
 .elabel{font-size:9px;fill:var(--mut);pointer-events:none}
+.elabel.far{opacity:.1}
 .clabel{font-size:15px;font-weight:700;text-anchor:middle;opacity:.85;pointer-events:none;text-transform:uppercase;letter-spacing:.5px}
 #side{width:320px;border-left:1px solid var(--bd);background:var(--panel);overflow:auto;padding:14px}
 #side h3{margin:.1em 0 .4em;font-size:14px}
@@ -187,11 +228,15 @@ svg{width:100%;height:100%;display:block}
 #side .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;color:#fff}
 #side .muted{color:var(--mut)}
 #hint{position:absolute;right:10px;top:10px;background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:4px 9px;font-size:11px;color:var(--mut);pointer-events:none}
+#focusbar{position:absolute;left:50%;transform:translateX(-50%);top:10px;background:var(--panel);border:1px solid var(--acc);
+  border-radius:999px;padding:4px 6px 4px 12px;font-size:12px;display:none;align-items:center;gap:8px;z-index:3}
+#focusbar b{font-weight:650}
+#focusbar button{padding:1px 8px;border-radius:999px;font-size:11px}
 #svg{cursor:grab}#svg.panning{cursor:grabbing}
 .hit{stroke:transparent;stroke-width:12px;fill:none;cursor:pointer}
 #legend{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:8px 10px;font-size:12px;max-width:240px}
 #legend label{display:inline-flex;align-items:center;gap:5px;margin:2px 6px 2px 0;cursor:pointer}
-.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 #table{flex:1;overflow:auto;padding:0 16px 16px}
 #table.hidden,#stage.hidden{display:none}
 section{margin-top:16px}
@@ -211,98 +256,110 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
   <button id="v-table">Table</button>
   <input id="search" placeholder="search nodes / edges…">
   <span class="sp"></span>
-  <label class="muted" style="color:var(--mut)">graph</label>
-  <select id="graph" title="each project is an isolated graph"></select>
   <label class="muted" style="color:var(--mut)">branch</label>
-  <select id="branch"></select>
+  <select id="branch" title="branch switching applies to a single graph"></select>
 </header>
 <div class="tabs" id="tabs"></div>
 <main>
   <div id="stage">
     <svg id="svg"><g id="viewport"><g id="hulls"></g><g id="clabels"></g><g id="links"></g><g id="elabels"></g><g id="nodes"></g></g></svg>
-    <div id="hint">scroll = zoom · drag empty space = pan · drag node = move</div>
+    <div id="focusbar"><span>focus: <b id="focusname"></b> <span class="muted" id="focusn"></span></span><button id="focusclear">clear ✕</button></div>
+    <div id="hint">click node = focus · scroll = zoom · drag = pan/move</div>
     <div id="legend"></div>
   </div>
   <div id="table" class="hidden"></div>
-  <div id="side"><p class="muted">Click a node or edge for details.</p></div>
+  <div id="side"><p class="muted">Click a node to focus it — its neighbours stay close, everything else drifts out.</p></div>
 </main>
 <script>
-const S={data:null,graph:"__GRAPH__",branch:"main",tab:"all",view:"graph",q:"",types:new Set(),sim:null};
+const S={data:null,graphs:["__GRAPH__"],branch:"main",view:"graph",q:"",types:new Set(),sim:null,focus:null,near:null};
 const TYPES=["Project","Decision","Rule","Preference","Convention","Component","Task"];
 const COLOR=t=>getComputedStyle(document.documentElement).getPropertyValue("--"+t).trim()||"#888";
-// ---- project clustering: group nodes by their primary project so clusters are obvious ----
 const CPAL=["#f6c453","#6ea8fe","#e5675f","#57c98a","#b98cf0","#4bc4d6","#f78fb3","#7bd389","#ffa94d","#a0a7b4"];
-function clusterOf(n){                                   // which cluster a node lives in
-  if(n.type==="Project")return n.id;                     // a Project node anchors its own cluster
-  if(n.projects&&n.projects.length)return n.projects[0]; // primary project
-  if(n.global)return "__global";
-  return "__misc";
-}
+const $=s=>document.querySelector(s);
+const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+/* ---- clustering: one cluster per GRAPH when several are shown (graph == project) ---- */
+function clusterOf(n){ return S.graphs.length>1 ? n.graph : (n.type==="Project"?n.id:(n.projects&&n.projects.length?n.projects[0]:(n.global?"__global":"__misc"))); }
 function clusterName(cid){
+  if(S.graphs.length>1)return cid;
   if(cid==="__global")return "global";
   if(cid==="__misc")return "unassigned";
-  const p=(S.data.projects||[]).find(x=>x.id===cid);
-  return p?p.name:cid;
+  const p=(S.data.projects||[]).find(x=>x.id===cid);return p?p.name:cid;
 }
-// a project keeps the SAME color everywhere: index into a stable global cluster order
+// stable colour per graph, so a graph keeps its colour across selections
+function graphColor(g){const all=S.allGraphs||[g];const i=all.indexOf(g);return CPAL[(i<0?0:i)%CPAL.length];}
 function clusterColor(cid){
-  const order=(S.data.projects||[]).map(p=>p.id).concat("__global","__misc");
+  if(S.graphs.length>1)return graphColor(cid);
+  const order=(S.data&&S.data.projects?S.data.projects.map(p=>p.id):[]).concat("__global","__misc");
   const i=order.indexOf(cid);return CPAL[(i<0?0:i)%CPAL.length];
 }
-// build cluster colors/anchors for the currently visible nodes (anchors spread on a ring)
 function buildClusters(vis,W,H){
-  const ids=[...new Set(vis.map(clusterOf))].sort();     // deterministic layout order
+  const ids=[...new Set(vis.map(clusterOf))].sort();
   const info={},n=ids.length,R=Math.min(W,H)*0.34;
   ids.forEach((cid,i)=>{
-    const a=n>1?(-Math.PI/2+i*2*Math.PI/n):0;            // spread anchors on a ring
+    const a=n>1?(-Math.PI/2+i*2*Math.PI/n):0;
     info[cid]={color:clusterColor(cid),name:clusterName(cid),
       anchor:n>1?{x:W/2+R*Math.cos(a),y:H/2+R*Math.sin(a)}:{x:W/2,y:H/2}};
   });
   return {ids,info,multi:n>1};
 }
-const $=s=>document.querySelector(s);
-const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
-const qg=()=>"graph="+encodeURIComponent(S.graph);
+const qg=()=>"graph="+encodeURIComponent(S.graphs.join(","));
 async function load(){
   const r=await fetch("/api/graph?"+qg()+"&branch="+encodeURIComponent(S.branch));
   S.data=await r.json();
-  if(S.data.error){$("#side").innerHTML='<p class="err">'+esc(S.data.error)+'</p>';}
+  const errs=S.data.errors||{};
+  if(S.data.error)$("#side").innerHTML='<p class="err">'+esc(S.data.error)+'</p>';
+  else if(Object.keys(errs).length)$("#side").innerHTML='<p class="err">'+Object.entries(errs).map(([g,m])=>esc(g)+": "+esc(m)).join("<br>")+'</p>';
   S.types=new Set(TYPES);
+  setFocus(null);        // clear focus AND its bar — a reload changes which nodes exist
   buildTabs();buildLegend();render();
 }
 async function loadGraphs(){
-  const r=await fetch("/api/graphs");const j=await r.json();const g=j.graphs||[S.graph];
-  if(!g.includes(S.graph))S.graph=j.current||g[0];
-  $("#graph").innerHTML=g.map(x=>`<option ${x===S.graph?"selected":""}>${esc(x)}</option>`).join("");
+  const r=await fetch("/api/graphs");const j=await r.json();const g=j.graphs||S.graphs;
+  S.allGraphs=g;
+  S.graphs=S.graphs.filter(x=>g.includes(x));
+  if(!S.graphs.length)S.graphs=[g.includes(j.current)?j.current:g[0]];
 }
 async function loadBranches(){
   const r=await fetch("/api/branches?"+qg());const b=(await r.json()).branches||["main"];
-  $("#branch").innerHTML=b.map(x=>`<option ${x===S.branch?"selected":""}>${esc(x)}</option>`).join("");
+  const sel=$("#branch");
+  sel.innerHTML=b.map(x=>`<option ${x===S.branch?"selected":""}>${esc(x)}</option>`).join("");
+  sel.disabled=S.graphs.length>1;                       // branches are per-graph
+  sel.title=S.graphs.length>1?"select a single graph to switch branch":"branch";
 }
+/* ---- chips: click = switch fast · ctrl/cmd/shift-click = add/remove (compare graphs) ---- */
 function buildTabs(){
-  const t=[{id:"all",name:"All"},{id:"global",name:"Global",c:clusterColor("__global")}]
-    .concat((S.data.projects||[]).map(p=>({id:p.id,name:p.name,c:clusterColor(p.id)})));   // tab dot = cluster color
-  $("#tabs").innerHTML=t.map(x=>`<div class="tab ${x.id===S.tab?"on":""}" data-id="${esc(x.id)}">${x.c?`<span class=dot style="background:${x.c}"></span>`:""}${esc(x.name)}</div>`).join("");
-  $("#tabs").querySelectorAll(".tab").forEach(el=>el.onclick=()=>{S.tab=el.dataset.id;buildTabs();render();});
+  const counts={};(S.data&&S.data.nodes||[]).forEach(n=>counts[n.graph]=(counts[n.graph]||0)+1);
+  const chips=(S.allGraphs||[]).map(g=>{
+    const on=S.graphs.includes(g);
+    return `<div class="tab ${on?"on":""}" data-g="${esc(g)}" title="click to switch · ctrl/⌘/shift-click to add">
+      <span class=dot style="background:${graphColor(g)}"></span>${esc(g)}${on&&counts[g]!=null?`<span class=n>${counts[g]}</span>`:""}</div>`;
+  }).join("");
+  const allOn=S.graphs.length===(S.allGraphs||[]).length;
+  $("#tabs").innerHTML=chips+`<div class="tab ${allOn?"on":""}" data-all="1" title="show every graph at once">all graphs</div>`
+    +`<span class="hint">click = switch · ctrl/⌘/shift-click = compare</span>`;
+  $("#tabs").querySelectorAll(".tab").forEach(el=>el.onclick=ev=>{
+    if(el.dataset.all){S.graphs=allOn?[S.allGraphs[0]]:[...S.allGraphs];}
+    else{
+      const g=el.dataset.g,multi=ev.ctrlKey||ev.metaKey||ev.shiftKey;
+      if(multi){const i=S.graphs.indexOf(g);
+        if(i>=0){if(S.graphs.length>1)S.graphs.splice(i,1);}   // never empty
+        else S.graphs.push(g);}
+      else{if(S.graphs.length===1&&S.graphs[0]===g)return;S.graphs=[g];}
+    }
+    S.branch="main";resetLayout();loadBranches().then(load);
+  });
 }
 function buildLegend(){
   $("#legend").innerHTML="<b>types</b><br>"+TYPES.map(t=>
     `<label><input type=checkbox data-t="${t}" ${S.types.has(t)?"checked":""}><span class=dot style="background:${COLOR(t)}"></span>${t}</label>`).join("");
   $("#legend").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{cb.checked?S.types.add(cb.dataset.t):S.types.delete(cb.dataset.t);render();});
 }
-// which nodes are visible under the current tab + type filter
-function visibleNodes(){
-  return (S.data.nodes||[]).filter(n=>{
-    if(!S.types.has(n.type))return false;
-    if(S.tab==="all")return true;
-    if(S.tab==="global")return n.global;
-    return n.projects.includes(S.tab)||n.id===S.tab;
-  });
-}
+function visibleNodes(){ return (S.data.nodes||[]).filter(n=>S.types.has(n.type)); }
 function matches(n){
   if(!S.q)return false;const q=S.q.toLowerCase();
-  return (n.id+" "+n.type+" "+Object.values(n.fields||{}).join(" ")).toLowerCase().includes(q);
+  return (n.slug+" "+n.type+" "+Object.values(n.fields||{}).join(" ")).toLowerCase().includes(q);
 }
 function render(){
   $("#v-graph").classList.toggle("on",S.view==="graph");
@@ -322,19 +379,61 @@ function ptSeg(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy||1;
   let t=((px-ax)*dx+(py-ay)*dy)/L;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
 function nearestEdge(g){let best=null,bd=1e9;for(const e of (S.curLinks||[])){const a=S.pos[e.from],b=S.pos[e.to];
   if(!a||!b)continue;const d=ptSeg(g.x,g.y,a.x,a.y,b.x,b.y);if(d<bd){bd=d;best=e;}}return bd<25?best:null;}
+
+/* ---- focus: the clicked node + its 1-hop neighbours are "near"; the rest are pushed out ---- */
+function neighboursOf(id){
+  const near=new Set([id]);
+  for(const e of (S.curLinks||[])){if(e.from===id)near.add(e.to);else if(e.to===id)near.add(e.from);}
+  return near;
+}
+function setFocus(id){
+  S.focus=id;S.near=id?neighboursOf(id):null;
+  const bar=$("#focusbar");
+  if(id){const n=(S.data.nodes||[]).find(x=>x.id===id);
+    $("#focusname").textContent=(n&&(n.label||n.slug))||id;
+    $("#focusn").textContent="· "+(S.near.size-1)+" connected";
+    bar.style.display="flex";}
+  else bar.style.display="none";
+  applyFocus();restartSim();      // re-run the layout so the split actually animates
+}
+function applyFocus(){
+  if(!S.els)return;const f=S.focus,near=S.near;
+  for(const {n,g} of S.els.nodeEls){
+    const isNear=!f||near.has(n.id);
+    g.classList.toggle("focus",!!(f&&n.id===f));
+    g.classList.toggle("near",!!(f&&isNear&&n.id!==f));
+    g.classList.toggle("far",!!(f&&!isNear));
+    if(f&&isNear)g.parentNode.appendChild(g);         // raise the focused cluster
+  }
+  for(const {e,ln,tx} of S.els.linkEls){
+    const touches=f&&(e.from===f||e.to===f);
+    const inNear=f&&near.has(e.from)&&near.has(e.to);
+    ln.classList.toggle("near",!!touches);
+    ln.classList.toggle("far",!!(f&&!inNear));
+    tx.classList.toggle("far",!!(f&&!inNear));
+  }
+}
+// re-run the layout from tick 0. No-op before the first renderGraph() has built tickFn
+// (setFocus(null) runs during load(), when there is nothing to simulate yet).
+// re-run the layout from tick 0. No-op before the first renderGraph() has built tickFn
+// (setFocus(null) runs during load(), when there is nothing to simulate yet).
+function restartSim(){if(!S.tickFn)return;if(S.sim)cancelAnimationFrame(S.sim);S.ticks=0;S.sim=requestAnimationFrame(S.tickFn);}
+// Drop the layout before an async reload. The running sim MUST be cancelled in the same
+// breath: it ticks off S.pos, and a queued frame firing after S.pos=null throws.
+function resetLayout(){if(S.sim)cancelAnimationFrame(S.sim);S.sim=null;S.pos=null;S.vp=null;}
 function renderGraph(){
   const svg=$("#svg"),W=svg.clientWidth||800,H=svg.clientHeight||600;
   const vis=visibleNodes(),ids=new Set(vis.map(n=>n.id));
   const links=(S.data.edges||[]).filter(e=>ids.has(e.from)&&ids.has(e.to));
   S.curVis=vis;S.curLinks=links;
-  S.cl=buildClusters(vis,W,H);                            // cluster colors + anchors for this view
+  if(S.focus&&!ids.has(S.focus)){S.focus=null;S.near=null;$("#focusbar").style.display="none";}
+  S.cl=buildClusters(vis,W,H);
   const prev=S.pos||{};S.pos={};
-  vis.forEach(n=>{const p=prev[n.id],a=S.cl.info[clusterOf(n)].anchor;   // seed new nodes near their cluster
+  vis.forEach(n=>{const p=prev[n.id],a=S.cl.info[clusterOf(n)].anchor;
     S.pos[n.id]={x:p?p.x:a.x+(Math.random()-.5)*120,y:p?p.y:a.y+(Math.random()-.5)*120,vx:0,vy:0};});
   if(!S.vp)S.vp={tx:0,ty:0,k:1};
   if(S.sim)cancelAnimationFrame(S.sim);
 
-  // build DOM once (persists across sim ticks so clicks/drag always work)
   const linkG=$("#links"),elG=$("#elabels"),nodeG=$("#nodes");
   linkG.innerHTML="";elG.innerHTML="";nodeG.innerHTML="";
   const linkEls=links.map(e=>{
@@ -349,47 +448,64 @@ function renderGraph(){
     const g=document.createElementNS(NS,"g");g.setAttribute("class","node");
     const r=n.type==="Project"?13:9;
     const c=document.createElementNS(NS,"circle");c.setAttribute("r",r);c.setAttribute("fill",COLOR(n.type));
-    c.setAttribute("stroke",S.cl.info[clusterOf(n)].color);c.setAttribute("stroke-width",n.type==="Project"?3.5:2.5);  // project-cluster ring
-    const t=document.createElementNS(NS,"text");t.setAttribute("x",r+3);t.setAttribute("y",4);t.textContent=(n.label||n.id).slice(0,22);
+    c.setAttribute("stroke",S.cl.info[clusterOf(n)].color);c.setAttribute("stroke-width",n.type==="Project"?3.5:2.5);
+    const t=document.createElementNS(NS,"text");t.setAttribute("x",r+3);t.setAttribute("y",4);t.textContent=(n.label||n.slug).slice(0,22);
     g.append(c,t);nodeG.append(g);
     g.addEventListener("mousedown",ev=>{ev.stopPropagation();ev.preventDefault();
       const start=svgPt(ev);let moved=false;n._drag=1;
       const mv=e2=>{const sp=svgPt(e2);if(Math.hypot(sp.x-start.x,sp.y-start.y)>4)moved=true;
         const gp=screenToGraph(sp.x,sp.y);S.pos[n.id].x=gp.x;S.pos[n.id].y=gp.y;paint();};
       const up=()=>{n._drag=0;document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);
-        if(!moved)onNodeClick(n);};   // moved little => it was a click, not a drag
+        if(!moved)onNodeClick(n);};
       document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);});
     return {n,g};
   });
   S.els={linkEls,nodeEls};
 
-  // zoom (wheel) + pan (drag empty space) — attach to the persistent svg
   svg.onwheel=ev=>{ev.preventDefault();const sp=svgPt(ev),g=screenToGraph(sp.x,sp.y);
     const f=ev.deltaY<0?1.1:1/1.1;S.vp.k=Math.max(.2,Math.min(4,S.vp.k*f));
     S.vp.tx=sp.x-g.x*S.vp.k;S.vp.ty=sp.y-g.y*S.vp.k;vpApply();};
   svg.onmousedown=ev=>{if(ev.target.closest(".node")||ev.target.classList.contains("hit"))return;
     ev.preventDefault();svg.classList.add("panning");
-    const s={x:ev.clientX,y:ev.clientY,tx:S.vp.tx,ty:S.vp.ty};
-    const mv=e2=>{S.vp.tx=s.tx+(e2.clientX-s.x);S.vp.ty=s.ty+(e2.clientY-s.y);vpApply();};
-    const up=()=>{svg.classList.remove("panning");document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);};
+    const s={x:ev.clientX,y:ev.clientY,tx:S.vp.tx,ty:S.vp.ty};let moved=false;
+    const mv=e2=>{if(Math.hypot(e2.clientX-s.x,e2.clientY-s.y)>4)moved=true;
+      S.vp.tx=s.tx+(e2.clientX-s.x);S.vp.ty=s.ty+(e2.clientY-s.y);vpApply();};
+    const up=()=>{svg.classList.remove("panning");document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);
+      if(!moved&&S.focus)setFocus(null);};        // click empty space = clear focus
     document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);};
 
-  vpApply();applyHighlight();
-  let ticks=0;
-  (function tick(){
-    const P=S.pos;
+  vpApply();applyHighlight();applyFocus();
+
+  const FAR=Math.min(W,H)*0.62;                   // radius the unrelated nodes settle on
+  S.tickFn=function tick(){
+    const P=S.pos,f=S.focus,near=S.near;
+    if(!P)return;                    // layout dropped by a reload — stop; renderGraph restarts us
     for(let i=0;i<vis.length;i++)for(let j=i+1;j<vis.length;j++){
-      const pa=P[vis[i].id],pb=P[vis[j].id];let dx=pa.x-pb.x,dy=pa.y-pb.y,d=Math.hypot(dx,dy)||1,f=3000/(d*d);
-      pa.vx+=dx/d*f;pa.vy+=dy/d*f;pb.vx-=dx/d*f;pb.vy-=dy/d*f;}
+      const pa=P[vis[i].id],pb=P[vis[j].id];let dx=pa.x-pb.x,dy=pa.y-pb.y,d=Math.hypot(dx,dy)||1,f2=3000/(d*d);
+      pa.vx+=dx/d*f2;pa.vy+=dy/d*f2;pb.vx-=dx/d*f2;pb.vy-=dy/d*f2;}
     for(const e of links){const pa=P[e.from],pb=P[e.to];if(!pa||!pb)continue;
-      let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,f=(d-90)*0.01;
-      pa.vx+=dx/d*f;pa.vy+=dy/d*f;pb.vx-=dx/d*f;pb.vy-=dy/d*f;}
+      // in focus mode only the focused node's own edges pull; the rest go slack so
+      // unrelated nodes are free to drift outward instead of dragging neighbours along
+      const active=!f||e.from===f||e.to===f;
+      let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,fr=(d-(f?70:90))*(active?0.02:0.002);
+      pa.vx+=dx/d*fr;pa.vy+=dy/d*fr;pb.vx-=dx/d*fr;pb.vy-=dy/d*fr;}
     for(const n of vis){const p=P[n.id];if(n._drag){p.vx=p.vy=0;continue;}
-      const a=S.cl.multi?S.cl.info[clusterOf(n)].anchor:{x:W/2,y:H/2};   // pull toward cluster anchor
-      p.vx+=(a.x-p.x)*0.012;p.vy+=(a.y-p.y)*0.012;p.x+=p.vx*=.85;p.y+=p.vy*=.85;}
+      let a;
+      if(f){
+        if(near.has(n.id)){a={x:W/2,y:H/2};                    // related: gather at centre
+          p.vx+=(a.x-p.x)*(n.id===f?0.06:0.03);p.vy+=(a.y-p.y)*(n.id===f?0.06:0.03);}
+        else{                                                  // unrelated: pushed out to a ring
+          let dx=p.x-W/2,dy=p.y-H/2,d=Math.hypot(dx,dy)||1;
+          const pull=(FAR-d)*0.02;p.vx+=dx/d*pull;p.vy+=dy/d*pull;}
+      }else{
+        a=S.cl.multi?S.cl.info[clusterOf(n)].anchor:{x:W/2,y:H/2};
+        p.vx+=(a.x-p.x)*0.012;p.vy+=(a.y-p.y)*0.012;
+      }
+      p.x+=p.vx*=.85;p.y+=p.vy*=.85;}
     paint();
-    if(++ticks<400)S.sim=requestAnimationFrame(tick);
-  })();
+    if(++S.ticks<400)S.sim=requestAnimationFrame(S.tickFn);
+  };
+  S.ticks=0;S.sim=requestAnimationFrame(S.tickFn);
 }
 function paint(){
   if(!S.els)return;const P=S.pos;
@@ -399,11 +515,11 @@ function paint(){
   for(const {n,g} of S.els.nodeEls){const p=P[n.id];g.setAttribute("transform",`translate(${p.x},${p.y})`);}
   paintHulls();
 }
-// translucent tinted circle + name behind each project cluster, so groups read at a glance
+// translucent tinted circle + name behind each cluster, so groups read at a glance
 function paintHulls(){
   const hg=$("#hulls"),lg=$("#clabels");if(!hg||!S.cl)return;
   hg.innerHTML="";lg.innerHTML="";
-  if(!S.cl.multi)return;                                  // single cluster => no hull needed
+  if(!S.cl.multi||S.focus)return;            // hulls are meaningless while focused
   const by={};for(const {n} of S.els.nodeEls){const p=S.pos[n.id];if(!p)continue;(by[clusterOf(n)]=by[clusterOf(n)]||[]).push(p);}
   for(const cid of S.cl.ids){const pts=by[cid];if(!pts||!pts.length)continue;
     let cx=0,cy=0;for(const p of pts){cx+=p.x;cy+=p.y;}cx/=pts.length;cy/=pts.length;
@@ -415,49 +531,58 @@ function paintHulls(){
     const tx=document.createElementNS(NS,"text");tx.setAttribute("x",cx);tx.setAttribute("y",cy-rad-7);
     tx.setAttribute("class","clabel");tx.setAttribute("fill",col);tx.textContent=S.cl.info[cid].name;lg.append(tx);}
 }
-function onNodeClick(n){if(S.q)toggleRemoved(n.id);showNode(n,S.curLinks);}
+function onNodeClick(n){
+  if(S.q)toggleRemoved(n.id);
+  setFocus(S.focus===n.id?null:n.id);      // click the focused node again = unfocus
+  showNode(n,S.curLinks);
+}
 function onEdgeClick(e){if(S.q)toggleRemoved(edgeKey(e));showEdge(e.type,e.from,e.to);}
 function toggleRemoved(key){if(!S.removed)S.removed=new Set();S.removed.has(key)?S.removed.delete(key):S.removed.add(key);applyHighlight();}
 function applyHighlight(){
   if(!S.els)return;const q=S.q,rm=S.removed||new Set();
   for(const {n,g} of S.els.nodeEls){const isM=q&&matches(n);const hl=isM&&!rm.has(n.id);
     g.classList.toggle("hl",!!hl);g.classList.toggle("dim",!!(q&&!isM));
-    if(hl)g.parentNode.appendChild(g);}   // raise matched nodes above the rest
+    if(hl)g.parentNode.appendChild(g);}
   for(const {e,ln,hit,tx} of S.els.linkEls){
     const fn=S.data.nodes.find(x=>x.id===e.from),tn=S.data.nodes.find(x=>x.id===e.to);
     const isM=q&&((fn&&matches(fn))||(tn&&matches(tn)));const hl=isM&&!rm.has(edgeKey(e));
     ln.classList.toggle("hl",!!hl);ln.classList.toggle("dim",!!(q&&!isM));
     if(hl){ln.parentNode.appendChild(ln);hit.parentNode.appendChild(hit);tx.parentNode.appendChild(tx);}}
 }
+const nodeById=id=>(S.data.nodes||[]).find(n=>n.id===id);
 function showNode(n,links){if(!n)return;
   const conn=(links||S.data.edges).filter(e=>e.from===n.id||e.to===n.id);
   const rows=Object.entries(n.fields||{}).filter(([k])=>k!=="embedding")
     .map(([k,v])=>`<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join("");
-  const cs=conn.map(e=>{const other=e.from===n.id?e.to:e.from,dir=e.from===n.id?"→":"←";
-    return `<div class="v">${dir} <b>${esc(e.type)}</b> ${esc(other)}</div>`;}).join("")||'<div class="muted">none</div>';
+  const cs=conn.map(e=>{const other=e.from===n.id?e.to:e.from,dir=e.from===n.id?"→":"←";const o=nodeById(other);
+    return `<div class="v">${dir} <b>${esc(e.type)}</b> ${esc(o?o.slug:other)}</div>`;}).join("")||'<div class="muted">none</div>';
   $("#side").innerHTML=`<span class="pill" style="background:${COLOR(n.type)}">${esc(n.type)}</span>
-    <h3>${esc(n.label||n.id)}</h3><div class="muted">${esc(n.id)} ${n.global?"· global":""}</div>
+    <h3>${esc(n.label||n.slug)}</h3><div class="muted">${esc(n.slug)} ${n.global?"· global":""}</div>
+    <div class="k">graph</div><div class="v"><span class=dot style="background:${graphColor(n.graph)}"></span> ${esc(n.graph)}</div>
     ${rows}<div class="k">connections (${conn.length})</div>${cs}`;
 }
-function whyMatch(node){ // when searching, show WHERE the term hit (or "" if it doesn't)
+function whyMatch(node){
   if(!S.q||!node)return "";const q=S.q.toLowerCase();
   for(const [k,v] of Object.entries(node.fields||{})){
     if(k==="embedding")continue;const s=String(v).toLowerCase();const i=s.indexOf(q);
-    if(i>=0)return `${node.id}.${k}: …${esc(String(v).slice(Math.max(0,i-15),i+q.length+25))}…`;}
+    if(i>=0)return `${node.slug}.${k}: …${esc(String(v).slice(Math.max(0,i-15),i+q.length+25))}…`;}
   return "";
 }
 function showEdge(type,from,to){
-  const fn=(S.data.nodes||[]).find(n=>n.id===from),tn=(S.data.nodes||[]).find(n=>n.id===to);
+  const fn=nodeById(from),tn=nodeById(to);
   const why=whyMatch(fn)||whyMatch(tn);
   const note=S.q?`<div class="k">search "${esc(S.q)}"</div><div class="v">${why?("highlighted because "+why):"<span class=muted>not matched — highlighted edges connect a node that matches</span>"}</div>`:"";
   $("#side").innerHTML=`<span class="pill" style="background:var(--acc)">edge</span><h3>${esc(type)}</h3>
-    <div class="k">from</div><div class="v">${esc(from)} <span class="muted">(${esc(fn?fn.type:"?")})</span></div>
-    <div class="k">to</div><div class="v">${esc(to)} <span class="muted">(${esc(tn?tn.type:"?")})</span></div>
+    <div class="k">from</div><div class="v">${esc(fn?fn.slug:from)} <span class="muted">(${esc(fn?fn.type:"?")})</span></div>
+    <div class="k">to</div><div class="v">${esc(tn?tn.slug:to)} <span class="muted">(${esc(tn?tn.type:"?")})</span></div>
     <div class="k">meaning</div><div class="v">${esc(EDGE_DOC[type]||"relationship")}</div>${note}`;
 }
-const EDGE_DOC={DecidedIn:"decision belongs to a project",ConstrainsProject:"rule constrains a project",
-  ConstrainsComponent:"rule constrains a component",AppliesTo:"convention/preference applies to target",
-  PartOf:"component is part of a project",Supersedes:"decision replaces an earlier decision"};
+const EDGE_DOC={DecidedIn:"decision belongs to a project (hub)",ConstrainsProject:"rule constrains a project (hub)",
+  AppliesTo:"convention applies to a project (hub)",PartOf:"component is part of a project (hub)",
+  Tracks:"task belongs to a project (hub)",ConstrainsComponent:"rule governs a specific component",
+  Affects:"decision changes a component",Addresses:"task works on a component",
+  Implements:"task realizes a decision",DependsOn:"component depends on another component",
+  Supersedes:"decision replaces an earlier decision"};
 /* ---------- table view ---------- */
 let SORT={};
 function renderTable(){
@@ -466,11 +591,12 @@ function renderTable(){
   let hasFilter=($("#tf")&&$("#tf").value)||"";
   let hh=`<div style="position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:2">
     <input id="tf" placeholder="filter rows in tables…" value="${esc(hasFilter)}" style="min-width:280px"></div>`;
+  const multi=S.graphs.length>1;
   const out=TYPES.filter(t=>byType[t].length).map(t=>{
-    const cols=["id"].concat(t==="Decision"?["title","status","rationale"]:t==="Rule"?["severity","statement"]:
+    const cols=(multi?["graph"]:[]).concat(["slug"]).concat(t==="Decision"?["title","status","rationale"]:t==="Rule"?["severity","statement"]:
       t==="Preference"?["scope","statement"]:t==="Convention"?["name","example"]:t==="Component"?["name","kind","location"]:
       t==="Project"?["name","summary"]:t==="Task"?["title","state"]:["label"]);
-    let rows=byType[t].map(n=>({id:n.id,...n.fields,_n:n}));
+    let rows=byType[t].map(n=>({graph:n.graph,slug:n.slug,...n.fields,_n:n}));
     if(hasFilter){const q=hasFilter.toLowerCase();rows=rows.filter(r=>cols.some(c=>String(r[c]==null?"":r[c]).toLowerCase().includes(q)));}
     const s=SORT[t];if(s){rows.sort((a,b)=>{const av=String(a[s.c]==null?"":a[s.c]),bv=String(b[s.c]==null?"":b[s.c]);return s.d*av.localeCompare(bv);});}
     const th=cols.map(c=>`<th class="sort ${s&&s.c===c?(s.d>0?"asc":"desc"):""}" data-t="${t}" data-c="${c}">${c}</th>`).join("");
@@ -478,7 +604,7 @@ function renderTable(){
     return `<section><h2><span class="dot" style="background:${COLOR(t)}"></span>${t} <span class="count">${rows.length}</span></h2>
       <div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div></section>`;
   }).join("");
-  $("#table").innerHTML=hh+(out||'<p class="muted">no nodes for this tab.</p>');
+  $("#table").innerHTML=hh+(out||'<p class="muted">no nodes in the selected graph(s).</p>');
   const tf=$("#tf");if(tf){tf.oninput=()=>renderTable();tf.focus();tf.setSelectionRange(tf.value.length,tf.value.length);}
   $("#table").querySelectorAll("th.sort").forEach(th=>th.onclick=()=>{
     const t=th.dataset.t,c=th.dataset.c,cur=SORT[t];SORT[t]=cur&&cur.c===c?{c,d:-cur.d}:{c,d:1};renderTable();});
@@ -487,9 +613,9 @@ function renderTable(){
 $("#v-graph").onclick=()=>{S.view="graph";render();};
 $("#v-table").onclick=()=>{S.view="table";render();};
 $("#search").oninput=e=>{S.q=e.target.value;S.removed=new Set();if(S.view==="graph")applyHighlight();else renderTable();};
-$("#branch").onchange=e=>{S.branch=e.target.value;S.pos=null;S.vp=null;load();};
-// switching graph = switching project (isolated store): reset view, reload its branches + data
-$("#graph").onchange=async e=>{S.graph=e.target.value;S.branch="main";S.tab="all";S.pos=null;S.vp=null;await loadBranches();load();};
+$("#branch").onchange=e=>{S.branch=e.target.value;resetLayout();load();};
+$("#focusclear").onclick=()=>setFocus(null);
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&S.focus)setFocus(null);});
 window.addEventListener("resize",()=>{if(S.view==="graph")renderGraph();});
 loadGraphs().then(loadBranches).then(load);
 </script></body></html>"""

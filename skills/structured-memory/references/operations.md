@@ -1,20 +1,33 @@
 # Omnigraph operations & gotchas
 
-Hard-won operational rules for the self-hosted **Omnigraph** `memory` graph.
-Following these avoids the failure modes we already debugged (duplicate edges,
-corrupted merges, un-rankable search, broken shared `main`). Read this before
-querying, mutating, loading, or syncing.
+Hard-won operational rules for the self-hosted **Omnigraph** memory graphs — **one graph
+per project** (`agent-skills`, `basic-analysis`, …) plus the shared **`memory`** graph,
+which holds only global-scope `Preference`s. Following these avoids the failure modes we
+already debugged (duplicate edges, corrupted merges, un-rankable search, silently-rejected
+edges, a broken `main`). Read this before querying, mutating, loading, or syncing.
 
 Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
 (tools `schema_get`, `query`, `mutate`, `load`, `branches_*`, `commits_list`,
-`snapshot`, `health`). Central: `https://omnigraph.ohje.ooguy.com` (bearer).
+`snapshot`, `health`, `graphs_list`). Central: `https://omnigraph.ohje.ooguy.com` (bearer).
 
 ## The rules
+
+0. **Declared ≠ live.** `cluster.yaml` and `memory.pg` are a *declaration*; nothing is
+   real until `scripts/apply-cluster.sh` converges it into the server's state ledger.
+   Verify against the server — `graphs_list` for graphs, `schema_get` for edge types —
+   never by reading the config. This is not hypothetical: the declaration went unapplied
+   for a long time, so five edge types (`Tracks`, `Affects`, `Addresses`, `Implements`,
+   `DependsOn`) did not exist and **every write using them failed silently**, orphaning
+   nodes that then rendered as "global".
 
 1. **Read the schema first.** Call `schema_get` (or read `omnigraph://schema`)
    before any query/mutate/load. It declares node/edge types, `@key` fields,
    non-nullable props, and edge directions. Writing blind lint-fails or silently
    corrupts data. Also consult `omnigraph://best-practices/{queries,data,search}`.
+
+   A bridge is **pinned to one graph** by `OMNIGRAPH_GRAPH_ID`, and no tool takes a graph
+   argument — so `schema_get`/`query`/`mutate` always act on that graph. Reading a second
+   graph (e.g. global `Preference`s in `memory`) requires a **second** MCP server entry.
 
 2. **Edge GQ casing is asymmetric.** `insert`/`delete` use the **PascalCase edge
    TYPE** name; **match/traversal** uses **lowerCamelCase**.

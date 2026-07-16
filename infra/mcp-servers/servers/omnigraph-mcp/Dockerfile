@@ -3,7 +3,7 @@
 # MCP client over stdio. Run one `docker run -i --rm` per session (like graphify).
 #
 # Build:  docker build -t omnigraph-mcp:latest infra/mcp-servers/servers/omnigraph-mcp
-# Run:    docker run -i --rm --network mcp-servers_default \
+# Run:    docker run -i --rm --network mcp-server_mcp-net \
 #           -e OMNIGRAPH_BASE_URL=http://omnigraph-server:8080 \
 #           -e OMNIGRAPH_GRAPH_ID=memory -e OMNIGRAPH_TOKEN=<token> omnigraph-mcp:latest
 FROM node:20-slim

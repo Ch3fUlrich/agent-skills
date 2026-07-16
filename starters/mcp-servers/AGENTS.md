@@ -18,6 +18,12 @@ agents. Four servers are active:
 > still edge every node to its `Project` node (slug = repo folder name) and link
 > richly; a node with no `Project` edge shows as "global" — a bug for
 > project-specific info. Mem0 remains only as an off-by-default fallback.
+>
+> A bridge is pinned to **one** graph (no tool takes a graph argument), so reading
+> house-style globals needs a **second** server — declare `omnigraph` with
+> `OMNIGRAPH_GRAPH_ID=<repo>` (read+write) and `omnigraph-globals` with
+> `OMNIGRAPH_GRAPH_ID=memory` (read-only). Keep the bearer token out of a tracked
+> `.mcp.json`: use `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"`.
 
 ---
 

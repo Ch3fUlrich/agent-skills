@@ -39,6 +39,38 @@ Agent
 omnigraph-viewer :8090 ──► omnigraph-server (read-only web UI over the API)
 ```
 
+### Per-project graph isolation
+
+**Each repo's memory lives in its own graph, named after the repo** — projects are
+never merged, so a bad write or `load --mode overwrite` in one cannot touch another.
+The shared **`memory`** graph holds **only** global-scope `Preference`s.
+
+```text
+omnigraph-server
+ ├── memory          ── global-scope Preferences ONLY (house style, TDD-default)
+ ├── agent-skills ─┐
+ ├── basic-analysis│  one graph per repo; all share cluster/memory.pg
+ ├── invest        │  each holds its Project node + satellites
+ └── homelab-server┘
+```
+
+A bridge is **pinned to one graph** via `OMNIGRAPH_GRAPH_ID` and no tool takes a
+graph argument, so a repo's `.mcp.json` declares **two** servers: `omnigraph`
+(its own graph, read+write) and `omnigraph-globals` (`memory`, read-only).
+
+| Task | Command |
+|---|---|
+| Add a graph | `scripts/add-project-graph.sh <name>` then `scripts/apply-cluster.sh` |
+| Converge the declaration | `scripts/apply-cluster.sh` (snapshots + verifies node count) |
+| Migrate off the shared graph | `scripts/split-project-graph.py <repo> --source memory --apply` |
+| Prune the shared graph | `… --source memory --prune-source` (gated on a mirror check) |
+| Refresh a seed from live | `… <repo> --write-seed` |
+
+**A declaration is not live until `apply-cluster.sh` runs.** Verify against the
+server (`graphs_list`, `schema_get`), never by reading `cluster.yaml` — an
+unapplied schema rejects edge types *silently*, which is how five relational edges
+went missing for weeks. Seeds load into the graph matching their file name.
+
 Default runtime = the **server** compose (`-f docker-compose.server.yml`; Omnigraph + MinIO + viewer). The Mem0
 fallback starts only with `--profile mem0-fallback`. See
 `docs/decisions/0001-omnigraph-over-mem0.md`.

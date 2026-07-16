@@ -38,7 +38,7 @@
         "-i",
         "--rm",
         "--network",
-        "mcp-servers_default",
+        "mcp-server_mcp-net",
         "-e",
         "OMNIGRAPH_BASE_URL=http://omnigraph-server:8080",
         "-e",

@@ -1,29 +1,47 @@
 # Omnigraph Memory Viewer
 
-A minimal **read-only** web viewer for the Omnigraph `memory` graph. Omnigraph
+A minimal **read-only** web viewer for the Omnigraph memory graphs. Omnigraph
 ships no self-hostable UI (the `ui` cluster field is reserved upstream), so this
-fills the gap: it lists projects and the typed memory nodes (Decisions, Rules,
-Preferences, Conventions, Components) via the server's stored-query routes.
+fills the gap: it shows the typed memory nodes (Decisions, Rules, Preferences,
+Conventions, Components, Tasks) and how they connect.
+
+Per-project isolation means one graph per repo, so **graph ≈ project**.
 
 ## Features
 
-- **Project tabs** — `All` · `Global` (general rules/decisions/preferences) · one
-  per project.
+- **Graph chips** (the tab bar) — one chip per graph, with its node count.
+  **Click** a chip to switch to it; **ctrl/⌘/shift-click** to add graphs and show
+  several **at the same time**; **all graphs** shows the whole cluster at once.
+  Each graph keeps a stable colour and gets its own tinted hull + label, so
+  clusters read at a glance. (This replaces the old dropdown + project tabs: with
+  one graph per project, per-project tabs inside a graph were redundant.)
+- **Focus-on-click exploration** — click a node and its **1-hop neighbours gather
+  at the centre while everything unrelated drifts out to a ring** and fades, so a
+  dense star becomes readable. A focus bar names the node and its connection
+  count; click the node again, click empty space, press `Esc`, or hit *clear* to
+  exit.
 - **Interactive graph** — force-directed nodes + edges (vanilla JS/SVG, no CDN).
-  Drag nodes; click a node for all its fields + connections; click an edge for
-  its type, endpoints, and meaning. Node types are colored with a legend that
-  toggles each type on/off.
+  Drag nodes; scroll to zoom; drag empty space to pan. Click a node for all its
+  fields, its graph, and its connections; click an edge for its type, endpoints,
+  and meaning. A legend toggles each node type on/off.
 - **Table view** — one sortable table per node type (click a header to sort) with
-  a live text filter across rows.
+  a live text filter across rows. Shows a `graph` column when several are selected.
 - **Search** — highlights matching nodes/edges in the graph (dims the rest) and
   outlines matching table rows.
-- **Branch selector** — view any branch (`?branch=` / dropdown).
+- **Branch selector** — view any branch. Branches are per-graph, so the selector
+  is disabled while several graphs are selected.
+
+Node ids are namespaced `<graph>::<slug>` internally, so identical slugs in
+different graphs can never collide or appear joined — edges only exist within one
+graph. The UI shows the bare slug.
 
 ## Design
 
-- Flask + gunicorn. The browser gets data from `/api/graph?branch=` (JSON built
-  from `POST /graphs/<id>/export`, edges de-duplicated); the frontend is a single
-  self-contained HTML/CSS/JS string — no external assets, Authelia/Caddy-friendly.
+- Flask + gunicorn. The browser gets data from `/api/graph?graph=a,b,c&branch=`
+  (JSON merged from one `POST /graphs/<id>/export` per graph, edges de-duplicated);
+  the frontend is a single self-contained HTML/CSS/JS string — no external assets,
+  Authelia/Caddy-friendly. A graph that fails to export is reported in `errors`
+  rather than blanking the page.
 - **Holds the Omnigraph bearer token server-side**; the browser never sees it.
 - Read-only: only `GET /graphs/<id>/branches` and `POST /graphs/<id>/export`.
 
@@ -38,8 +56,15 @@ Preferences, Conventions, Components) via the server's stored-query routes.
 |---|---|---|
 | `OMNIGRAPH_URL` | `http://omnigraph-server:8080` | Omnigraph server base URL |
 | `OMNIGRAPH_TOKEN` | — | bearer token (kept server-side) |
-| `OMNIGRAPH_GRAPH` | `memory` | graph id to view |
+| `OMNIGRAPH_GRAPH` | `memory` | graph the page **opens on** (any graph is reachable from the chips) |
 | `PORT` | `8090` | listen port |
+
+> `memory` holds **only** global-scope `Preference`s now, so the default view is
+> deliberately near-empty — that is not a fault. Click a project chip for the
+> content, or set `OMNIGRAPH_GRAPH` to the graph you open most.
+>
+> Note this is `OMNIGRAPH_GRAPH` (the viewer's var). The **MCP bridge** uses
+> `OMNIGRAPH_GRAPH_ID` — mixing them up silently leaves an agent on the wrong graph.
 
 ## Run
 
