@@ -26,8 +26,30 @@ providers:
       model: nomic-embed-text
       api_key: ${OLLAMA_DUMMY_KEY}
 
+# PROJECT ISOLATION: `memory` is the shared / global-scope graph (cross-project
+# Preferences, legacy home). Each project ALSO gets its own graph so a
+# `load mode: overwrite` in one project can never truncate another's data — the
+# failure mode that wiped everything before. Add a project = add an entry here
+# (or run scripts/add-project-graph.sh) then re-apply (scripts/apply-cluster.sh).
+# All graphs share the one memory.pg schema + the same embedding provider.
 graphs:
   memory:
+    schema: memory.pg
+    embedding_provider: default
+    queries: queries/
+  agent-skills:
+    schema: memory.pg
+    embedding_provider: default
+    queries: queries/
+  invest:
+    schema: memory.pg
+    embedding_provider: default
+    queries: queries/
+  basic-analysis:
+    schema: memory.pg
+    embedding_provider: default
+    queries: queries/
+  homelab-server:
     schema: memory.pg
     embedding_provider: default
     queries: queries/
@@ -39,3 +61,13 @@ policies:
   memory-access:
     file: memory.policy.yaml
     applies_to: [memory]
+  # Same operator grant, applied to every per-project graph. Extend applies_to
+  # when you add a project graph above.
+  project-graphs-access:
+    file: project-graphs.policy.yaml
+    applies_to: [agent-skills, invest, basic-analysis, homelab-server]
+  # MULTI-USER (template, off by default — enabling needs per-user bearer tokens,
+  # which are an admin/cluster-apply step). See users.policy.yaml.example.
+  # users-access:
+  #   file: users.policy.yaml
+  #   applies_to: [memory, agent-skills, invest, basic-analysis, homelab-server]

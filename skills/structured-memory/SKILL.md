@@ -84,15 +84,40 @@ back — resolving node conflicts by slug-keyed upsert. So just write durable
 memory to `main`; the automation handles branching, pushing, and merging. See
 `infra/mcp-servers/setup/README.md`.
 
-## Cross-project model
+## Cross-project model — two levels of isolation
 
-- One shared graph. Every project is a `Project` node; project-specific memory
-  edges back to it. A move between repos is just a different project scope, not a
-  different store.
-- Global facts (user preferences, house style) are `Preference` nodes with
-  `scope: global`; recall them in every project.
-- This replaces Mem0's `user_id` isolation: scope by `Project` edges and the
-  `scope` field, not by a per-call user id.
+**Level 1 — scoping inside the shared `memory` graph (default).** Every project
+is a `Project` node; project-specific memory edges back to it, and a move between
+repos is just a different project scope. Global facts (user preferences, house
+style) are `Preference` nodes with `scope: global`, recalled in every project.
+This replaces Mem0's `user_id` isolation: scope by `Project` edges and the
+`scope` field, not by a per-call user id.
+
+**Level 2 — a hard, separate graph per project.** The cluster also exposes one
+graph per project (`agent-skills`, `invest`, …) alongside the shared `memory`
+graph. Because a `load mode: overwrite` truncates only its own graph, writes in
+one project can **never** wipe another's — the failure mode that once wiped
+everything. Use this for anything you want fully firewalled.
+
+- **Point an agent at a project graph**: set `OMNIGRAPH_GRAPH=<project>` in that
+  repo's MCP config (the shared `memory` graph stays the home for `scope: global`
+  facts, queried alongside).
+- **Add a project graph**: `infra/mcp-servers/scripts/add-project-graph.sh
+  <name>` then `./scripts/apply-cluster.sh` (declared in
+  `cluster/cluster.yaml`, converged into the live cluster; the script snapshots
+  `memory` and verifies its node count is unchanged before/after).
+- **Browse any graph**: the viewer's **graph** selector switches between them.
+
+## Multi-user
+
+- **Humans** log in via **Authelia (SSO through Caddy)** in front of the viewer —
+  that is the multi-user login. The viewer itself has no auth; never expose it
+  without the proxy.
+- **Agents / API** are identified by their **bearer token → named actor**. Give
+  each user their own token and a personal graph (e.g. `u-alice`) that only they
+  can read/write, plus read-only access to shared `memory`. Scope it with Cedar
+  policy — see `cluster/users.policy.yaml.example`. Minting tokens is an admin /
+  `apply-cluster.sh` step (tokens are cluster secrets, never committed).
 
 ## Fallback
 

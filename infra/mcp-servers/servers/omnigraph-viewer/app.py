@@ -31,18 +31,34 @@ LABEL_FIELD = {
 }
 
 
-def _branches():
+def _graphs():
+    """All graph IDs the cluster exposes (for the project/graph selector)."""
     try:
-        r = requests.get(f"{OMNIGRAPH_URL}/graphs/{GRAPH_ID}/branches", headers=_headers, timeout=TIMEOUT)
+        r = requests.get(f"{OMNIGRAPH_URL}/graphs", headers=_headers, timeout=TIMEOUT)
+        r.raise_for_status()
+        ids = [g.get("graph_id") or g.get("graphId") for g in r.json().get("graphs", [])]
+        return [g for g in ids if g] or [GRAPH_ID]
+    except Exception:  # noqa: BLE001
+        return [GRAPH_ID]
+
+
+def _resolve_graph(graph):
+    """Only serve a graph the cluster actually exposes; fall back to the default."""
+    return graph if graph in _graphs() else GRAPH_ID
+
+
+def _branches(graph):
+    try:
+        r = requests.get(f"{OMNIGRAPH_URL}/graphs/{graph}/branches", headers=_headers, timeout=TIMEOUT)
         r.raise_for_status()
         return r.json().get("branches", ["main"])
     except Exception:  # noqa: BLE001
         return ["main"]
 
 
-def _export(branch):
+def _export(branch, graph):
     """POST export -> list of NDJSON records (nodes + edges) for a branch."""
-    url = f"{OMNIGRAPH_URL}/graphs/{GRAPH_ID}/export"
+    url = f"{OMNIGRAPH_URL}/graphs/{graph}/export"
     params = {"branch": branch} if branch and branch != "main" else None
     r = requests.post(url, json={}, params=params, headers=_headers, timeout=TIMEOUT)
     r.raise_for_status()
@@ -54,8 +70,8 @@ def _export(branch):
     return out
 
 
-def _build_graph(branch):
-    records = _export(branch)
+def _build_graph(branch, graph):
+    records = _export(branch, graph)
     nodes = {}
     edges_seen = set()
     edges = []
@@ -105,18 +121,26 @@ def healthz():
 
 @app.get("/api/graph")
 def api_graph():
+    graph = _resolve_graph(request.args.get("graph", GRAPH_ID))
     branch = request.args.get("branch", "main")
-    if branch not in _branches():
+    if branch not in _branches(graph):
         branch = "main"
     try:
-        return jsonify(_build_graph(branch))
+        data = _build_graph(branch, graph)
+        data["graph"] = graph
+        return jsonify(data)
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": str(exc), "nodes": [], "edges": [], "projects": [], "branch": branch}), 200
+        return jsonify({"error": str(exc), "nodes": [], "edges": [], "projects": [], "branch": branch, "graph": graph}), 200
 
 
 @app.get("/api/branches")
 def api_branches():
-    return jsonify({"branches": _branches()})
+    return jsonify({"branches": _branches(_resolve_graph(request.args.get("graph", GRAPH_ID)))})
+
+
+@app.get("/api/graphs")
+def api_graphs():
+    return jsonify({"graphs": _graphs(), "current": GRAPH_ID})
 
 
 @app.get("/")
@@ -182,11 +206,13 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
 .err{color:#e5675f;padding:16px}
 </style></head><body>
 <header>
-  <h1>Omnigraph Memory <span class="muted" style="color:var(--mut);font-weight:400">· __GRAPH__</span></h1>
+  <h1>Omnigraph Memory</h1>
   <button id="v-graph" class="on">Graph</button>
   <button id="v-table">Table</button>
   <input id="search" placeholder="search nodes / edges…">
   <span class="sp"></span>
+  <label class="muted" style="color:var(--mut)">graph</label>
+  <select id="graph" title="each project is an isolated graph"></select>
   <label class="muted" style="color:var(--mut)">branch</label>
   <select id="branch"></select>
 </header>
@@ -201,7 +227,7 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
   <div id="side"><p class="muted">Click a node or edge for details.</p></div>
 </main>
 <script>
-const S={data:null,branch:"main",tab:"all",view:"graph",q:"",types:new Set(),sim:null};
+const S={data:null,graph:"__GRAPH__",branch:"main",tab:"all",view:"graph",q:"",types:new Set(),sim:null};
 const TYPES=["Project","Decision","Rule","Preference","Convention","Component","Task"];
 const COLOR=t=>getComputedStyle(document.documentElement).getPropertyValue("--"+t).trim()||"#888";
 // ---- project clustering: group nodes by their primary project so clusters are obvious ----
@@ -237,15 +263,21 @@ function buildClusters(vis,W,H){
 const $=s=>document.querySelector(s);
 const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
+const qg=()=>"graph="+encodeURIComponent(S.graph);
 async function load(){
-  const r=await fetch("/api/graph?branch="+encodeURIComponent(S.branch));
+  const r=await fetch("/api/graph?"+qg()+"&branch="+encodeURIComponent(S.branch));
   S.data=await r.json();
   if(S.data.error){$("#side").innerHTML='<p class="err">'+esc(S.data.error)+'</p>';}
   S.types=new Set(TYPES);
   buildTabs();buildLegend();render();
 }
+async function loadGraphs(){
+  const r=await fetch("/api/graphs");const j=await r.json();const g=j.graphs||[S.graph];
+  if(!g.includes(S.graph))S.graph=j.current||g[0];
+  $("#graph").innerHTML=g.map(x=>`<option ${x===S.graph?"selected":""}>${esc(x)}</option>`).join("");
+}
 async function loadBranches(){
-  const r=await fetch("/api/branches");const b=(await r.json()).branches||["main"];
+  const r=await fetch("/api/branches?"+qg());const b=(await r.json()).branches||["main"];
   $("#branch").innerHTML=b.map(x=>`<option ${x===S.branch?"selected":""}>${esc(x)}</option>`).join("");
 }
 function buildTabs(){
@@ -456,6 +488,8 @@ $("#v-graph").onclick=()=>{S.view="graph";render();};
 $("#v-table").onclick=()=>{S.view="table";render();};
 $("#search").oninput=e=>{S.q=e.target.value;S.removed=new Set();if(S.view==="graph")applyHighlight();else renderTable();};
 $("#branch").onchange=e=>{S.branch=e.target.value;S.pos=null;S.vp=null;load();};
+// switching graph = switching project (isolated store): reset view, reload its branches + data
+$("#graph").onchange=async e=>{S.graph=e.target.value;S.branch="main";S.tab="all";S.pos=null;S.vp=null;await loadBranches();load();};
 window.addEventListener("resize",()=>{if(S.view==="graph")renderGraph();});
-loadBranches().then(load);
+loadGraphs().then(loadBranches).then(load);
 </script></body></html>"""
