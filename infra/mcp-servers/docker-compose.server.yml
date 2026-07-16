@@ -84,7 +84,7 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    entrypoint: ["sh", "-c", "if omnigraph cluster import --config /cluster --yes; then echo 'first boot: state ledger created — applying full config'; omnigraph cluster apply --config /cluster --yes --as default; else echo 'existing state ledger — checking plan before apply'; PLAN=$(omnigraph cluster plan --config /cluster 2>&1); echo \"$PLAN\"; if echo \"$PLAN\" | grep -qi 'create'; then echo 'REFUSING destructive auto-apply: plan wants to (re)create resources on an existing cluster; review and run apply manually'; else omnigraph cluster apply --config /cluster --yes --as default; fi; fi"]
+    entrypoint: ["sh", "-c", "if omnigraph cluster import --config /cluster --yes; then echo 'fresh store: applying cluster config'; omnigraph cluster apply --config /cluster --yes --as default; else echo 'existing store: skipping apply (run apply manually for config changes)'; fi"]
     environment:
       - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
@@ -147,6 +147,25 @@ services:
   #   Holds the bearer server-side; put Authelia in front when exposed.
   #   Local: http://127.0.0.1:8090 . Deployed instance: see
   #   Server/server/coding/mcp-servers/docker-compose.yml (coding.vm).
+  # SELF-HEALING memory backstop. After the server is healthy, merge-load
+  # every project seed (idempotent by @key slug — merge never duplicates,
+  # only fills what's missing). This guarantees all projects are present
+  # after ANY boot, so even a fully wiped/pruned MinIO volume repopulates
+  # from the versioned seed in the agent-skills repo. Harmless no-op when
+  # the store is already intact. $$f is escaped so compose leaves the shell
+  # loop variable alone (the bug that broke the old init guard).
+  omnigraph-seed:
+    image: modernrelay/omnigraph-server:v0.8.1
+    container_name: omnigraph-seed
+    depends_on:
+      omnigraph-server: { condition: service_healthy }
+    entrypoint: ["sh", "-c", "for f in /cluster/seed/*.jsonl; do echo \"seeding $$f\"; omnigraph load --server http://omnigraph-server:8080 --graph memory --data \"$$f\" --mode merge --yes || echo \"WARN: seed $$f failed\"; done; echo 'omnigraph-seed complete'"]
+    environment:
+      - OMNIGRAPH_BEARER_TOKEN=${OMNIGRAPH_TOKEN:?set in .env}
+    volumes:
+      - ${AGENT_SKILLS_DIR:-/home/s/code/agent-skills}/infra/mcp-servers/cluster:/cluster:ro
+    restart: "no"
+
   omnigraph-viewer:
     build:
       context: ./servers/omnigraph-viewer
