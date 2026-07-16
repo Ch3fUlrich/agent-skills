@@ -103,6 +103,23 @@ Clients: **online** = MCP → the public API on `main`; **offline-capable** = lo
 stack + `setup/omnigraph-sync.sh` timer that pushes to a `device/<host>` branch
 and merges into `main` when reachable (`infra/mcp-servers/setup/`).
 
+### Script defaults assume the local stack, not central
+
+The Omnigraph helper scripts (`infra/mcp-servers/scripts/apply-cluster.sh`,
+`dedup-graph.py`, `split-project-graph.py`, `add-project-graph.sh`) and this repo's
+`docker-compose.server.yml` were tuned against the **local** stack (compose project
+`mcp-server`, network `mcp-server_mcp-net`, MinIO named volume). Central runs compose
+project **`mcp-servers`** (network `mcp-servers_default`, MinIO **bind mount** at
+`$APPS_ROOT/omnigraph/minio` = `/home/s/apps/omnigraph/minio`, viewer bound `0.0.0.0:8090`
+for Caddy). On `coding.vm` the scripts need overrides: `OMNI_NET=mcp-servers_default`,
+`--network mcp-servers_default` / `--net mcp-servers_default`, and
+`--minio-path /home/s/apps/omnigraph/minio` (a named-volume `docker volume rm` is a no-op
+against a bind mount). Also mind `OMNIGRAPH_GRAPH_ID` (the MCP **bridge**'s graph) vs
+`OMNIGRAPH_GRAPH` (the **viewer**'s). Full table + exact flags in
+[`../infra/mcp-servers/README.md`](../infra/mcp-servers/README.md) ("Central vs local");
+to realign the defaults, see
+[`../prompts/omnigraph-align-scripts-to-central.md`](../prompts/omnigraph-align-scripts-to-central.md).
+
 ## Remote access (`infra/remote-access/`)
 
 - **Herdr** — agent multiplexer: run/persist multiple agents, reattach over SSH
