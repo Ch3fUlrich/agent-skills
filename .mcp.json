@@ -21,7 +21,15 @@
     "picker. Full protocol: ~/code/agent-skills/skills/structured-memory/SKILL.md.",
     "",
     "OMNIGRAPH_TOKEN is read from the environment and must never be written here (this file",
-    "is tracked). Export it once per machine before launching your agent."
+    "is tracked). Export it once per machine before launching your agent.",
+    "",
+    "OMNIGRAPH_NET is the docker network the stack runs on, and it DIFFERS PER HOST: central",
+    "(coding.vm) is compose project `mcp-servers` -> `mcp-servers_default`, while a local",
+    "client stack is `mcp-server` -> `mcp-server_mcp-net`. Hardcoding either breaks the other,",
+    "and the failure is quiet -- the bridge simply cannot resolve omnigraph-server. Probe the",
+    "live value with `python3 infra/mcp-servers/scripts/_omni_env.py` and export OMNIGRAPH_NET",
+    "alongside OMNIGRAPH_TOKEN. The default below is central's, since node/npx is absent there",
+    "and this bridge form exists for that host."
   ],
   "mcpServers": {
     "omnigraph": {
@@ -31,7 +39,7 @@
         "-i",
         "--rm",
         "--network",
-        "mcp-servers_default",
+        "${OMNIGRAPH_NET:-mcp-servers_default}",
         "-e",
         "OMNIGRAPH_BASE_URL=http://omnigraph-server:8080",
         "-e",

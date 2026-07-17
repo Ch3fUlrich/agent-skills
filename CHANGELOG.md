@@ -5,6 +5,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — the local↔central sync, which was corrupting central (2026-07-17)
+
+Running the sync **duplicated every edge on all four central project graphs** (agent-skills
+27→54, basic-analysis 120→221, invest 81→125, homelab-server 18→32) while reporting `rc=0`
+and "pulled central main -> local main". The pull had in fact failed on every graph. Central
+was repaired (dedup reproduced the git seeds byte-for-byte on all four — two independent
+sources agreeing) and the causes fixed:
+
+- **The push sent the whole local export** onto a device branch forked from `main`. Edges
+  have no `@key`, so every edge central already had was appended. It now sends a **delta**
+  (`omnigraph_jsonl.py pushset`): changed/new nodes only, and only edges central lacks.
+- **Pushing an *unchanged* node** still bumps that table's version, so the merge died with
+  `Concurrent modification: table version N already exists`. Identical nodes are now
+  skipped; an empty delta pushes nothing at all — the common case on a timer.
+- **The device branch is gone.** On v0.8.1 `branch create` can hit a Lance internal error
+  ("Clone operation should not enter build_manifest") and `branch merge` the above. It
+  existed for "review before merge", which is meaningless on an unattended timer; the delta
+  push goes straight to central `main`. Safety is the delta + backups + verify gates.
+- **The pull no longer uses `load --mode overwrite`** on a populated graph (Lance bug — and
+  it can *land while exiting 1*, so even its failure is untrustworthy). New
+  `omnigraph-setup/pull_graph.py` purges then loads into the empty graph, pre-flights that
+  the load path is reachable **before** purging, and restores from backup on failure.
+- **Failures are visible.** A non-zero exit from a native command is not a PowerShell
+  terminating error, so the old `try/catch` never fired. Both scripts now check exit codes
+  and honour `verify`'s verdict instead of piping it to `Out-Null` / `|| true`.
+- `omnigraph-sync.sh` was rewritten to the same logic — it previously could not run on
+  Windows at all (bind-mounted a `mktemp -d` path Git Bash mangles) and carried the same
+  duplicate-push bug. Both platforms now drive the same two Python helpers.
+
+Verified: repeated full runs, `rc=0`, all five graphs identical central↔local and
+duplicate-free, **zero edge growth** across consecutive runs. Operator manual:
+`infra/mcp-servers/omnigraph-setup/SYNC-MANUAL.md` (5-minute cadence, config,
+troubleshooting, known limits).
+
+### Changed — `infra/mcp-servers/setup/` → `infra/mcp-servers/omnigraph-setup/` (2026-07-17)
+
+`setup/` said nothing about what it holds: the Omnigraph sync/reconcile tooling, not
+general project setup. Every reference updated across 26 files, plus the live
+`as-sync-automation` node's `location` on both local and central — a rename that leaves
+memory pointing at a dead path is the same drift this repo keeps getting bitten by.
+
+### Added — `.gitattributes` (2026-07-17)
+
+The repo had no eol policy, so with `core.autocrlf=true` a Windows checkout rewrote shell
+scripts to CRLF; the shebang became `#!/usr/bin/env bash\r` and the script could not run.
+`*.sh`/`*.py`/units/configs are now pinned `eol=lf` (`*.ps1` stays `crlf`), and CR was
+stripped from 33 tracked files.
+
+### Fixed — graphify clustering on mixed str/int node ids (2026-07-17)
+
+`basic-analysis` (14,275 str + 17 int ids) crashed with `TypeError: '<' not supported
+between instances of 'int' and 'str'`, leaving nodes/edges current but community labels
+stale (2% coverage). `scripts/patch-graphify-cluster-sort.py` adds `key=str` to the bare
+node-id sorts upstream missed — in `build.py` (where the CLI actually dies first) as well as
+`cluster.py`. Result: `cluster-only` completes, 934 communities, coverage 2% → 100%.
+
 ### Removed — Mem0, entirely (2026-07-16)
 
 Omnigraph is the memory layer, with **no fallback** — see the new
