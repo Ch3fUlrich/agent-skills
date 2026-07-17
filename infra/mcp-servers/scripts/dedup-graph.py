@@ -296,39 +296,43 @@ def main():
     dc = ["docker", "compose", "-f", a.compose_file]
     svcs = ["omnigraph-server", "omnigraph-viewer", "omnigraph-minio",
             "omnigraph-init", "omnigraph-minio-init"]
+    def bring_up():  # never leave the stack down on any exit after we've stopped it
+        sh(dc + ["up", "-d"] + list(reversed(svcs)), capture_output=True)
     sh(dc + ["stop"] + svcs, capture_output=True)
     sh(dc + ["rm", "-f"] + svcs, capture_output=True)
+    # Wait for MinIO to be TRULY gone before touching the store. A still-shutting-down
+    # minio rewrites .minio.sys under the clear — the 2026-07-17 data-loss race, where the
+    # clear removed the graph data but minio recreated empty shells, an `ls -A` check then
+    # read those shells as "clear failed", and the run aborted WITHOUT reloading -> loss.
+    for _ in range(20):
+        if not sh(["docker", "ps", "-aq", "--filter", "name=omnigraph-minio"],
+                  capture_output=True, text=True).stdout.strip():
+            break
+        time.sleep(1)
     if a.minio_path:
-        # Bind-mount store (e.g. central's NVMe $APPS_ROOT/omnigraph/minio): clear the
-        # directory in a root container (files are root-owned) — a named-volume rm is a
-        # no-op here and would leave the data, tripping the empty-guard below.
+        # Bind-mount store: clear the dir in a root container (files are root-owned).
+        # Do NOT abort on leftover shells here — whatever the clear did, we ALWAYS restart
+        # and reload below, and the per-graph empty-guard in step 4 is the real safety, so
+        # a partial clear self-heals (reload) instead of losing data.
         sh(["docker", "run", "--rm", "-v", f"{a.minio_path}:/data", "alpine",
             "sh", "-c", "rm -rf /data/* /data/.minio.sys 2>/dev/null; true"], capture_output=True)
-        left = sh(["docker", "run", "--rm", "-v", f"{a.minio_path}:/data", "alpine",
-                   "sh", "-c", "ls -A /data | head"], capture_output=True, text=True).stdout.strip()
-        if left:
-            sys.exit(f"[dedup] ABORT: could not clear bind-mount {a.minio_path} (still: {left}); graphs untouched. backups under {a.backup_dir}")
     else:
-        # A volume that was never there is NOT a successful wipe: `volume rm` no-ops and
-        # the absence check below would pass, restarting on a store that still holds every
-        # graph. Both stacks actually use bind mounts, so this branch only runs when
-        # detection found a real named volume or one was passed explicitly — verify it
-        # exists before trusting its later absence.
         vols_before = sh(["docker", "volume", "ls", "--format", "{{.Name}}"],
                          capture_output=True, text=True).stdout.split()
         if a.minio_volume not in vols_before:
-            sys.exit(f"[dedup] ABORT: named volume {a.minio_volume} does not exist, so nothing "
-                     f"would be wiped. Is MinIO on a bind mount? Pass --minio-path <dir>. "
-                     f"graphs untouched. backups under {a.backup_dir}")
+            bring_up()
+            sys.exit(f"[dedup] ABORT: named volume {a.minio_volume} does not exist — is MinIO a "
+                     f"bind mount? pass --minio-path <dir>. Stack restarted, graphs intact.")
         for c in sh(["docker", "ps", "-aq", "--filter", f"volume={a.minio_volume}"],
                     capture_output=True, text=True).stdout.split():
             sh(["docker", "rm", "-f", c], capture_output=True)
         sh(["docker", "volume", "rm", a.minio_volume], capture_output=True)
         vols = sh(["docker", "volume", "ls", "--format", "{{.Name}}"], capture_output=True, text=True).stdout.split()
         if a.minio_volume in vols:
-            sys.exit(f"[dedup] ABORT: could not remove volume {a.minio_volume}; graphs untouched. backups under {a.backup_dir}")
+            bring_up()
+            sys.exit(f"[dedup] ABORT: could not remove volume {a.minio_volume}. Stack restarted, graphs intact.")
 
-    sh(dc + ["up", "-d"] + list(reversed(svcs)), capture_output=True)
+    bring_up()
     for _ in range(45):
         h = sh(dc + ["ps", "omnigraph-server", "--format", "{{.Status}}"], capture_output=True, text=True)
         if "healthy" in h.stdout:
