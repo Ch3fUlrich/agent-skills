@@ -499,7 +499,7 @@ function applyFocus(){
 // (setFocus(null) runs during load(), when there is nothing to simulate yet).
 // re-run the layout from tick 0. No-op before the first renderGraph() has built tickFn
 // (setFocus(null) runs during load(), when there is nothing to simulate yet).
-function restartSim(){if(!S.tickFn)return;if(S.sim)cancelAnimationFrame(S.sim);S.ticks=0;S.sim=requestAnimationFrame(S.tickFn);}
+function restartSim(){if(!S.tickFn)return;if(S.sim)cancelAnimationFrame(S.sim);S.ticks=0;S.alpha=1;S.sim=requestAnimationFrame(S.tickFn);}
 // Drop the layout before an async reload. The running sim MUST be cancelled in the same
 // breath: it ticks off S.pos, and a queued frame firing after S.pos=null throws.
 function resetLayout(){if(S.sim)cancelAnimationFrame(S.sim);S.sim=null;S.pos=null;S.vp=null;}
@@ -511,8 +511,11 @@ function renderGraph(){
   if(S.focus&&!ids.has(S.focus)){S.focus=null;S.near=null;$("#focusbar").style.display="none";}
   S.cl=buildClusters(vis,W,H);
   const prev=S.pos||{};S.pos={};
+  // Seed NEW nodes already spread out (roughly the final layout size) so the sim
+  // only has to refine, not explode outward — the main cause of the long bounce.
+  const seed=S.cl.multi?170:Math.max(260,Math.min(W,H)*0.5);
   vis.forEach(n=>{const p=prev[n.id],a=S.cl.info[clusterOf(n)].anchor;
-    S.pos[n.id]={x:p?p.x:a.x+(Math.random()-.5)*120,y:p?p.y:a.y+(Math.random()-.5)*120,vx:0,vy:0};});
+    S.pos[n.id]={x:p?p.x:a.x+(Math.random()-.5)*seed,y:p?p.y:a.y+(Math.random()-.5)*seed,vx:0,vy:0};});
   if(!S.vp)S.vp={tx:0,ty:0,k:1};
   if(S.sim)cancelAnimationFrame(S.sim);
 
@@ -559,35 +562,66 @@ function renderGraph(){
   vpApply();applyHighlight();applyFocus();
 
   const FAR=Math.min(W,H)*0.62;                   // radius the unrelated nodes settle on
+  // Physics tuned to settle in ≤3s WITHOUT bouncing: forces ease off through a
+  // cooling `alpha`, velocity is damped and clamped (no violent jumps), a stronger
+  // charge + longer links spread the graph out, and a final collision pass keeps
+  // nodes from ever overlapping. Connected nodes sit near each other, not on top.
+  const CHARGE=6500, LINK=115, VDECAY=0.70, VMAX=16, COOL=0.033, AMIN=0.012, MAXT=180;
+  const rad=n=>(n.type==="Project"?13:9);
   S.tickFn=function tick(){
-    const P=S.pos,f=S.focus,near=S.near;
+    const P=S.pos,f=S.focus,near=S.near,al=S.alpha;
     if(!P)return;                    // layout dropped by a reload — stop; renderGraph restarts us
+    // repulsion (charge) — eased by alpha so it converges instead of oscillating
     for(let i=0;i<vis.length;i++)for(let j=i+1;j<vis.length;j++){
-      const pa=P[vis[i].id],pb=P[vis[j].id];let dx=pa.x-pb.x,dy=pa.y-pb.y,d=Math.hypot(dx,dy)||1,f2=3000/(d*d);
+      const pa=P[vis[i].id],pb=P[vis[j].id];let dx=pa.x-pb.x,dy=pa.y-pb.y,d2=dx*dx+dy*dy||1,d=Math.sqrt(d2),f2=CHARGE/d2*al;
       pa.vx+=dx/d*f2;pa.vy+=dy/d*f2;pb.vx-=dx/d*f2;pb.vy-=dy/d*f2;}
+    // links (springs) pull connected nodes to LINK apart; in focus mode only the
+    // focused node's own edges pull, the rest go slack.
     for(const e of links){const pa=P[e.from],pb=P[e.to];if(!pa||!pb)continue;
-      // in focus mode only the focused node's own edges pull; the rest go slack so
-      // unrelated nodes are free to drift outward instead of dragging neighbours along
       const active=!f||e.from===f||e.to===f;
-      let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,fr=(d-(f?70:90))*(active?0.02:0.002);
+      let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,fr=(d-(f?85:LINK))*(active?0.03:0.002)*al;
       pa.vx+=dx/d*fr;pa.vy+=dy/d*fr;pb.vx-=dx/d*fr;pb.vy-=dy/d*fr;}
+    // gravity toward cluster/centre (or the focus ring), then integrate: damp + clamp
     for(const n of vis){const p=P[n.id];if(n._drag){p.vx=p.vy=0;continue;}
-      let a;
       if(f){
-        if(near.has(n.id)){a={x:W/2,y:H/2};                    // related: gather at centre
-          p.vx+=(a.x-p.x)*(n.id===f?0.06:0.03);p.vy+=(a.y-p.y)*(n.id===f?0.06:0.03);}
-        else{                                                  // unrelated: pushed out to a ring
-          let dx=p.x-W/2,dy=p.y-H/2,d=Math.hypot(dx,dy)||1;
-          const pull=(FAR-d)*0.02;p.vx+=dx/d*pull;p.vy+=dy/d*pull;}
+        if(near.has(n.id)){const a={x:W/2,y:H/2};             // related: gather at centre
+          p.vx+=(a.x-p.x)*(n.id===f?0.06:0.03)*al;p.vy+=(a.y-p.y)*(n.id===f?0.06:0.03)*al;}
+        else{let dx=p.x-W/2,dy=p.y-H/2,d=Math.hypot(dx,dy)||1; // unrelated: pushed to a ring
+          const pull=(FAR-d)*0.02*al;p.vx+=dx/d*pull;p.vy+=dy/d*pull;}
       }else{
-        a=S.cl.multi?S.cl.info[clusterOf(n)].anchor:{x:W/2,y:H/2};
-        p.vx+=(a.x-p.x)*0.012;p.vy+=(a.y-p.y)*0.012;
+        const a=S.cl.multi?S.cl.info[clusterOf(n)].anchor:{x:W/2,y:H/2};
+        p.vx+=(a.x-p.x)*0.018*al;p.vy+=(a.y-p.y)*0.018*al;
       }
-      p.x+=p.vx*=.85;p.y+=p.vy*=.85;}
+      p.vx*=VDECAY;p.vy*=VDECAY;
+      if(p.vx>VMAX)p.vx=VMAX;else if(p.vx<-VMAX)p.vx=-VMAX;
+      if(p.vy>VMAX)p.vy=VMAX;else if(p.vy<-VMAX)p.vy=-VMAX;
+      p.x+=p.vx;p.y+=p.vy;}
+    // collision — project any overlapping pair apart (position only → no bounce),
+    // so nodes are guaranteed never to overlay.
+    for(let i=0;i<vis.length;i++)for(let j=i+1;j<vis.length;j++){
+      const a=P[vis[i].id],b=P[vis[j].id];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,min=rad(vis[i])+rad(vis[j])+16;
+      if(d<min){const push=(min-d)/2,ux=dx/d,uy=dy/d;
+        if(!vis[i]._drag){a.x-=ux*push;a.y-=uy*push;}
+        if(!vis[j]._drag){b.x+=ux*push;b.y+=uy*push;}}}
     paint();
-    if(++S.ticks<400)S.sim=requestAnimationFrame(S.tickFn);
+    S.alpha*=(1-COOL);
+    if(S.alpha>AMIN&&++S.ticks<MAXT)S.sim=requestAnimationFrame(S.tickFn);
+    else{S.sim=null;                                          // settled — frame it once, if untouched
+      if(!f&&S.vp.k===1&&S.vp.tx===0&&S.vp.ty===0)fitView();}
   };
-  S.ticks=0;S.sim=requestAnimationFrame(S.tickFn);
+  S.ticks=0;S.alpha=1;S.sim=requestAnimationFrame(S.tickFn);
+}
+// Frame the whole settled graph in the viewport (only auto-runs while the view is
+// still at its default — once the user zooms/pans, we never override them).
+function fitView(){
+  const P=S.pos;if(!P)return;const svg=$("#svg"),W=svg.clientWidth||800,H=svg.clientHeight||600;
+  let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+  for(const n of (S.curVis||[])){const p=P[n.id];if(!p)continue;
+    mnx=Math.min(mnx,p.x);mny=Math.min(mny,p.y);mxx=Math.max(mxx,p.x);mxy=Math.max(mxy,p.y);}
+  if(mxx<mnx)return;
+  const gw=(mxx-mnx)||1,gh=(mxy-mny)||1,pad=70;
+  const k=Math.max(.2,Math.min(1.6,Math.min((W-2*pad)/gw,(H-2*pad)/gh)));
+  S.vp.k=k;S.vp.tx=W/2-(mnx+mxx)/2*k;S.vp.ty=H/2-(mny+mxy)/2*k;vpApply();
 }
 function paint(){
   if(!S.els)return;const P=S.pos;
