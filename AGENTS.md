@@ -1,88 +1,63 @@
 # Agent Instructions
 
-This repository stores reusable AI-agent skills, per-repo starter adapters, and a
-self-hosted MCP runtime. Keep starters and this file as **thin pointers** — a
-skill's `SKILL.md` is the single source of truth; never copy its workflow here.
+Reusable agent skills + per-repo starters + a self-hosted MCP runtime.
+**Keep this file and starters as thin pointers — a skill's `SKILL.md` is the source of truth.**
 
-## Skills (source of truth in `skills/`)
+## Start at the router
 
-**Start at the router:** `skills/repository-index/SKILL.md` maps every MCP server and
-skill to the trigger that should load it. Read it first; it tells you which of the below
-to open. `skills/SYNC.md` is the vendoring ledger for the borrowed skills, not a router.
+**`skills/repository-index/SKILL.md`** — maps every MCP server and skill to the trigger that
+loads it. Read it first; it tells you which of these to open.
+(`skills/SYNC.md` is the vendoring ledger, not a router.)
 
-- **Coding discipline** — for any implementation, refactor, or bugfix, follow
-  `skills/coding-principles/SKILL.md` (DRY, TDD, single responsibility,
-  document-the-why, changelog/ADR backtracking, MCP-first navigation).
-- **Memory** — at session start and end, follow
-  `skills/structured-memory/SKILL.md` to recall and persist typed memory in Omnigraph.
-  Before any Omnigraph query/mutate/load/sync, read
-  `skills/structured-memory/references/operations.md` — the operational rules and
-  gotchas (edge casing, insert-xor-delete, duplicate-edge handling, never overwriting a
-  populated `main`, lowercase slugs, embeddings) that keep the graph clean without
-  troubleshooting.
-- **HTML working documents** — for long planning, research, review, report,
-  diagram, prototype, and handoff work, follow
-  `skills/html-working-documents/SKILL.md`.
-- **MCP stack usage** — `skills/mcp-servers-setup/SKILL.md`.
-- **Multi-agent orchestration** — `skills/swarm-orchestration/SKILL.md`, with the
-  review-gate skills it drives (`pr-approval-agent`, `qa-swarm`, `review-triage`,
-  `no-mistakes`, `babysit-prs`).
-
-## Memory in one paragraph
-
-**Each repo has its OWN Omnigraph graph, named after the repo folder** — this repo's is
-`agent-skills`. A bridge is pinned to exactly one graph by `OMNIGRAPH_GRAPH_ID`, and no
-tool takes a graph argument, so `.mcp.json` here points at `agent-skills` and nothing else.
-The shared **`memory`** graph holds only two global-scope `Preference`s (TDD-by-default,
-MCP-first navigation) — both already Principles 2 and 6 of `coding-principles` — so there
-is no second bridge to read it. Never write project data to `memory`. Omnigraph is the
-only memory layer; there is no fallback (ADR 0003).
-
-`.mcp.json` reads two env vars that must exist before the agent launches — they are
-deliberately not committed:
-
-| Var | Why |
+| Skill | Load when |
 |---|---|
-| `OMNIGRAPH_TOKEN` | the bearer; a tracked file must never hold it. Unset ⇒ the bridge starts with an empty token and **memory silently does not work** |
-| `OMNIGRAPH_NET` | the docker network, which **differs per host** (`mcp-server_mcp-net` locally, `mcp-servers_default` on central). Probe it: `python3 infra/mcp-servers/scripts/_omni_env.py` |
+| `coding-principles` | **any** implementation, refactor, bugfix |
+| `structured-memory` | **every** session — recall at start, persist at end |
+| `structured-memory/references/operations.md` | **before** any Omnigraph query/mutate/load/sync |
+| `html-working-documents` | plan / research / review / report / diagram / prototype |
+| `mcp-servers-setup` | wiring or debugging the stack |
+| `swarm-orchestration` | multi-file work (drives `pr-approval-agent`, `qa-swarm`, `review-triage`, `no-mistakes`, `babysit-prs`) |
 
-**Declared ≠ live.** Verify against the running server (`graphs_list`, `schema_get`,
-`docker inspect`), never by reading a config file. An unapplied cluster rejects edge types
-*silently*, which is how five relational edges went missing for weeks.
+## Memory
 
-## Compatibility goal
+- **One graph per repo**, named after the folder. This repo → `agent-skills`.
+- Pinned by `OMNIGRAPH_GRAPH_ID` in `.mcp.json`; **no tool takes a graph argument**.
+- `memory` graph = 2 global `Preference`s only (already Principles 2 & 6 of
+  `coding-principles`). **Never write project data there.**
+- Omnigraph is the only memory layer — no fallback (ADR 0003).
 
-Prefer broad, plug-and-play compatibility over a single-vendor setup. Provide the
-native instruction file each agent expects and keep each adapter short. See
-`docs/agent-compatibility.md`.
+Two env vars must exist **before launch** (never committed):
 
-## Infrastructure
+| Var | Unset ⇒ | Get it from |
+|---|---|---|
+| `OMNIGRAPH_TOKEN` | empty bearer → memory **silently dead** | `infra/mcp-servers/.env.shared` |
+| `OMNIGRAPH_NET` | wrong docker network → `fetch failed` | `python3 infra/mcp-servers/scripts/_omni_env.py` |
 
-Self-hosted runtime under `infra/` — see `docs/architecture.md`:
+Both: `infra/mcp-servers/omnigraph-setup/setup-agent-memory.ps1` (or `.sh`) — `-Check` to diagnose.
 
-- `infra/mcp-servers/` — the MCP stack (Serena, Graphify, Omnigraph memory,
-  Superpowers, Playwright, Context7) + the Omnigraph cluster config
-  (`cluster/`), its helper scripts (`scripts/`), and the local↔central sync
-  (`omnigraph-setup/` — operator manual: `omnigraph-setup/SYNC-MANUAL.md`).
-- `infra/remote-access/` — Herdr multiplexer + Antigravity remote UI.
-- `infra/local-ai/` — self-hosted LLM inference + UI + agent stack (Ollama, LiteLLM,
-  Open WebUI, OpenHands). **Optional, with one exception that matters:** its **Ollama**
-  serves `nomic-embed-text` on `:11434`, which is the embedder Omnigraph's `Vector(768)`
-  semantic recall depends on. Without it, memory still works — recall just degrades to
-  graph traversal + full-text. **LiteLLM** (`:4000`) gives one OpenAI-compatible endpoint
-  over many providers, which is how `swarm-orchestration` can route roles to different
-  models. **OpenHands** is an alternative agent runtime (compared in
-  `skills/swarm-orchestration/CUSTOM_ORCHESTRATION_VS_OPENHANDS.md`).
+> **Graph looks empty? Config bug until proven otherwise — do NOT rebuild.**
+> `0 rows except 2 Preferences` **is** the `memory` graph. A same-named `omnigraph` in
+> `~/.claude.json` (user scope) silently outranks `.mcp.json`. Run `setup-agent-memory -Check`.
 
-Nothing in the memory path needs Postgres, pgvector, or an LLM API key.
+**Declared ≠ live.** Verify against the server (`graphs_list`, `schema_get`, `docker inspect`),
+never a config file — an unapplied cluster rejects edge types *silently*.
 
-We also use **Harbor** as a self-hosted container registry. 
-- Do **not** install the Harbor registry locally on this device. 
-- The container should be pushed to a remote cloud server where it acts as a centralized registry. Agents and deployment scripts can push/pull images to and from the remote Harbor instance whenever needed.
+## Infrastructure (`infra/`, see `docs/architecture.md`)
 
-## Line endings — non-negotiable
+| Path | What | Note |
+|---|---|---|
+| `mcp-servers/` | the stack + `cluster/` config + `scripts/` + `omnigraph-setup/` | manual: `omnigraph-setup/SYNC-MANUAL.md` |
+| `local-ai/` | Ollama, LiteLLM, Open WebUI, OpenHands | **optional except Ollama**: serves `nomic-embed-text` (`:11434`) = Omnigraph's `Vector(768)` recall. Without it recall degrades to traversal + full-text. LiteLLM (`:4000`) = one OpenAI-compatible endpoint → `swarm-orchestration` model routing |
+| `remote-access/` | Herdr multiplexer, Antigravity remote UI | |
 
-`.gitattributes` pins `*.sh`/`*.py`/systemd units/configs to `eol=lf` (`*.ps1` stays
-`crlf`). A CRLF shebang becomes `#!/usr/bin/env bash\r`, so the kernel looks for an
-interpreter literally named `bash\r` and the script cannot run — on Linux or via
-`./script`. Do not "fix" a script by re-saving it with CRLF.
+Memory path needs no Postgres, pgvector, or LLM API key.
+
+**Harbor** = self-hosted registry. Never install locally; push images to the remote instance.
+
+## Hard rules
+
+- **Line endings.** `.gitattributes` pins `*.sh`/`*.py`/units/configs to `eol=lf`; `*.ps1` to
+  `crlf`. A CRLF shebang → kernel seeks `bash\r` → script cannot run. Never "fix" a script by
+  re-saving as CRLF.
+- **Compatibility.** Give each agent its native instruction file; keep adapters short.
+  See `docs/agent-compatibility.md`.

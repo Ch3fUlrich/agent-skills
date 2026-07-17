@@ -157,18 +157,17 @@ project data.
 
 - **Point your agent at its project graph**: set `OMNIGRAPH_GRAPH_ID=<repo>` for
   the omnigraph MCP bridge (a project-scoped `.mcp.json` env, or export it before
-  launching). If it is still `memory`, you are on the globals graph — switch it.
-  **Never write project-specific nodes to the shared `memory` graph.**
-- **One bridge per repo — do NOT add a second one for the globals.** `OMNIGRAPH_GRAPH_ID`
-  pins a bridge to exactly one graph and no tool (`query`/`mutate`/`load`) takes a graph
-  argument, so a project-scoped agent genuinely cannot reach `memory`. That is fine and
-  deliberate: `memory` holds only two global `Preference`s — TDD-by-default and MCP-first
-  navigation — and **both are already Principles 2 and 6 of
-  `skills/coding-principles/SKILL.md`**, which every agent loads anyway. A second
-  `omnigraph-globals` bridge to re-serve two lines was pure duplication (and listed every
-  omnigraph tool twice in the picker), so it was removed on 2026-07-17.
-  Global house style belongs in the skills — the single source of truth (Principle 1).
-  Only add a globals bridge if `memory` ever holds something the skills do not.
+  launching). **Never write project-specific nodes to the shared `memory` graph.**
+  If you are reading `memory` when `.mcp.json` says otherwise, a same-named `omnigraph`
+  in `~/.claude.json` (user scope) is silently overriding it — `0 rows except 2
+  Preferences` **is** `memory`, not a wipe. Diagnose:
+  `infra/mcp-servers/omnigraph-setup/setup-agent-memory.ps1 -Check` (or `.sh --check`).
+- **One bridge per repo.** `OMNIGRAPH_GRAPH_ID` pins it to exactly one graph and no tool
+  (`query`/`mutate`/`load`) takes a graph argument, so a project-scoped agent cannot reach
+  `memory` — deliberately. `memory` holds only two global `Preference`s (TDD-by-default,
+  MCP-first navigation) and **both are already Principles 2 and 6 of
+  `skills/coding-principles/SKILL.md`**, which every agent loads. Global house style belongs
+  in the skills — the single source of truth (Principle 1).
 - **Inside your project graph, still scope + link:** every project-specific node
   is a `Project` node's satellite — edge it to the `Project` (slug = repo folder
   name) and add relational edges (see "Link richly" above).

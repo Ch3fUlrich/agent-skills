@@ -5,6 +5,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed — agent instructions halved; `omnigraph-globals` erased, not explained (2026-07-17)
+
+Instruction files are paid for on **every** session, so their length is a running cost. The
+seven across the four repos totalled **5754 words (~7.7k tokens)** and are now **2885
+(~3.8k) — 49% off**, with nothing load-bearing dropped. Prose became tables; the session
+flow became mermaid.
+
+Most of the fat was **duplication the repos' own Principle 1 forbids** — a skill's `SKILL.md`
+is the single source of truth, and these were re-deriving it:
+
+| File | Was | Now | What went |
+|---|---|---|---|
+| `basic-analysis/AGENTS.md` | 1911 w | 629 | re-documented Serena's tool tables, the Omnigraph protocol, the Superpowers list — all of which live in `skills/` |
+| `basic-analysis/CLAUDE.md` | 1061 w | 159 | ~90% duplicated its own AGENTS.md; now a real Claude-only delta |
+| `agent-skills/GEMINI.md` | 268 w | 110 | duplicated AGENTS.md's skill list, which it says to read first |
+| `agent-skills/CLAUDE.md` | 445 w | 314 | same; gained a mermaid of the MCP precedence trap |
+| `agent-skills/AGENTS.md` | 678 w | 460 | prose → trigger table |
+| `Invest/AGENTS.md` | 684 w | 515 | prose → tables |
+| `.mcp.json` × 4 comments | 264–389 w | 129–161 | |
+
+**`omnigraph-globals` is gone, not memorialised.** Nine files still explained *why there is
+no such bridge* — the name alone kept the dead concept alive and invited agents to go looking.
+They now state the positive fact: one bridge per repo; `memory` is unreachable by design
+because its two globals are already Principles 2 and 6 of `coding-principles`.
+
+Purging it surfaced instructions that were actively wrong:
+
+- **`Invest/AGENTS.md` told agents to fall back to the `mem0-fallback` compose profile** if
+  Omnigraph was unreachable. Mem0 was removed entirely (ADR 0003); that profile does not
+  exist. It also told them to query global `Preference`s its bridge **cannot reach**, and to
+  re-embed via `populate-embeddings.py` — which does not work on a populated graph. Replaced
+  with the verified limitation: `merge` erases embeddings, an unembedded `Decision` is
+  *dropped* from `nearest()`, and on v0.8.1 there is no working re-embed — don't chase it.
+- **`basic-analysis/CLAUDE.md` still claimed "40-60% token savings"** — the unmeasured number
+  removed from this repo days ago. Now: the mechanism is real, the figure is folklore.
+
+Verified: all four `.mcp.json` still valid and correctly pinned; every bridge resolves to its
+own graph (agent-skills / basic-analysis / homelab-server / invest); 0 dangling links.
+
 ### Fixed — the router did not route to half the skills (2026-07-17)
 
 `skills/repository-index/SKILL.md` is the file every instruction file points agents at
