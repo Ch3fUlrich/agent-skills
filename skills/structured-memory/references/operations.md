@@ -12,6 +12,30 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
 
 ## The rules
 
+0a. **An empty-looking graph is a CONFIG bug until proven otherwise — never "rebuild" it.**
+   Before concluding data is lost, confirm *which graph you are actually attached to*. A
+   same-named server in `~/.claude.json` (**user scope**) silently overrides a repo's
+   `.mcp.json`, and nothing reports it: the bridge connects, answers, and is simply pointed
+   somewhere else. On 2026-07-17 a user-scope `omnigraph` pinned to `graph_id: memory` hid
+   every repo's own pin. An agent saw `memory`'s contents — *every table rowCount 0 except
+   2 `Preference`s* — concluded `basic-analysis` had been wiped, and started rebuilding it.
+   `basic-analysis` was intact the whole time (135 nodes / 235 edges on both servers); the
+   rebuild would have written a project into the globals-only graph.
+
+   **`0 rows everywhere except 2 Preferences` is not a wipe — that is the `memory` graph.**
+
+   ```bash
+   # 1. what does the bridge actually serve? (must be empty of `omnigraph`)
+   python -c "import json,pathlib;print(sorted((json.loads((pathlib.Path.home()/'.claude.json').read_text()).get('mcpServers') or {})))"
+   # 2. ask the server directly, out of band — this is the ground truth
+   curl -fsS -X POST $URL/graphs/<graph>/export -H "Authorization: Bearer $TOK" \
+     -H 'content-type: application/json' -d '{}' | grep -c '"type"'
+   ```
+   Related failure shapes, all silent: an unset `OMNIGRAPH_TOKEN` → `missing bearer token`
+   (looks like a broken server, is an unset variable); a wrong `OMNIGRAPH_NET` → `fetch
+   failed` (the network can *exist but be empty*, so docker starts happily); an unbuilt
+   `omnigraph-mcp:latest` → `pull access denied` (the image is on no registry).
+
 0. **Declared ≠ live.** `cluster.yaml` and `memory.pg` are a *declaration*; nothing is
    real until `scripts/apply-cluster.sh` converges it into the server's state ledger.
    Verify against the server — `graphs_list` for graphs, `schema_get` for edge types —

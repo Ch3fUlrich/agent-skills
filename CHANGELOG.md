@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — a user-scope MCP override made every repo read the wrong graph (2026-07-17)
+
+`~/.claude.json` defined a **user-scope** server named `omnigraph`, pinned to
+`graph_id: memory` with a hardcoded token. Same-named user-scope entries **silently win**
+over a project's `.mcp.json`, so every repo's per-project pin was overridden. Nothing
+errored — the bridge connected and answered, just about the wrong graph.
+
+The damage was nearly severe. An agent in `basic-analysis` saw *every table rowCount 0
+except 2 `Preference`s*, concluded the project graph had been **wiped**, and began
+rebuilding it. That reading was `memory`'s entire contents. `basic-analysis` was intact
+throughout — 135 nodes / 235 edges on both local and central — and the rebuild would have
+written a project into the globals-only graph. Verified through the bridge itself:
+`basic-analysis` → 370 rows, `memory` → 2 rows, empty token → `missing bearer token`.
+
+- Removed the user-scope `omnigraph` entry (backed up first); each repo's `.mcp.json` now
+  provides its own, correctly pinned.
+- `basic-analysis/.mcp.json`: dropped the `omnigraph-globals` bridge deleted on 2026-07-17,
+  which resolved an unset `${OMNIGRAPH_TOKEN}` to an empty bearer and failed every call with
+  "invalid bearer token" — the visible half of this bug.
+- `Server/.mcp.json`: `--network` was hardcoded to `mcp-servers_default`; now
+  `${OMNIGRAPH_NET:-mcp-servers_default}`. The hardcoded value is right on coding.vm and
+  silently wrong elsewhere: on the workstation that network **exists but is empty**, so
+  `docker run` succeeds and the bridge just cannot resolve the server.
+- **Built `omnigraph-mcp:latest`, which had never been built on this machine.** `CLAUDE.md`
+  claimed "docker works on every host that runs the stack"; the image is published to no
+  registry, so `docker run` was failing with `pull access denied` and the docker bridges
+  could not have started here at all. The claim is corrected and the build step documented.
+
+`operations.md` gains rule 0a — *an empty-looking graph is a config bug until proven
+otherwise, never "rebuild" it* — with the fingerprint (`0 rows except 2 Preferences` **is**
+the `memory` graph) and the out-of-band check that settles it.
+
 ### Added — one-command sync setup (2026-07-17)
 
 `omnigraph-setup/setup-sync.ps1` (Windows) and `omnigraph-setup/setup-sync.sh`
