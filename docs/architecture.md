@@ -8,8 +8,14 @@ skills/     ── reusable agent skills (single source of truth)
 starters/   ── thin per-repo adapters that point at skills
 infra/      ── self-hosted runtime
               ├── mcp-servers/    MCP stack (navigation, graph, memory, workflows)
+              ├── local-ai/       optional: Ollama + LiteLLM + Open WebUI + OpenHands
               └── remote-access/  run/persist/reach agents (Herdr, Antigravity UI)
 ```
+
+`local-ai` is optional but not disconnected: its **Ollama** is the `nomic-embed-text`
+provider the memory graph embeds against (see the arrow in the diagram below), and its
+**LiteLLM** proxy is what lets `swarm-orchestration` route roles to different models
+behind one OpenAI-compatible endpoint. Details: [`../infra/local-ai/README.md`](../infra/local-ai/README.md).
 
 ## MCP server stack (`infra/mcp-servers/`)
 
@@ -53,9 +59,13 @@ omnigraph-server
  └── homelab-server┘
 ```
 
-A bridge is **pinned to one graph** via `OMNIGRAPH_GRAPH_ID` and no tool takes a
-graph argument, so a repo's `.mcp.json` declares **two** servers: `omnigraph`
-(its own graph, read+write) and `omnigraph-globals` (`memory`, read-only).
+A bridge is **pinned to one graph** via `OMNIGRAPH_GRAPH_ID` and no tool takes a graph
+argument, so a repo's `.mcp.json` declares **one** `omnigraph` server, pointed at its own
+graph. A project-scoped agent therefore cannot read `memory` — which is fine: `memory`
+holds only two global `Preference`s (TDD-by-default, MCP-first navigation), already
+Principles 2 and 6 of `skills/coding-principles/SKILL.md`. A second `omnigraph-globals`
+bridge to re-serve those two lines existed briefly and was **removed on 2026-07-17** as
+duplication (it also listed every omnigraph tool twice in the picker).
 
 | Task | Command |
 |---|---|

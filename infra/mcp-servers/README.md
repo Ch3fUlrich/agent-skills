@@ -1,14 +1,17 @@
 # MCP Server Stack — Self-Hosted
 
 A combined MCP server stack for your coding agent (CodeWhale, Claude Code,
-Antigravity, …) that reduces token usage by 40–60% on code-heavy tasks through
-semantic navigation, disciplined coding workflows, and **structured cross-project
-memory**.
+Antigravity, …): semantic code navigation, disciplined coding workflows, and
+**structured cross-project memory**. It cuts token use on code-heavy tasks by
+returning symbols instead of whole files and by recalling prior decisions instead of
+re-deriving them — by how much is **unmeasured**; the "40–60%" figure previously
+quoted here had no measurement behind it and its supporting doc was retired.
 
 Runs on your own hardware with Docker + uv + Node.js. The memory layer is
 **Omnigraph** (typed graph + vector + full-text) backed by MinIO — no OpenAI key
-required. There is **no fallback memory**: the stack requires Omnigraph (Mem0 was
-removed — see [`../../docs/decisions/0001-omnigraph-over-mem0.md`](../../docs/decisions/0001-omnigraph-over-mem0.md)).
+required. There is **no fallback memory**: the stack requires Omnigraph (Mem0 was removed —
+[ADR 0003](../../docs/decisions/0003-remove-mem0-fallback.md); [ADR 0001](../../docs/decisions/0001-omnigraph-over-mem0.md)
+is why Omnigraph in the first place).
 For the authoritative overview
 see [`../../docs/architecture.md`](../../docs/architecture.md); for the memory
 protocol see [`../../skills/structured-memory/SKILL.md`](../../skills/structured-memory/SKILL.md).
@@ -45,7 +48,7 @@ docker compose --env-file .env.shared --env-file .env.client \
 See the **[local runbook](docs/OMNIGRAPH-LOCAL-RUNBOOK.md)** (verified setup +
 every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 [`servers/omnigraph/README.md`](servers/omnigraph/README.md),
-[`omnigraph-setup/`](setup/) (client/server + offline sync) and
+[`omnigraph-setup/`](omnigraph-setup/) (client/server + offline sync) and
 [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md).
 
 ## Active Servers
@@ -70,7 +73,7 @@ no cloud key), configured in [`cluster/cluster.yaml`](cluster/cluster.yaml); the
 
 **Clients & offline sync** — online clients point their MCP at the server on
 `main`; offline-capable clients run a local copy + a sync timer that reconciles
-via a `device/<host>` branch. See [`omnigraph-setup/`](setup/) (`client-setup.sh`,
+via a `device/<host>` branch. See [`omnigraph-setup/`](omnigraph-setup/) (`client-setup.sh`,
 `omnigraph-sync.sh`).
 
 **Deployed instance (this homelab).** Runs on `coding.vm` from the single-source
@@ -116,8 +119,7 @@ python3 scripts/_omni_env.py     # -> network=… bind=…/volume=…
 ```
 
 Detection reads the **live** stack, which is the point: a declaration is not reality
-(see `docs/architecture.md`). Background:
-[`../../prompts/omnigraph-align-scripts-to-central.md`](../../prompts/omnigraph-align-scripts-to-central.md).
+(see [`../../docs/architecture.md`](../../docs/architecture.md)).
 
 ## Container Registry (Harbor)
 

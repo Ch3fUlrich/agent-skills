@@ -18,7 +18,7 @@
 ### Phase 1: Run Both Systems Side-by-Side (NOW)
 
 - [x] MCP servers installed and running (Serena, Omnigraph, Superpowers)
-- [x] Docker services running (Qdrant + Ollama)
+- [x] Docker services running (omnigraph-server + MinIO; Ollama optional for embeddings)
 - [x] your coding agent configured with `~/.codewhale/mcp.json`
 - [ ] Claude Code **still using plugins** for now
 - [ ] Verify Claude Code plugins continue to work alongside the new setup

@@ -125,9 +125,10 @@ If enabled, use these for error debugging and traces:
 
 ## Token Savings
 
-This stack reduces token usage by 40-60% compared to raw file reading and
-session-from-scratch approaches. Serena's semantic tools return only the
-code you need; Superpowers provides structure that prevents rework.
+Serena returns only the symbols you asked for instead of whole files, and Omnigraph
+recalls prior decisions instead of you re-deriving them — both cut tokens on code-heavy
+work. The size of the saving is **unmeasured**: a "40-60%" figure was quoted here for a
+long time with no measurement behind it. Don't repeat it as fact.
 
 ## Graphify
 

@@ -106,9 +106,17 @@ mcp_superpowers_recommend_skills(task="debug a timeout issue")
 
 | Service | Address | Model(s) | Purpose |
 |---------|---------|----------|---------|
-| Qdrant | `:6333` | — | Vector store |
-| Ollama | `:11434` | bge-m3 (566MB), qwen2.5:1.5b | Embedding + extraction |
+| omnigraph-server | `:8080` | — | The memory graph (bearer-auth; `/healthz` is open) |
+| MinIO | `:9000` API / `:9001` console | — | S3 store backing Omnigraph |
+| omnigraph-viewer | `:8090` | — | Read-only web UI (put Authelia in front if exposed) |
+| Ollama | `:11434` | `nomic-embed-text` (768-dim, CPU-fine) | Embeddings — **optional** |
 | OLLAMA_KEEP_ALIVE=24h | Windows env | — | Keep models in VRAM |
+
+Ollama is optional: without it, recall degrades to graph traversal + full-text rather
+than failing. **No Qdrant, no Postgres, no LLM API key** — those were Mem0's, and Mem0
+was removed entirely (ADR 0003). `bge-m3` (1024-dim) was Mem0's embedder and is *not*
+this graph's: the graph is `Vector(768)`/`nomic-embed-text`, and mixing dimensions makes
+`nearest()` return garbage.
 
 ### Harbor — Private Container Registry
 
@@ -170,9 +178,10 @@ curl -fsS -H "Authorization: Bearer $env:OMNIGRAPH_TOKEN" http://localhost:8080/
 serena project list
 serena --version
 
-# Qdrant
-curl http://localhost:6333/
+# Omnigraph (open health probe, then an authenticated call)
+curl -fsS http://localhost:8080/healthz
+curl -fsS -H "Authorization: Bearer $env:OMNIGRAPH_TOKEN" http://localhost:8080/graphs
 
-# Ollama
+# Ollama (optional — embeddings only)
 curl http://localhost:11434/api/tags
 ```

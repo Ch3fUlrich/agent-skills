@@ -127,10 +127,16 @@ Full setup and per-agent wiring:
 > **Per-project graph isolation.** Every repo gets its **own** graph named after the
 > repo folder; the shared **`memory`** graph holds **only** global-scope
 > `Preference`s. Point a repo at its graph with `OMNIGRAPH_GRAPH_ID=<repo>` in a
-> project-scoped `.mcp.json` — plus a second `omnigraph-globals` server for
-> `memory`, since a bridge serves exactly one graph. Keep the bearer token out of
-> the tracked file: use `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"` and export it (see
-> this repo's own [`.mcp.json`](.mcp.json)). A declared graph is not live until
+> project-scoped `.mcp.json` — **one** bridge, no more. A bridge serves exactly one
+> graph, so reading `memory` would need a second server; that was tried and removed
+> on 2026-07-17, because `memory` holds just two global `Preference`s (TDD-by-default,
+> MCP-first navigation) which are already Principles 2 and 6 of
+> [`coding-principles`](skills/coding-principles/SKILL.md) — a whole MCP server to
+> re-serve two lines was duplication. Keep the bearer out of the tracked file: use
+> `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"` and export it, along with `OMNIGRAPH_NET`
+> (the docker network differs per host — probe it with
+> `infra/mcp-servers/scripts/_omni_env.py`). See this repo's own
+> [`.mcp.json`](.mcp.json). A declared graph is not live until
 > `infra/mcp-servers/scripts/apply-cluster.sh` runs — verify with `graphs_list` /
 > `schema_get`, not by reading the config.
 
@@ -147,9 +153,26 @@ OPNsense/Caddy reverse proxy: `omnigraph.ohje.ooguy.com` (API, bearer token),
 `omnigraph-ui.ohje.ooguy.com` (viewer, Authelia), `omnigraph-minio.ohje.ooguy.com`
 (MinIO console, Authelia).
 
-### Optional Local AI Stack (`infra/local-ai/`)
+### Local AI stack (`infra/local-ai/`) — optional, but it powers memory search
 
-An optional, self-hosted LLM inference and UI stack designed to complement your coding agents. This dockerized environment provides local model execution via Ollama (including a sandboxed `ollama-agent`), API proxying and routing via LiteLLM, a chat interface via Open WebUI, and a browser-based autonomous SWE agent platform via OpenHands. See [`infra/local-ai/README.md`](infra/local-ai/README.md) for setup instructions.
+A self-hosted LLM inference + UI + agent stack. **Optional**, with one important
+exception: **its Ollama is the embedder Omnigraph uses.** The memory graph stores
+`Vector(768)` embeddings from **`nomic-embed-text`** served on `:11434`, and that is what
+makes `nearest()` semantic recall work. Without it nothing breaks — recall simply degrades
+to graph traversal + full-text — but with it, "why did we replace the memory layer?" finds
+the right `Decision` without you knowing its slug. It is CPU-fine (~360 ms cold, ~60 ms
+warm) and needs no cloud key.
+
+| Component | Why it earns its place |
+|---|---|
+| **Ollama** (`:11434`) | Serves `nomic-embed-text` → Omnigraph's vector search (above). Also runs chat/coding models locally — no key, no egress, works offline. |
+| **LiteLLM** (`:4000`) | One OpenAI-compatible endpoint in front of many providers (Perplexity, OpenAI, Anthropic, local). Centralises keys, and lets `swarm-orchestration` route roles to different models without per-tool config. |
+| **OpenHands** (`:3000`) | Browser-based SWE agent in a sandboxed runtime — a second opinion on agent execution; see `skills/swarm-orchestration/CUSTOM_ORCHESTRATION_VS_OPENHANDS.md` for how it compares to this repo's own orchestration. |
+| **Open WebUI** (`:3131`) | Chat frontend over both Ollama and LiteLLM — for exploration that doesn't warrant a coding agent. |
+| **ollama-agent** | Sandboxed sibling sharing the model dir — run a model in isolation without touching the serving instance. |
+
+Setup: [`infra/local-ai/README.md`](infra/local-ai/README.md). The MCP stack does **not**
+require it: no Postgres, no pgvector, no LLM API key anywhere in the memory path.
 
 ### Remote access & multi-agent (`infra/remote-access/`)
 

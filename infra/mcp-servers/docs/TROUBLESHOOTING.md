@@ -9,7 +9,7 @@
 
 ### Docker services won't start
 
-**Symptom**: `docker compose up -d` fails or Qdrant/Ollama unreachable.
+**Symptom**: `docker compose up -d` fails, or omnigraph-server/MinIO unreachable.
 
 ```powershell
 # Check Docker is running
@@ -19,7 +19,7 @@ docker info
 docker compose ps
 
 # Check logs
-docker compose logs qdrant
+docker compose -f docker-compose.server.yml logs omnigraph-server minio
 docker compose logs ollama
 
 # Full restart
@@ -34,16 +34,16 @@ netstat -ano | findstr :6333
 netstat -ano | findstr :11434
 ```
 
-### bge-m3 model not pulled
+### nomic-embed-text model not pulled
 
-**Symptom**: Ollama returns errors about missing model.
+**Symptom**: Ollama returns errors about a missing model, or `nearest()` ranking looks
+random. The graph stores `Vector(768)` from `nomic-embed-text`; `bge-m3` (Mem0's old
+embedder, 1024-dim) is **not** this graph's — mixing dimensions returns garbage.
+Embeddings are optional: without Ollama, recall falls back to traversal + full-text.
 
 ```powershell
-# Check available models
-docker exec mcp-ollama ollama list
-
-# Pull manually
-docker exec -it mcp-ollama ollama pull bge-m3
+ollama list                  # check available models
+ollama pull nomic-embed-text # pull it
 ```
 
 ### Serena not on PATH
@@ -217,7 +217,7 @@ codewhale-tui mcp list
 # Ollama model check
 curl http://localhost:11434/api/tags
 
-# Qdrant collections
+# Omnigraph graphs
 curl http://localhost:6333/collections | ConvertFrom-Json
 
 # Serena check
