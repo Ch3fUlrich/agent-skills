@@ -28,8 +28,11 @@ Per-project isolation means one graph per repo, so **graph ≈ project**.
   a live text filter across rows. Shows a `graph` column when several are selected.
 - **Search** — highlights matching nodes/edges in the graph (dims the rest) and
   outlines matching table rows.
-- **Branch selector** — view any branch. Branches are per-graph, so the selector
-  is disabled while several graphs are selected.
+- **Branch selector + management** — view any branch, and (single graph selected)
+  **create** a branch forked from the current one, **merge** it into `main`
+  (native, edge-deduped), or **delete** it via the `+branch` / `merge→main` / `del`
+  buttons. Slashed device names (`device/<host>`) are handled. Branches are
+  per-graph, so the controls are disabled while several graphs are selected.
 
 Node ids are namespaced `<graph>::<slug>` internally, so identical slugs in
 different graphs can never collide or appear joined — edges only exist within one
@@ -43,7 +46,10 @@ graph. The UI shows the bare slug.
   Authelia/Caddy-friendly. A graph that fails to export is reported in `errors`
   rather than blanking the page.
 - **Holds the Omnigraph bearer token server-side**; the browser never sees it.
-- Read-only: only `GET /graphs/<id>/branches` and `POST /graphs/<id>/export`.
+- Reads via `GET /graphs/<id>/branches` + `POST /graphs/<id>/export`. Branch writes
+  proxy to the server: `POST …/branches` (create), `POST …/branches/merge`
+  (`{source,target}` — body-based so slashed names work), `DELETE …/branches/<name>`
+  (%2F-encoded). All gated by Authelia in front (below), since the app has no auth.
 
 > **Security:** the app has no auth of its own — put **Authelia SSO in front**
 > (Caddy `import authelia`). Never expose it directly. The Omnigraph **API**
