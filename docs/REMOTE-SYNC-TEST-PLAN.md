@@ -5,10 +5,10 @@ Plan for pushing this workstation's local Omnigraph `memory` graph to the
 and **without losing local data**. Nothing here runs automatically — it is the
 checklist for the dedicated sync session.
 
-Related: [`infra/mcp-servers/setup/omnigraph-sync.sh`](../infra/mcp-servers/setup/omnigraph-sync.sh)
-(Linux), [`sync-windows.ps1`](../infra/mcp-servers/setup/sync-windows.ps1)
-(Docker Desktop), [`omnigraph_jsonl.py`](../infra/mcp-servers/setup/omnigraph_jsonl.py)
-(dedup/verify), and [`setup/README.md`](../infra/mcp-servers/setup/README.md).
+Related: [`infra/mcp-servers/omnigraph-setup/omnigraph-sync.sh`](../infra/mcp-servers/omnigraph-setup/omnigraph-sync.sh)
+(Linux), [`sync-windows.ps1`](../infra/mcp-servers/omnigraph-setup/sync-windows.ps1)
+(Docker Desktop), [`omnigraph_jsonl.py`](../infra/mcp-servers/omnigraph-setup/omnigraph_jsonl.py)
+(dedup/verify), and [`omnigraph-setup/README.md`](../infra/mcp-servers/omnigraph-setup/README.md).
 
 ## Decisions locked in
 - **Target = production.** Writes go to central `main` (shared with other agents;
@@ -19,7 +19,7 @@ Related: [`infra/mcp-servers/setup/omnigraph-sync.sh`](../infra/mcp-servers/setu
 - **Back up local first** — local is the newest/authoritative copy.
 
 ## Prerequisites (already staged)
-- `infra/mcp-servers/setup/.env` (gitignored) — `CENTRAL_URL`, `CENTRAL_TOKEN`,
+- `infra/mcp-servers/omnigraph-setup/.env` (gitignored) — `CENTRAL_URL`, `CENTRAL_TOKEN`,
   `LOCAL_TOKEN`, `GRAPH=memory`, `DEVICE`. (`LOCAL_URL` there is the host value;
   the Windows helper overrides it to `http://omnigraph-server:8080` for the CLI
   container.)
@@ -47,7 +47,7 @@ over **stdin** (no bind-mount path mangling). Both helpers share `omnigraph_json
   lossless because we push local → central first (central `main` ⊇ local).
 
 ## Backup / rollback
-- The helpers export local `main` to `setup/backups/local-main-<ts>.jsonl` **before**
+- The helpers export local `main` to `omnigraph-setup/backups/local-main-<ts>.jsonl` **before**
   any write, and restore from it if the overwrite-pull fails.
 - Central is versioned: keep the `device/<host>` branch (`-KeepDeviceBranch` /
   `KEEP_DEVICE_BRANCH=1`) if you want the pre-merge state inspectable/revertible.

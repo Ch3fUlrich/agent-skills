@@ -140,11 +140,11 @@ Never `overwrite` a populated `main`.
 Always read/write the memory server your client is configured with, on `main`.
 **Do not create or merge device branches yourself.** When your device is online
 it uses the central `main` directly; when it is offline it uses a local `main`,
-and a background service (`infra/mcp-servers/setup/omnigraph-sync.sh` on a timer)
+and a background service (`infra/mcp-servers/omnigraph-setup/omnigraph-sync.sh` on a timer)
 creates a `device/<host>` branch, merges it into central `main`, and reconciles
 back — resolving node conflicts by slug-keyed upsert. So just write durable
 memory to `main`; the automation handles branching, pushing, and merging. See
-`infra/mcp-servers/setup/README.md`.
+`infra/mcp-servers/omnigraph-setup/README.md`.
 
 ## Cross-project model — one graph per project (hard isolation)
 

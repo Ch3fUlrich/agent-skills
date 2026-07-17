@@ -55,7 +55,7 @@ Target end state, identical to the client's:
 ## ⚠️ First — stop the timers
 
 ```bash
-systemctl disable --now omnigraph-sync.timer dedup-graph.timer   # names per setup/*.timer
+systemctl disable --now omnigraph-sync.timer dedup-graph.timer   # names per omnigraph-setup/*.timer
 ```
 
 Sync and dedup are now multi-graph aware in git, but **do not run them until task 6**.
@@ -182,7 +182,7 @@ python3 scripts/split-project-graph.py <project> --source memory --prune-source
 ### 6. Re-enable sync + dedup
 
 Both are multi-graph aware now. Verify before arming:
-- `DRY_RUN=1 ./setup/omnigraph-sync.sh` reports **all five** graphs and writes nothing.
+- `DRY_RUN=1 ./omnigraph-setup/omnigraph-sync.sh` reports **all five** graphs and writes nothing.
 - `python3 scripts/dedup-graph.py --dry-run` walks all five and reports them clean.
 
 **Gate:** both dry-runs cover 5 graphs. Only then re-enable the timers from the top.

@@ -68,10 +68,10 @@ Logging is not on by default. To keep one:
 
 ### Linux — systemd timer
 
-`setup/omnigraph-sync.timer` is already `OnUnitActiveSec=5min`:
+`omnigraph-setup/omnigraph-sync.timer` is already `OnUnitActiveSec=5min`:
 
 ```bash
-sudo cp setup/omnigraph-sync.{service,timer} /etc/systemd/system/
+sudo cp omnigraph-setup/omnigraph-sync.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now omnigraph-sync.timer
 systemctl list-timers omnigraph-sync.timer
 journalctl -u omnigraph-sync.service -n 50
@@ -80,7 +80,7 @@ journalctl -u omnigraph-sync.service -n 50
 **Change the cadence:** edit `OnUnitActiveSec=` in the `.timer`, then `daemon-reload` +
 `restart`. Add `Persistent=true` if you want missed runs to fire at boot.
 
-> ⚠️ **`setup/omnigraph-sync.sh` (the Linux script) has NOT been rebuilt.** It still has the
+> ⚠️ **`omnigraph-setup/omnigraph-sync.sh` (the Linux script) has NOT been rebuilt.** It still has the
 > bug that duplicated central's edges: it merge-loads the *whole* local export onto a
 > device branch forked from `main`, and edges have no `@key`, so every shared edge is
 > appended. **Do not enable the Linux timer until it is ported** to match
@@ -89,7 +89,7 @@ journalctl -u omnigraph-sync.service -n 50
 
 ---
 
-## Configuration — `setup/.env`
+## Configuration — `omnigraph-setup/.env`
 
 | Var | Meaning |
 |---|---|
@@ -112,7 +112,7 @@ gives `Connection refused` at exactly the wrong moment.
 
 ## The missing `OMNIGRAPH_TOKEN` (agent memory, not sync)
 
-**This does not affect the sync** — the sync reads tokens from `setup/.env`. It affects the
+**This does not affect the sync** — the sync reads tokens from `omnigraph-setup/.env`. It affects the
 **MCP bridges**: `agent-skills/.mcp.json` and `basic-analysis/.mcp.json` reference
 `${OMNIGRAPH_TOKEN}`, deliberately, because those files are tracked and must never hold a
 bearer. With the variable unset, the bridge starts with an empty token and **the agent has
@@ -148,7 +148,7 @@ holding the literal token — never in the repo's `.mcp.json`.
 
 Per graph, every run:
 
-1. **Back up** local `main` → `setup/backups/local-<graph>-<ts>.jsonl`.
+1. **Back up** local `main` → `omnigraph-setup/backups/local-<graph>-<ts>.jsonl`.
 2. **Verify** local for duplicates.
 3. **Push the delta** to central `main` — `omnigraph_jsonl.py pushset` emits every node
    whose payload differs from central's (ignoring `id`/`embedding`) plus **only the edges
@@ -184,13 +184,13 @@ a sync, check `edges` vs `distinct edges` — not the exit code alone.
 ## Verifying / troubleshooting
 
 ```bash
-cd infra/mcp-servers; set -a; . ./.env.shared; . ./setup/.env; set +a
+cd infra/mcp-servers; set -a; . ./.env.shared; . ./omnigraph-setup/.env; set +a
 
 # duplicates on either side (the check that matters)
 curl -s -X POST "http://127.0.0.1:8080/graphs/<g>/export" -H "Authorization: Bearer $OMNIGRAPH_TOKEN" \
-  -H 'content-type: application/json' -d '{}' | python3 setup/omnigraph_jsonl.py verify
+  -H 'content-type: application/json' -d '{}' | python3 omnigraph-setup/omnigraph_jsonl.py verify
 curl -s -X POST "$CENTRAL_URL/graphs/<g>/export" -H "Authorization: Bearer $CENTRAL_TOKEN" \
-  -H 'content-type: application/json' -d '{}' | python3 setup/omnigraph_jsonl.py verify
+  -H 'content-type: application/json' -d '{}' | python3 omnigraph-setup/omnigraph_jsonl.py verify
 ```
 
 | Symptom | What it means / do |
@@ -199,7 +199,7 @@ curl -s -X POST "$CENTRAL_URL/graphs/<g>/export" -H "Authorization: Bearer $CENT
 | `all columns in a record batch must have the same length` | the Lance bug. The load failed *staged*, so the graph survives — but it can leave Lance HEAD ahead of the manifest, after which **every** load to that graph fails while reads still work. **`docker restart omnigraph-server`** recovers it; no data lost. |
 | `Concurrent modification: table version N already exists` | something pushed an unchanged table. Should not happen now — if it does, `pushset` let an identical node through. |
 | `Connection refused` from the CLI container | `LOCAL_URL_CONTAINER` is wrong (probably `127.0.0.1`). `pull_graph.py` pre-flights this and refuses to purge. |
-| Sync exits non-zero | read the message — it names the graph and the failing command. Your backup is in `setup/backups/`. Central is only ever touched by a delta, so a failed run leaves it consistent. |
+| Sync exits non-zero | read the message — it names the graph and the failing command. Your backup is in `omnigraph-setup/backups/`. Central is only ever touched by a delta, so a failed run leaves it consistent. |
 | A `device/<host>` branch lingers | it blocks `schema apply`. `DELETE /graphs/<g>/branches/device%2F<host>`. The sync sweeps its own. |
 
 ## Known limitations
