@@ -120,10 +120,8 @@ runs over stdio and exposes the graph's tools (`query`, `mutate`, `load`,
 > points `omnigraph` at **its own** graph; `memory` is *not* the right value for a
 > project any more. A project-scoped agent therefore cannot read `memory`, which is
 > deliberate: it holds only two global `Preference`s (TDD-by-default, MCP-first
-> navigation), already Principles 2 and 6 of `skills/coding-principles/SKILL.md`. A
-> second `omnigraph-globals` bridge to re-serve them was **removed on 2026-07-17** as
-> duplication. Don't confuse `OMNIGRAPH_GRAPH_ID` with the **viewer's**
-> `OMNIGRAPH_GRAPH`.
+> navigation), already Principles 2 and 6 of `skills/coding-principles/SKILL.md`.
+> Don't confuse `OMNIGRAPH_GRAPH_ID` with the **viewer's** `OMNIGRAPH_GRAPH`.
 
 **Hosts with Node** can run it directly (see `config/mcp.json`, `config/mcp_antigravity.json`):
 

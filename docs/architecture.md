@@ -63,9 +63,7 @@ A bridge is **pinned to one graph** via `OMNIGRAPH_GRAPH_ID` and no tool takes a
 argument, so a repo's `.mcp.json` declares **one** `omnigraph` server, pointed at its own
 graph. A project-scoped agent therefore cannot read `memory` — which is fine: `memory`
 holds only two global `Preference`s (TDD-by-default, MCP-first navigation), already
-Principles 2 and 6 of `skills/coding-principles/SKILL.md`. A second `omnigraph-globals`
-bridge to re-serve those two lines existed briefly and was **removed on 2026-07-17** as
-duplication (it also listed every omnigraph tool twice in the picker).
+Principles 2 and 6 of `skills/coding-principles/SKILL.md`.
 
 | Task | Command |
 |---|---|
