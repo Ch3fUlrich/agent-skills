@@ -80,12 +80,15 @@ journalctl -u omnigraph-sync.service -n 50
 **Change the cadence:** edit `OnUnitActiveSec=` in the `.timer`, then `daemon-reload` +
 `restart`. Add `Persistent=true` if you want missed runs to fire at boot.
 
-> ⚠️ **`omnigraph-setup/omnigraph-sync.sh` (the Linux script) has NOT been rebuilt.** It still has the
-> bug that duplicated central's edges: it merge-loads the *whole* local export onto a
-> device branch forked from `main`, and edges have no `@key`, so every shared edge is
-> appended. **Do not enable the Linux timer until it is ported** to match
-> `sync-windows.ps1` (delta push via `omnigraph_jsonl.py pushset`, no device branch,
-> `pull_graph.py` for the pull, real exit-code checks). The Windows path is the fixed one.
+> **Both scripts are now the same logic.** `omnigraph-sync.sh` (Linux/macOS) and
+> `sync-windows.ps1` (Docker Desktop) both drive the same two Python helpers
+> (`omnigraph_jsonl.py`, `pull_graph.py`): delta push straight to central `main`, no device
+> branch, purge-then-load pull, real exit codes. Verified 2026-07-17 on the Windows box via
+> Git Bash (`rc=0`, all 5 graphs clean and identical both sides).
+>
+> On Linux the defaults (`DOCKER_NET=host`, `LOCAL_URL_CONTAINER=$LOCAL_URL`) are right. On
+> Docker Desktop set `DOCKER_NET=mcp-server_mcp-net` and
+> `LOCAL_URL_CONTAINER=http://omnigraph-server:8080` — or just use the `.ps1`.
 
 ---
 
