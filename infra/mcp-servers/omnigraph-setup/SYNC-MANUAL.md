@@ -199,7 +199,30 @@ curl: (6) Could not resolve host: omnigraph-server
 > cannot find the server. An error like "network not found" would be kinder than what you
 > actually get, which is silence. Set the variable explicitly.
 
-### Setting both
+### Setting both — automated
+
+```powershell
+.\setup-agent-memory.ps1 -Check     # diagnose, change nothing   (./setup-agent-memory.sh --check)
+.\setup-agent-memory.ps1            # fix
+```
+
+That script is the automated form of this whole section: it sets both variables (reading the
+token from `.env.shared` and the network from `docker inspect`, so neither is typed or
+guessed), builds `omnigraph-mcp:latest`, **removes any user-scope `omnigraph` override**,
+audits every repo's `.mcp.json`, and verifies by driving the real bridge. `--check` exits
+non-zero when something is wrong.
+
+> **Check for a user-scope override before believing any "empty graph".** A same-named
+> `omnigraph` in `~/.claude.json` silently wins over a repo's `.mcp.json`. On 2026-07-17 one
+> pinned to `graph_id: memory` made every repo read `memory`; an agent saw its 2 Preferences,
+> concluded `basic-analysis` (135 nodes, intact) was **wiped**, and started rebuilding it.
+> `0 rows except 2 Preferences` **is** the `memory` graph — not a wipe.
+> ```bash
+> python -c "import json,pathlib;print(sorted((json.loads((pathlib.Path.home()/'.claude.json').read_text()).get('mcpServers') or {})))"
+> ```
+> There must be **no** `omnigraph` in that list.
+
+### Setting both — by hand
 
 The values are `OMNIGRAPH_TOKEN` from `infra/mcp-servers/.env.shared`, and the detected
 network. `setup-sync` prints the exact lines for your machine at the end of a successful run.

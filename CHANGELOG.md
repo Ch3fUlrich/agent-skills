@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — `setup-agent-memory.{ps1,sh}`: the bridge setup, automated (2026-07-17)
+
+The sibling of `setup-sync`, and the two are constantly confused, so the READMEs now lead
+with the distinction: **`setup-sync` is the timer; `setup-agent-memory` is the MCP bridge the
+agent reads memory through.** The bridge half had been documented but never automated — it
+was the hand-work of the override incident above, so it is now one command.
+
+It builds `omnigraph-mcp:latest` (published to no registry, so it must be built per host),
+sets `OMNIGRAPH_TOKEN`/`OMNIGRAPH_NET` by reading `.env.shared` and `docker inspect` so
+neither is typed or guessed, removes any user-scope `omnigraph` override (backing up
+`~/.claude.json`), audits every sibling repo's `.mcp.json` (flagging `omnigraph-globals`, a
+missing/nonexistent graph pin, a hardcoded token, a hardcoded `--network`), and finally
+**drives the real bridge** to print rows per graph. `--check`/`-Check` diagnoses without
+changing anything and exits non-zero, so it works as a health check.
+
+Two bugs found by testing it, both worth keeping fixed:
+
+- It reported **"OK: no user-scope omnigraph" when it had failed to parse `~/.claude.json`**
+  — the exact false-success class this stack keeps producing. The file legitimately holds
+  keys differing only in case (project paths as typed), which `ConvertFrom-Json` rejects;
+  it now parses `-AsHashtable`, and an unreadable file is a **problem**, never an OK.
+  Not knowing whether an override exists is not the same as knowing one does not.
+- A run that *fixed* everything still exited 1, because the override was counted as a
+  problem before being repaired and never uncounted.
+
+Editing `~/.claude.json` is delegated to python rather than done via a PowerShell hashtable
+round-trip, which would collapse those case-distinct keys and reformat all 68KB of unrelated
+Claude Code state. Verified end-to-end by injecting a fake override: `-Check` detects it and
+exits 1; the fix run removes it, keeps all 32 project entries and the other three user-scope
+servers intact, and exits 0.
+
 ### Fixed — a user-scope MCP override made every repo read the wrong graph (2026-07-17)
 
 `~/.claude.json` defined a **user-scope** server named `omnigraph`, pinned to
