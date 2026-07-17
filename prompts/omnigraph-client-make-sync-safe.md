@@ -15,10 +15,13 @@
 > (not hourly); registration + everything else is in
 > [`../infra/mcp-servers/omnigraph-setup/SYNC-MANUAL.md`](../infra/mcp-servers/omnigraph-setup/SYNC-MANUAL.md).
 >
-> **STILL OPEN — §2 below:** `omnigraph-setup/omnigraph-sync.sh` (Linux) is **unported** and still has
-> the whole-export push that duplicated central's edges. Do not enable the Linux timer until
-> it matches the PowerShell twin. §3 (the pull) and §4/§5 (proof + scheduling) are done; §6
-> (the `OMNIGRAPH_TOKEN` env var) is deferred by the user and documented in the manual.
+> **§2 is now DONE too** — `omnigraph-setup/omnigraph-sync.sh` was rewritten to the same
+> logic (delta push, no branch, `pull_graph.py` pull, checked exit codes, stdin not bind
+> mounts) and verified: `rc=0`, all 5 graphs clean and identical on both sides. §6 (the
+> `OMNIGRAPH_TOKEN` env var) is deferred by the user and documented in the manual.
+>
+> **Nothing in this prompt is outstanding.** Kept as the record of what was wrong and how it
+> was proven fixed.
 
 Send this to an agent **with shell + docker access on a client machine** (the Windows dev
 box: compose project `mcp-server`, network `mcp-server_mcp-net`; a Linux client is the
@@ -60,8 +63,9 @@ any sync, check `edges` vs `distinct edges` on both sides — not the exit code.
    - **`omnigraph-setup/sync-windows.ps1` is FIXED** — it now sends a delta via
      `omnigraph_jsonl.py pushset` (all nodes — they are `@key(slug)` so merge upserts
      safely — but only the edges central lacks).
-   - **`omnigraph-setup/omnigraph-sync.sh` is NOT fixed.** Line ~93 still merge-loads
-     `/w/local.jsonl` whole. **A Linux client running it will re-pollute central.**
+   - **`omnigraph-setup/omnigraph-sync.sh` — FIXED 2026-07-17** (it used to merge-load
+     `/w/local.jsonl` whole, so a Linux client re-polluted central). Rewritten to the same
+     logic as the `.ps1`.
 2. **Failures are invisible.** `sync-windows.ps1`'s `Og`/`OgLoad` swallowed stderr and
    never checked `$LASTEXITCODE`; a non-zero exit from a *native* command is not a
    PowerShell terminating error, so the caller's `try/catch` never fired — a pull that

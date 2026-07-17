@@ -25,18 +25,39 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$URL" ] && [ -n "$TOKEN" ] || { echo "need --url and --token" >&2; exit 2; }
 
-register_mcp() {  # $1=OMNIGRAPH_URL $2=TOKEN
-  echo "Register the 'omnigraph' MCP server with your agent, e.g. Claude Code:"
-  echo
-  echo "  OMNIGRAPH_URL=$1 OMNIGRAPH_TOKEN=$2 \\"
-  echo "    npx -y @modernrelay/omnigraph-mcp   # (or add to your MCP config JSON)"
-  echo
-  if command -v claude >/dev/null 2>&1; then
-    echo "Detected 'claude' — adding it now:"
-    claude mcp add --scope user omnigraph \
-      -e "OMNIGRAPH_URL=$1" -e "OMNIGRAPH_TOKEN=$2" \
-      -- npx -y @modernrelay/omnigraph-mcp || echo "  (add it manually — see config/mcp-claude-code.json)"
-  fi
+# The bridge env contract is OMNIGRAPH_BASE_URL + OMNIGRAPH_GRAPH_ID + OMNIGRAPH_TOKEN.
+# `OMNIGRAPH_URL` is the VIEWER's variable and does nothing here; a bridge without
+# OMNIGRAPH_GRAPH_ID refuses to start (the server is cluster-only). Per-project isolation
+# means the graph is per-repo, so this prints a project-scoped .mcp.json rather than
+# registering one user-scope bridge pinned to a single graph.
+register_mcp() {  # $1=BASE_URL $2=TOKEN
+  cat <<JSON
+Add this to the repo's .mcp.json (project scope — the graph travels with the repo).
+Replace <repo-folder-name> with the repo's folder name; that IS the graph id.
+Keep the bearer OUT of a tracked file — reference the env var:
+
+  "omnigraph": {
+    "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
+    "env": {
+      "OMNIGRAPH_BASE_URL": "$1",
+      "OMNIGRAPH_TOKEN": "\${OMNIGRAPH_TOKEN}",
+      "OMNIGRAPH_GRAPH_ID": "<repo-folder-name>"
+    }
+  },
+  "omnigraph-globals": {
+    "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
+    "env": {
+      "OMNIGRAPH_BASE_URL": "$1",
+      "OMNIGRAPH_TOKEN": "\${OMNIGRAPH_TOKEN}",
+      "OMNIGRAPH_GRAPH_ID": "memory"
+    }
+  }
+
+Then export the bearer once per machine so \${OMNIGRAPH_TOKEN} resolves:
+  export OMNIGRAPH_TOKEN=$2
+(a bridge serves exactly one graph and no tool takes a graph argument — that is why
+reading the global-scope Preferences in \`memory\` needs the second server.)
+JSON
 }
 
 case "$mode" in
@@ -47,26 +68,50 @@ case "$mode" in
     ;;
   offline)
     echo "== offline-capable client: local stack + auto-sync =="
-    echo "1) Bring up the local Omnigraph stack (reference compose):"
-    echo "   cd $here/.. && cp .env.example .env  # set MINIO/OMNIGRAPH secrets"
+    echo "1) Bring up the local Omnigraph stack:"
+    echo "   cd $here/.."
+    echo "   cp .env.shared.example .env.shared   # OMNIGRAPH_TOKEN (openssl rand -hex 32) + S3_BUCKET"
+    echo "   cp .env.client.example .env.client   # CODE_ROOT, OMNIGRAPH_URL"
     echo "   docker compose --env-file .env.shared --env-file .env.client -f docker-compose.client.yml --profile offline up -d"
     echo
     echo "2) Point the agent's omnigraph MCP at the LOCAL server:"
-    register_mcp "http://127.0.0.1:8080" "\${LOCAL_OMNIGRAPH_TOKEN}"
+    register_mcp "http://localhost:8080" "\$(grep '^OMNIGRAPH_TOKEN=' $here/../.env.shared | cut -d= -f2-)"
     echo
-    echo "3) Write sync config and install the timer:"
-    cat > "$here/.env" <<EOF
+    echo "3) Sync config:"
+    # NEVER clobber an existing .env — it holds live tokens. Write a .env.example
+    # instead and let the operator merge. (The old version here did `cat > .env`,
+    # which silently destroyed a working config and replaced LOCAL_TOKEN with a
+    # placeholder, breaking every subsequent sync.)
+    if [ -f "$here/.env" ]; then
+      echo "   $here/.env already exists — NOT overwriting it (it holds live tokens)."
+      echo "   Compare it against $here/.env.example if you need the current keys."
+      target="$here/.env.example"
+    else
+      target="$here/.env"
+    fi
+    cat > "$target" <<EOF
+# Sync config for omnigraph-sync.sh / sync-windows.ps1. See SYNC-MANUAL.md.
 CENTRAL_URL=$URL
 CENTRAL_TOKEN=$TOKEN
+# Local API as seen from THIS HOST:
 LOCAL_URL=http://127.0.0.1:8080
-LOCAL_TOKEN=<your local server OMNIGRAPH_TOKEN>
-GRAPH=memory
+# Local API as seen from INSIDE the CLI container (compose service name).
+# 127.0.0.1 there is the container itself — the load would fail with 'Connection refused'.
+LOCAL_URL_CONTAINER=http://omnigraph-server:8080
+LOCAL_TOKEN=<your LOCAL server's OMNIGRAPH_TOKEN — see ../.env.shared>
+# Leave GRAPHS unset to sync every graph central exposes (per-project isolation).
+# GRAPHS=agent-skills,basic-analysis
 DEVICE=$(hostname)
 EOF
-    echo "   wrote $here/.env (fill LOCAL_TOKEN)."
+    echo "   wrote $target (fill LOCAL_TOKEN)."
+    echo
+    echo "4) Install the 5-minute sync timer:"
     echo "   mkdir -p ~/.config/systemd/user"
     echo "   cp $here/omnigraph-sync.service $here/omnigraph-sync.timer ~/.config/systemd/user/"
     echo "   systemctl --user enable --now omnigraph-sync.timer"
+    echo "   (Windows: see SYNC-MANUAL.md for the Scheduled Task — sync-windows.ps1.)"
+    echo
+    echo "   Verify BEFORE arming: DRY_RUN=1 $here/omnigraph-sync.sh"
     echo
     echo "The agent works on local main; omnigraph-sync reconciles with central when online."
     ;;
