@@ -19,11 +19,13 @@ servers are active when Claude Code connects:
 > richly; a node with no `Project` edge shows as "global" — a bug for
 > project-specific info. Omnigraph is the only memory layer — there is no fallback.
 >
-> A bridge is pinned to **one** graph (no tool takes a graph argument), so reading
-> house-style globals needs a **second** server — declare `omnigraph` with
-> `OMNIGRAPH_GRAPH_ID=<repo>` (read+write) and `omnigraph-globals` with
-> `OMNIGRAPH_GRAPH_ID=memory` (read-only). Keep the bearer token out of a tracked
-> `.mcp.json`: use `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"`.
+> A bridge is pinned to **one** graph (no tool takes a graph argument), so a
+> project-scoped agent cannot reach `memory` — and that is fine: `memory` holds only
+> two global `Preference`s (TDD-by-default, MCP-first navigation) which are already
+> Principles 2 and 6 of `skills/coding-principles/SKILL.md`. Declare **one**
+> `omnigraph` server with `OMNIGRAPH_GRAPH_ID=<repo>`; a second `omnigraph-globals`
+> bridge to re-serve those two lines was removed on 2026-07-17 as duplication. Keep
+> the bearer out of a tracked `.mcp.json`: use `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"`.
 
 ---
 
