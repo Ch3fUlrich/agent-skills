@@ -122,16 +122,18 @@ def verify(lines):
 
 
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "verify"
+    argv = [a for a in sys.argv[1:] if a != "--allow-empty"]
+    allow_empty = "--allow-empty" in sys.argv
+    cmd = argv[0] if argv else "verify"
     lines = sys.stdin.readlines()
     if cmd == "dedup":
         for ln in dedup(lines):
             print(ln)
         return
     if cmd == "pushset":
-        if len(sys.argv) < 3:
+        if len(argv) < 2:
             sys.exit("usage: … | omnigraph_jsonl.py pushset <central-export.jsonl>")
-        with open(sys.argv[2], encoding="utf-8") as fh:
+        with open(argv[1], encoding="utf-8") as fh:
             central = fh.readlines()
         for ln in pushset(lines, central):
             print(ln)
@@ -140,6 +142,18 @@ def main():
     sys.stderr.write(
         f"[verify] nodes={n_nodes} (distinct {d_nodes}) | edges={n_edges} (distinct {d_edges})\n"
     )
+    # EMPTY IS NOT CLEAN. An empty body is exactly what a failed fetch looks like —
+    # dead server, wrong token, wrong graph, curl error — and reporting "clean" for it
+    # is how a wiped stack read as healthy on 2026-07-17 (the graphs were gone; every
+    # graph still printed "clean"). Refuse to pass on no data unless told to.
+    if n_nodes == 0 and n_edges == 0 and not allow_empty:
+        sys.stderr.write(
+            "[verify] RESULT: NO DATA — refusing to call this clean.\n"
+            "[verify]   0 records is what a FAILED FETCH looks like (dead server / bad token /\n"
+            "[verify]   wrong graph), not proof of a healthy graph. Check the source, or pass\n"
+            "[verify]   --allow-empty if the graph is genuinely expected to be empty.\n"
+        )
+        sys.exit(2)
     if dup_nodes:
         sys.stderr.write(f"[verify] DUPLICATE NODES ({len(dup_nodes)}): {dup_nodes[:20]}\n")
     if dup_edges:

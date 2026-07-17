@@ -343,10 +343,15 @@ def main():
     for g, p in plan.items():
         # GUARD: never overwrite a non-empty graph (that is what silently accumulated
         # nodes on v0.8.1 when a wipe failed). Abort unless the fresh graph is empty.
+        # Only load when the graph is VERIFIABLY empty. node_count returns -1 when the
+        # probe itself failed — an unknown state is NOT an empty one, and treating it as
+        # empty would load straight onto existing data. (Same empty-reads-as-success trap
+        # that made a dead server verify "clean" on 2026-07-17.)
         empty = node_count(a, token, g)
-        if empty > 0:
-            sys.exit(f"[dedup] ABORT: fresh graph {g} not empty ({empty} nodes) — not loading, "
-                     f"to avoid duplication. backups under {a.backup_dir}")
+        if empty != 0:
+            sys.exit(f"[dedup] ABORT: {g} is not verifiably empty (node_count={empty}; -1 means the "
+                     f"probe FAILED, not that it is empty) — not loading, to avoid duplicating onto "
+                     f"existing data. Stack is up; backups under {a.backup_dir}")
         data = open(cleans[g], "rb").read()
         r = subprocess.run(
             ["docker", "run", "--rm", "-i", "--network", a.network,
