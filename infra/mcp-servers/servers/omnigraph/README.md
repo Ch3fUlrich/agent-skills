@@ -115,20 +115,25 @@ runs over stdio and exposes the graph's tools (`query`, `mutate`, `load`,
 | `OMNIGRAPH_GRAPH_ID` | **the repo's own graph** (`<repo-folder-name>`) — required (server is cluster-only; the bridge refuses to start without it) |
 | `OMNIGRAPH_TOKEN` | the bearer token |
 
-> **One bridge = one graph.** `OMNIGRAPH_GRAPH_ID` pins the bridge, and no tool takes
-> a graph argument. Under per-project isolation each repo points `omnigraph` at its
-> own graph and adds a second `omnigraph-globals` server on `memory` (global-scope
-> `Preference`s only) — `memory` is *not* the right value for a project any more.
-> Don't confuse it with the **viewer's** `OMNIGRAPH_GRAPH`.
+> **One bridge = one graph — and one bridge is all you declare.** `OMNIGRAPH_GRAPH_ID`
+> pins it, and no tool takes a graph argument. Under per-project isolation each repo
+> points `omnigraph` at **its own** graph; `memory` is *not* the right value for a
+> project any more. A project-scoped agent therefore cannot read `memory`, which is
+> deliberate: it holds only two global `Preference`s (TDD-by-default, MCP-first
+> navigation), already Principles 2 and 6 of `skills/coding-principles/SKILL.md`. A
+> second `omnigraph-globals` bridge to re-serve them was **removed on 2026-07-17** as
+> duplication. Don't confuse `OMNIGRAPH_GRAPH_ID` with the **viewer's**
+> `OMNIGRAPH_GRAPH`.
 
-**Hosts with Node** run it directly (see `config/mcp.json`, `config/mcp_antigravity.json`):
+**Hosts with Node** can run it directly (see `config/mcp.json`, `config/mcp_antigravity.json`):
 
 ```json
-"omnigraph":         { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
-  "env": { "OMNIGRAPH_BASE_URL": "http://localhost:8080", "OMNIGRAPH_GRAPH_ID": "<repo-folder-name>", "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}" } },
-"omnigraph-globals": { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
-  "env": { "OMNIGRAPH_BASE_URL": "http://localhost:8080", "OMNIGRAPH_GRAPH_ID": "memory", "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}" } }
+"omnigraph": { "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
+  "env": { "OMNIGRAPH_BASE_URL": "http://localhost:8080", "OMNIGRAPH_GRAPH_ID": "<repo-folder-name>", "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}" } }
 ```
+
+**Prefer the docker form** where node may be absent — `coding.vm` has no node/npx, so an
+`npx` bridge cannot start there. See this repo's own [`../../../../.mcp.json`](../../../../.mcp.json).
 
 **Hosts without Node** (e.g. this coding VM) run the bridge in a container — build
 [`../omnigraph-mcp/`](../omnigraph-mcp/) (`docker build -t omnigraph-mcp:latest

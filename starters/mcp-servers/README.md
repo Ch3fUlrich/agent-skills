@@ -35,7 +35,10 @@ docker compose --env-file .env.shared --env-file .env.client \
 ```
 
 Then point this repo at **its own** Omnigraph graph — see `AGENTS.md`/`CLAUDE.md` in
-this starter for the two-server `.mcp.json` block. Full setup:
+this starter for the `.mcp.json` block (**one** `omnigraph` server, pinned to this repo's
+graph via `OMNIGRAPH_GRAPH_ID`). Export `OMNIGRAPH_TOKEN` and `OMNIGRAPH_NET` before
+launching, or the bridge starts with an empty token and memory silently does not work.
+Full setup:
 [`infra/mcp-servers/README.md`](../../infra/mcp-servers/README.md).
 
 ## Per-Repository Setup (Agent Does This)
@@ -82,11 +85,13 @@ You can also use Graphify to generate visual artifacts:
 Once set up, agents can:
 
 - **Navigate code semantically** — Find symbols, references, declarations,
-  and file structure without reading entire files (Serena, ~40-60% token savings)
+  and file structure without reading entire files (Serena — returns symbols, not whole files)
 - **Refactor safely** — Rename, replace, insert, or delete symbols with
   automatic reference updates (Serena)
-- **Remember across sessions** — Store architecture decisions, build patterns,
-  and code conventions in project memory (Serena memories)
+- **Remember across sessions** — Store architecture decisions, build patterns, and
+  conventions as typed nodes in **Omnigraph**, this repo's own graph (not Serena
+  memories — those are excluded in the self-hosted config; Omnigraph is the only memory
+  layer, ADR 0003)
 - **Use disciplined workflows** — TDD, systematic debugging, structured
   planning, code review, and brainstorming (Superpowers, 14 skills)
 
@@ -114,8 +119,13 @@ additional_workspace_folders:
 | **Sentry** | stdio (`npx`) | ⚠️ Default Observability — runtime errors |
 | **Datadog** | stdio (`npx`) | ⚠️ Conditional Observability — distributed traces |
 
-## Infrastructure (Retained for Future Use)
+## Supporting infrastructure
 
-- Qdrant (vector DB): `http://localhost:6333`
-- Ollama (embeddings + LLM): `http://localhost:11434`
-- Models: `bge-m3:latest`, `qwen2.5:1.5b`
+- **MinIO** (S3 store backing Omnigraph): `http://localhost:9001` (console)
+- **Ollama** (embeddings): `http://localhost:11434`, model `nomic-embed-text` (768-dim,
+  CPU-fine). **Optional** — without it, recall degrades to graph traversal + full-text
+  rather than failing.
+
+> Qdrant and `bge-m3` used to be listed here. Both were **Mem0's** vector store and
+> embedder; Mem0 was removed entirely (ADR 0003). The stack needs no Qdrant, no Postgres,
+> and no LLM API key.

@@ -65,12 +65,16 @@ Self-hosted runtime under `infra/` — see `docs/architecture.md`:
   (`cluster/`), its helper scripts (`scripts/`), and the local↔central sync
   (`omnigraph-setup/` — operator manual: `omnigraph-setup/SYNC-MANUAL.md`).
 - `infra/remote-access/` — Herdr multiplexer + Antigravity remote UI.
-- `infra/local-ai/` — **optional** self-hosted LLM/agent stack (OpenHands, Ollama,
-  LiteLLM, Open WebUI). Not required by the MCP stack; start it only if you want local
-  inference.
+- `infra/local-ai/` — self-hosted LLM inference + UI + agent stack (Ollama, LiteLLM,
+  Open WebUI, OpenHands). **Optional, with one exception that matters:** its **Ollama**
+  serves `nomic-embed-text` on `:11434`, which is the embedder Omnigraph's `Vector(768)`
+  semantic recall depends on. Without it, memory still works — recall just degrades to
+  graph traversal + full-text. **LiteLLM** (`:4000`) gives one OpenAI-compatible endpoint
+  over many providers, which is how `swarm-orchestration` can route roles to different
+  models. **OpenHands** is an alternative agent runtime (compared in
+  `skills/swarm-orchestration/CUSTOM_ORCHESTRATION_VS_OPENHANDS.md`).
 
-Nothing here needs Postgres, pgvector, or an LLM API key. Ollama is optional — without it
-memory recall degrades to graph traversal + full-text rather than failing.
+Nothing in the memory path needs Postgres, pgvector, or an LLM API key.
 
 We also use **Harbor** as a self-hosted container registry. 
 - Do **not** install the Harbor registry locally on this device. 

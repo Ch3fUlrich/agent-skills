@@ -30,6 +30,16 @@ done
 # OMNIGRAPH_GRAPH_ID refuses to start (the server is cluster-only). Per-project isolation
 # means the graph is per-repo, so this prints a project-scoped .mcp.json rather than
 # registering one user-scope bridge pinned to a single graph.
+#
+# ONE bridge, not two. A second `omnigraph-globals` server on `memory` was removed on
+# 2026-07-17: `memory` holds only two global Preferences (TDD-by-default, MCP-first nav),
+# which are already Principles 2 and 6 of skills/coding-principles/SKILL.md, so a whole
+# extra MCP server to re-serve two lines was duplication — and it listed every omnigraph
+# tool twice in the picker.
+#
+# The docker form is preferred over npx: coding.vm has no node/npx, and docker works on
+# every host that runs the stack. OMNIGRAPH_NET differs per host, so probe it rather than
+# hardcoding: python3 ../scripts/_omni_env.py
 register_mcp() {  # $1=BASE_URL $2=TOKEN
   cat <<JSON
 Add this to the repo's .mcp.json (project scope — the graph travels with the repo).
@@ -37,26 +47,19 @@ Replace <repo-folder-name> with the repo's folder name; that IS the graph id.
 Keep the bearer OUT of a tracked file — reference the env var:
 
   "omnigraph": {
-    "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
-    "env": {
-      "OMNIGRAPH_BASE_URL": "$1",
-      "OMNIGRAPH_TOKEN": "\${OMNIGRAPH_TOKEN}",
-      "OMNIGRAPH_GRAPH_ID": "<repo-folder-name>"
-    }
-  },
-  "omnigraph-globals": {
-    "command": "npx", "args": ["-y", "@modernrelay/omnigraph-mcp"],
-    "env": {
-      "OMNIGRAPH_BASE_URL": "$1",
-      "OMNIGRAPH_TOKEN": "\${OMNIGRAPH_TOKEN}",
-      "OMNIGRAPH_GRAPH_ID": "memory"
-    }
+    "command": "docker",
+    "args": ["run", "-i", "--rm",
+             "--network", "\${OMNIGRAPH_NET:-mcp-server_mcp-net}",
+             "-e", "OMNIGRAPH_BASE_URL=$1",
+             "-e", "OMNIGRAPH_GRAPH_ID=<repo-folder-name>",
+             "-e", "OMNIGRAPH_TOKEN=\${OMNIGRAPH_TOKEN}",
+             "omnigraph-mcp:latest"]
   }
 
-Then export the bearer once per machine so \${OMNIGRAPH_TOKEN} resolves:
+Then export these once per machine, before launching the agent:
   export OMNIGRAPH_TOKEN=$2
-(a bridge serves exactly one graph and no tool takes a graph argument — that is why
-reading the global-scope Preferences in \`memory\` needs the second server.)
+  export OMNIGRAPH_NET=\$(python3 ../scripts/_omni_env.py | sed 's/.*network=\([^ ]*\).*/\1/')
+Unset, \${OMNIGRAPH_TOKEN} resolves to empty and memory silently does not work.
 JSON
 }
 
