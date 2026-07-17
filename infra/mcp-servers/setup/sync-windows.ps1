@@ -68,15 +68,34 @@ $work = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP ("ogsync-" + [g
 function Log($m) { Write-Host "[omnigraph-sync] $m" -ForegroundColor Cyan }
 function WriteText($path, $text) { [System.IO.File]::WriteAllText($path, $text) }
 
-# omnigraph CLI (URL-addressed); returns stdout as text
+# omnigraph CLI (URL-addressed); returns stdout as text.
+# A non-zero exit from a NATIVE command is not a PowerShell terminating error, so a
+# caller's try/catch never fires unless we check $LASTEXITCODE and throw. Swallowing
+# stderr to $null on top of that is how a FAILED pull still logged "pulled central main
+# -> local main" and returned rc=0 while local was untouched (2026-07-17). Fail loudly.
+# The omnigraph CLI writes its progress banner ("omnigraph load → … (served)") to
+# STDERR on success. This script runs with $ErrorActionPreference='Stop', under which
+# `2>&1` promotes that harmless banner to a TERMINATING error — so stderr must not be
+# merged while EAP is Stop. Capture it with EAP temporarily relaxed, then judge success
+# by $LASTEXITCODE only. (The old code used `2>$null` and never checked the exit code at
+# all, which is why a failed pull still logged "pulled central main -> local main" and
+# returned rc=0 while local was untouched.)
+function Invoke-Native([scriptblock]$Block, [string]$What) {
+  $eap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { $out = (& $Block 2>&1 | ForEach-Object { "$_" }) -join "`n" }
+  finally { $ErrorActionPreference = $eap }
+  if ($LASTEXITCODE -ne 0) { throw "$What failed (exit $LASTEXITCODE): $out" }
+  $out
+}
 function Og([string]$token, [string[]]$cliArgs) {
-  (& docker run --rm -i --network $NET -e "OMNIGRAPH_BEARER_TOKEN=$token" --entrypoint omnigraph $IMAGE @cliArgs 2>$null) -join "`n"
+  Invoke-Native { docker run --rm -i --network $NET -e "OMNIGRAPH_BEARER_TOKEN=$token" --entrypoint omnigraph $IMAGE @cliArgs } "omnigraph $($cliArgs -join ' ')"
 }
 # load a JSONL file into graph/branch via stdin (no bind mount)
 function OgLoad([string]$token, [string]$url, [string]$branch, [string]$mode, [string]$file, [string]$graph) {
   $b = if ($branch) { "--branch $branch " } else { "" }
   $cmd = "cat > /tmp/d.jsonl; omnigraph load --server $url --graph $graph $b--data /tmp/d.jsonl --mode $mode --yes --json"
-  Get-Content -Raw -LiteralPath $file | & docker run --rm -i --network $NET -e "OMNIGRAPH_BEARER_TOKEN=$token" --entrypoint sh $IMAGE -c $cmd
+  Invoke-Native { Get-Content -Raw -LiteralPath $file | docker run --rm -i --network $NET -e "OMNIGRAPH_BEARER_TOKEN=$token" --entrypoint sh $IMAGE -c $cmd } "load --mode $mode --graph $graph"
 }
 function Export([string]$token, [string]$url, [string]$outFile, [string]$graph) {
   WriteText $outFile (Og $token @('export','--server',$url,'--graph',$graph))
@@ -122,13 +141,30 @@ function Sync-Graph([string]$Graph) {
     return 0
   }
 
-  # 2-3. push local -> central device branch -> native merge into main
+  # 2-3. push local -> central device branch -> native merge into main.
+  #
+  # Push only the DELTA, never the whole local export. The device branch is forked from
+  # central's main, so it already holds central's edges; edges have no @key, so a
+  # `load --mode merge` of every local edge APPENDS a second copy of each shared one and
+  # the branch-merge then carries the duplicates into main. That is exactly how central
+  # reached 2x edges on every project graph (2026-07-17). Nodes are @key(slug) and merge
+  # safely, so `pushset` keeps all nodes and only the edges central lacks.
+  $centralPre = Join-Path $work "central-pre-$Graph.jsonl"
+  Export $CENTRAL_TOKEN $CENTRAL_URL $centralPre $Graph
+  $push = Join-Path $work "push-$Graph.jsonl"
+  WriteText $push ((Get-Content -Raw -LiteralPath $localFile | & $PY $JQ pushset $centralPre) -join "`n")
+  $nEdge = @(Get-Content -LiteralPath $push | Where-Object { $_ -match '"edge"' }).Count
+  $nNode = @(Get-Content -LiteralPath $push | Where-Object { $_ -match '"type"' }).Count
+  Log "[$Graph] pushing delta: $nNode node(s), $nEdge new edge(s) (edges central already has are skipped)"
+
   Og $CENTRAL_TOKEN @('branch','create',$BRANCH,'--server',$CENTRAL_URL,'--graph',$Graph) | Out-Null
-  OgLoad $CENTRAL_TOKEN $CENTRAL_URL $BRANCH 'merge' $localFile $Graph | Out-Null
+  OgLoad $CENTRAL_TOKEN $CENTRAL_URL $BRANCH 'merge' $push $Graph | Out-Null
   Og $CENTRAL_TOKEN @('branch','merge',$BRANCH,'--into','main','--server',$CENTRAL_URL,'--graph',$Graph,'--yes') | Out-Null
   Log "[$Graph] merged $BRANCH -> main on central"
 
-  # 4. export central + verify NO duplicates before we trust it
+  # 4. export central + verify NO duplicates before we trust it.
+  # The merge can land after this read (the manifest advances asynchronously), so a
+  # "clean" here is not proof — re-verify at the end and treat that as authoritative.
   $central = Join-Path $work "central-$Graph.jsonl"; Export $CENTRAL_TOKEN $CENTRAL_URL $central $Graph
   Log "[$Graph] central verify:"
   if ((Verify $central) -ne 0) { Log "[$Graph] !! central has DUPLICATES after merge — NOT overwriting local. Backup: $backup"; return 2 }

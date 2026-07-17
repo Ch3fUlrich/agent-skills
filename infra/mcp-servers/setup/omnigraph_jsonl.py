@@ -13,6 +13,7 @@ Record shapes (NDJSON):
 Usage:
   cat graph.jsonl | python3 omnigraph_jsonl.py dedup  > clean.jsonl
   cat graph.jsonl | python3 omnigraph_jsonl.py verify        # exit 1 if duplicates
+  cat local.jsonl | python3 omnigraph_jsonl.py pushset central.jsonl > push.jsonl
 """
 import json
 import sys
@@ -51,6 +52,31 @@ def dedup(lines):
     return list(seen.values())
 
 
+def pushset(local_lines, central_lines):
+    """What is safe to merge-load from LOCAL onto a branch forked from CENTRAL's main.
+
+    Nodes: all of them — they are @key(slug), so a merge upserts and never duplicates.
+    Edges: ONLY those central does not already have. Edges have no @key, so merge-loading
+    an edge that already exists APPENDS a second copy. Pushing the full local export onto
+    a main-forked branch therefore duplicates every shared edge — which is exactly how
+    central ended up with 2x edges on 2026-07-17. Send the delta instead.
+    """
+    have = {rec_key(r) for _ln, r in load(central_lines) if "edge" in r}
+    out = []
+    for ln, rec in dedup_pairs(local_lines):
+        if "edge" in rec and rec_key(rec) in have:
+            continue
+        out.append(ln)
+    return out
+
+
+def dedup_pairs(lines):
+    seen = {}
+    for ln, rec in load(lines):
+        seen[rec_key(rec)] = (ln, rec)
+    return list(seen.values())
+
+
 def verify(lines):
     counts = {}
     for _ln, rec in load(lines):
@@ -70,6 +96,14 @@ def main():
     lines = sys.stdin.readlines()
     if cmd == "dedup":
         for ln in dedup(lines):
+            print(ln)
+        return
+    if cmd == "pushset":
+        if len(sys.argv) < 3:
+            sys.exit("usage: … | omnigraph_jsonl.py pushset <central-export.jsonl>")
+        with open(sys.argv[2], encoding="utf-8") as fh:
+            central = fh.readlines()
+        for ln in pushset(lines, central):
             print(ln)
         return
     n_nodes, d_nodes, n_edges, d_edges, dup_nodes, dup_edges = verify(lines)
