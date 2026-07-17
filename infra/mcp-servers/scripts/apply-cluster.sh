@@ -47,6 +47,23 @@ curl -s -X POST "http://127.0.0.1:8080/graphs/memory/export" \
   -H "Authorization: Bearer ${OMNIGRAPH_TOKEN}" -H 'content-type: application/json' -d '{}' -o "$BK"
 BEFORE=$(count); echo "  memory nodes before: $BEFORE"
 
+# `cluster apply` refuses while any non-main branch exists. The multi-branch sync
+# keeps persistent device/<host> branches, so merge each back into main (native,
+# edge-deduping — no data lost) and delete it first. The server must be UP for
+# branch ops, so do this BEFORE the stop below.
+echo "› reconciling non-main branches before apply…"
+ogcli() { docker run --rm --network "$NET" -e OMNIGRAPH_BEARER_TOKEN="$OMNIGRAPH_TOKEN" \
+  --entrypoint omnigraph "$IMAGE" "$@"; }
+for g in $(curl -s http://127.0.0.1:8080/graphs -H "Authorization: Bearer ${OMNIGRAPH_TOKEN}" \
+           | grep -o '"graph_id":"[^"]*"' | cut -d'"' -f4); do
+  for b in $(curl -s "http://127.0.0.1:8080/graphs/$g/branches" -H "Authorization: Bearer ${OMNIGRAPH_TOKEN}" \
+             | grep -o '"[^"]*"' | tr -d '"' | grep -vxE 'branches|main'); do
+    echo "  [$g] merge + delete branch '$b'"
+    ogcli branch merge  "$b" --into main --server http://omnigraph-server:8080 --graph "$g" --yes >/dev/null 2>&1 || true
+    ogcli branch delete "$b"             --server http://omnigraph-server:8080 --graph "$g" --yes >/dev/null 2>&1 || true
+  done
+done
+
 # the running server holds the cluster state lock — stop it so apply can acquire it
 echo "› stopping omnigraph-server (releases the state lock)…"
 docker stop omnigraph-server >/dev/null

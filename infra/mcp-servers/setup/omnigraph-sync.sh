@@ -10,7 +10,8 @@
 #   4. export central main; VERIFY no node/edge duplicates (omnigraph_jsonl.py)
 #   5. if clean: dedup + load --mode OVERWRITE into local (local := clean central; no dup edges)
 #      if dirty: STOP — leave local untouched; the backup is your rollback
-#   6. VERIFY local; restore from backup if the pull corrupted it; optional device-branch delete
+#   6. VERIFY local; restore from backup if the pull corrupted it; KEEP the device branch
+#      (persistent per the multi-branch model; DELETE_DEVICE_BRANCH=1 to prune it)
 #
 # Overwrite (not merge) is used for the local pull because merge of nodes that
 # carry vector embeddings trips a Lance ingest bug on v0.8.1; overwrite is clean.
@@ -22,7 +23,8 @@
 #   DOCKER_NET(=host)          CLI-container network (Linux: host; see sync-windows.ps1 for Docker Desktop)
 #   BACKUP_DIR(=<here>/backups)
 #   DRY_RUN(=)                 set to 1 to only snapshot + verify BOTH sides, no writes
-#   KEEP_DEVICE_BRANCH(=)      set to 1 to keep device/<host> on central after merge
+#   DELETE_DEVICE_BRANCH(=)    set to 1 to prune device/<host> after merge. Default is
+#                              to KEEP it, so multiple devices' branches persist on central.
 #   PYTHON(=python3)
 set -euo pipefail
 
@@ -112,7 +114,11 @@ sync_graph() {
   # 6. verify local + optional branch cleanup
   og "$LOCAL_TOKEN" export --server local --graph "$GRAPH" > "$work/local.after.jsonl" 2>/dev/null
   log "[$GRAPH] post-sync verify:"; "$PY" "$JQ" verify < "$work/local.after.jsonl"
-  if [ -z "${KEEP_DEVICE_BRANCH:-}" ]; then
+  # Keep device/<host> by default so multiple machines' branches coexist on
+  # central (the multi-branch model). Set DELETE_DEVICE_BRANCH=1 to prune it.
+  # apply-cluster.sh merges+drops any leftover branches before a schema apply,
+  # so a persistent branch never blocks `cluster apply`.
+  if [ -n "${DELETE_DEVICE_BRANCH:-}" ]; then
     og "$CENTRAL_TOKEN" branch delete "$BRANCH" --server central --graph "$GRAPH" --yes >/dev/null 2>&1 || true
   fi
   log "[$GRAPH] sync complete. Local backup: $backup"
