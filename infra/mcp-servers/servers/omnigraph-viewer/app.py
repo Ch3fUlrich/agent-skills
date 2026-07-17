@@ -20,6 +20,7 @@ import os
 
 import requests
 from flask import Flask, Response, jsonify, request
+from urllib.parse import quote
 
 OMNIGRAPH_URL = os.environ.get("OMNIGRAPH_URL", "http://omnigraph-server:8080").rstrip("/")
 OMNIGRAPH_TOKEN = os.environ.get("OMNIGRAPH_TOKEN", "")
@@ -170,6 +171,53 @@ def api_graphs():
     return jsonify({"graphs": _graphs(), "current": GRAPH_ID})
 
 
+def _branch_op(method, graph, path, payload=None):
+    """Proxy a branch write to the omnigraph server. Slashed names (device/<host>)
+    need body-based merge (source/target) and a %2F-encoded delete path — the plain
+    path-based merge/delete 404 on the slash."""
+    r = requests.request(method, f"{OMNIGRAPH_URL}/graphs/{graph}/branches{path}",
+                         json=payload, headers=_headers, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json() if r.text.strip() else {"ok": True}
+
+
+@app.post("/api/branch/create")
+def api_branch_create():
+    d = request.get_json(force=True, silent=True) or {}
+    graph, name = d.get("graph"), (d.get("name") or "").strip()
+    if not graph or not name:
+        return jsonify({"error": "graph and name are required"}), 400
+    try:
+        return jsonify(_branch_op("POST", graph, "", {"name": name, "from": d.get("from") or "main"}))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.post("/api/branch/merge")
+def api_branch_merge():
+    d = request.get_json(force=True, silent=True) or {}
+    graph, name = d.get("graph"), (d.get("name") or "").strip()
+    if not graph or not name or name == "main":
+        return jsonify({"error": "graph and a non-main branch name are required"}), 400
+    try:
+        return jsonify(_branch_op("POST", graph, "/merge",
+                                  {"source": name, "target": d.get("into") or "main"}))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.post("/api/branch/delete")
+def api_branch_delete():
+    d = request.get_json(force=True, silent=True) or {}
+    graph, name = d.get("graph"), (d.get("name") or "").strip()
+    if not graph or not name or name == "main":
+        return jsonify({"error": "graph and a non-main branch name are required"}), 400
+    try:
+        return jsonify(_branch_op("DELETE", graph, "/" + quote(name, safe=""), None))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 502
+
+
 @app.get("/")
 def index():
     return Response(PAGE.replace("__GRAPH__", html.escape(GRAPH_ID)), mimetype="text/html")
@@ -258,6 +306,9 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
   <span class="sp"></span>
   <label class="muted" style="color:var(--mut)">branch</label>
   <select id="branch" title="branch switching applies to a single graph"></select>
+  <button id="b-new" title="create a new branch forked from the selected one">+branch</button>
+  <button id="b-merge" title="merge the selected branch into main (native, edge-deduped)">merge→main</button>
+  <button id="b-del" title="delete the selected branch">del</button>
 </header>
 <div class="tabs" id="tabs"></div>
 <main>
@@ -327,6 +378,37 @@ async function loadBranches(){
   sel.innerHTML=b.map(x=>`<option ${x===S.branch?"selected":""}>${esc(x)}</option>`).join("");
   sel.disabled=S.graphs.length>1;                       // branches are per-graph
   sel.title=S.graphs.length>1?"select a single graph to switch branch":"branch";
+  const one=S.graphs.length===1;
+  ["b-new","b-merge","b-del"].forEach(id=>{const el=$("#"+id);if(el)el.disabled=!one;});
+}
+/* ---- branch write ops (create/merge/delete) — need exactly one graph ---- */
+function curGraph(){
+  if(S.graphs.length!==1){alert("select a single graph (chip) to manage its branches");return null;}
+  return S.graphs[0];
+}
+async function branchOp(action,body){
+  const r=await fetch("/api/branch/"+action,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.error){alert("branch "+action+" failed: "+(j.error||r.status));return false;}
+  return true;
+}
+async function doBranchNew(){
+  const g=curGraph();if(!g)return;
+  const name=(prompt("new branch name (forked from '"+S.branch+"')","device/host")||"").trim();
+  if(!name)return;
+  if(await branchOp("create",{graph:g,name,from:S.branch})){S.branch=name;await loadBranches();load();}
+}
+async function doBranchMerge(){
+  const g=curGraph();if(!g)return; const b=S.branch;
+  if(b==="main"){alert("'main' is the merge target, not a source");return;}
+  if(!confirm("merge '"+b+"' into main on "+g+"?"))return;
+  if(await branchOp("merge",{graph:g,name:b,into:"main"})){alert("merged '"+b+"' → main");load();}
+}
+async function doBranchDel(){
+  const g=curGraph();if(!g)return; const b=S.branch;
+  if(b==="main"){alert("cannot delete 'main'");return;}
+  if(!confirm("delete branch '"+b+"' on "+g+"? unmerged changes are lost"))return;
+  if(await branchOp("delete",{graph:g,name:b})){S.branch="main";await loadBranches();load();}
 }
 /* ---- chips: click = switch fast · ctrl/cmd/shift-click = add/remove (compare graphs) ---- */
 function buildTabs(){
@@ -614,6 +696,7 @@ $("#v-graph").onclick=()=>{S.view="graph";render();};
 $("#v-table").onclick=()=>{S.view="table";render();};
 $("#search").oninput=e=>{S.q=e.target.value;S.removed=new Set();if(S.view==="graph")applyHighlight();else renderTable();};
 $("#branch").onchange=e=>{S.branch=e.target.value;resetLayout();load();};
+$("#b-new").onclick=doBranchNew;$("#b-merge").onclick=doBranchMerge;$("#b-del").onclick=doBranchDel;
 $("#focusclear").onclick=()=>setFocus(null);
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&S.focus)setFocus(null);});
 window.addEventListener("resize",()=>{if(S.view==="graph")renderGraph();});
