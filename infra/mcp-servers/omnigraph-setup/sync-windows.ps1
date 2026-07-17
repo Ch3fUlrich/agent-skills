@@ -137,7 +137,15 @@ function Sync-Graph([string]$Graph) {
   Export $LOCAL_TOKEN $LOCAL_URL $backup $Graph
   $localFile = Join-Path $work "local-$Graph.jsonl"; Copy-Item $backup $localFile -Force
   Log "[$Graph] backed up local main -> $backup"
-  Log "[$Graph] local pre-sync verify:"; Verify $localFile | Out-Null
+  # HONOUR the verdict, don't just print it. `verify` exits non-zero on duplicates AND on
+  # NO DATA — an empty export is what a failed fetch looks like (dead server, bad token,
+  # wrong graph), and calling that "clean" is how a wiped stack reads as healthy. Piping it
+  # to Out-Null is the false-success class this stack keeps producing.
+  Log "[$Graph] local pre-sync verify:"
+  if ((Verify $localFile) -ne 0) {
+    Log "[$Graph] !! local is dirty or empty — refusing to sync this graph. Backup: $backup"
+    return 1
+  }
 
   if ($DryRunEff) {
     $c = Join-Path $work "central-$Graph.jsonl"; Export $CENTRAL_TOKEN $CENTRAL_URL $c $Graph
@@ -210,7 +218,11 @@ function Sync-Graph([string]$Graph) {
 
   # 6. verify local + optional branch cleanup
   $after = Join-Path $work "local-$Graph.after.jsonl"; Export $LOCAL_TOKEN $LOCAL_URL $after $Graph
-  Log "[$Graph] local post-sync verify:"; Verify $after | Out-Null
+  Log "[$Graph] local post-sync verify:"
+  if ((Verify $after) -ne 0) {
+    Log "[$Graph] !! local is dirty or empty AFTER the sync — this is the state the pull left. Backup: $backup"
+    return 4
+  }
   # No device branch is created any more (see the push above), so there is nothing to clean
   # up. Sweep any left over by an older run, so they can't block `schema apply`.
   if (-not $KeepBranchEff) {

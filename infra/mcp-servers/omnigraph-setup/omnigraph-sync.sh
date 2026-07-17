@@ -104,15 +104,25 @@ sync_graph() {
   fi
   log "[$G] backed up local -> $backup"
 
-  # 1. verify local
-  log "[$G] local verify:"; "$PY" "$JQ" verify < "$backup" || true
+  # 1. verify local — and HONOUR the verdict. `verify` exits non-zero on duplicates and on
+  #    NO DATA (an empty body is what a failed fetch looks like: dead server, bad token,
+  #    wrong graph — reporting "clean" for it is how a wiped stack read as healthy).
+  #    Swallowing this with `|| true` is the exact false-success class this stack keeps
+  #    producing, so a bad side aborts the graph instead of syncing garbage over the other.
+  log "[$G] local verify:"
+  if ! "$PY" "$JQ" verify < "$backup"; then
+    log "[$G] local is dirty or empty — refusing to sync this graph. Backup: $backup"; return 1
+  fi
 
   # 2. central export (needed for the delta, and for the dry-run report)
   central="$work/central-$G.jsonl"
   if ! api "$CENTRAL_TOKEN" "$CENTRAL_URL" "$G" export > "$central"; then
     log "[$G] central export failed"; return 1
   fi
-  log "[$G] central verify:"; "$PY" "$JQ" verify < "$central" || true
+  log "[$G] central verify:"
+  if ! "$PY" "$JQ" verify < "$central"; then
+    log "[$G] central is dirty or empty — NOT pushing into it, NOT pulling from it."; return 2
+  fi
 
   if [ -n "${DRY_RUN:-}" ]; then
     "$PY" "$JQ" pushset "$central" < "$backup" > "$work/push-$G.jsonl" || return 1
