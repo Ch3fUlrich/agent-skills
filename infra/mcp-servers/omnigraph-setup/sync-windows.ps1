@@ -37,6 +37,25 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# --- UTF-8 everywhere, before ANY data moves -------------------------------------------
+# Omnigraph exports are UTF-8 (JSON always is), but Windows does not default to it and
+# every hand-off below is a chance to mangle text:
+#   * output of a native command (docker export) is decoded with [Console]::OutputEncoding,
+#     which defaults to the OEM code page (cp850). Decoding UTF-8 bytes as cp850 and then
+#     writing them back out as UTF-8 is LOSSY — that is real corruption, not a bad compare.
+#   * text piped INTO a native command (docker load, python) is encoded with $OutputEncoding
+#     — UTF-8 on pwsh 7 but ASCII on Windows PowerShell 5.1, which turns "→" into "?".
+#   * Get-Content/Set-Content without -Encoding follow the host default (ANSI on 5.1).
+# The sibling bug on the python side made identical nodes look "changed" and re-pushed 52
+# of them every run (see _force_utf8_stdio in omnigraph_jsonl.py); these would have been
+# worse, because they damage the payload rather than just the comparison.
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = $utf8NoBom
+try { [Console]::OutputEncoding = $utf8NoBom; [Console]::InputEncoding = $utf8NoBom }
+catch { Write-Warning "could not set console encoding to UTF-8: $_" }  # non-console host
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'   # Get-Content/Set-Content/Out-File
+$env:PYTHONIOENCODING = 'utf-8'                    # belt and braces for child pythons
+
 # --- load omnigraph-setup/.env ---
 $envFile = Join-Path $here '.env'
 if (Test-Path $envFile) {
@@ -71,7 +90,12 @@ New-Item -ItemType Directory -Force -Path $BACKUP_DIR | Out-Null
 $work = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP ("ogsync-" + [guid]::NewGuid().ToString('N')))).FullName
 
 function Log($m) { Write-Host "[omnigraph-sync] $m" -ForegroundColor Cyan }
-function WriteText($path, $text) { [System.IO.File]::WriteAllText($path, $text) }
+# UTF-8 **without** a BOM, explicitly: WriteAllText's default is BOM-less UTF-8, but that
+# is a .NET default worth pinning — a BOM would ride along as bytes on the first JSON line
+# and the omnigraph loader would reject it.
+function WriteText($path, $text) {
+  [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+}
 
 # omnigraph CLI (URL-addressed); returns stdout as text.
 # A non-zero exit from a NATIVE command is not a PowerShell terminating error, so a
@@ -100,12 +124,12 @@ function Og([string]$token, [string[]]$cliArgs) {
 function OgLoad([string]$token, [string]$url, [string]$branch, [string]$mode, [string]$file, [string]$graph) {
   $b = if ($branch) { "--branch $branch " } else { "" }
   $cmd = "cat > /tmp/d.jsonl; omnigraph load --server $url --graph $graph $b--data /tmp/d.jsonl --mode $mode --yes --json"
-  Invoke-Native { Get-Content -Raw -LiteralPath $file | docker run --rm -i --network $NET -e "OMNIGRAPH_BEARER_TOKEN=$token" --entrypoint sh $IMAGE -c $cmd } "load --mode $mode --graph $graph"
+  Invoke-Native { Get-Content -Raw -Encoding utf8 -LiteralPath $file | docker run --rm -i --network $NET -e "OMNIGRAPH_BEARER_TOKEN=$token" --entrypoint sh $IMAGE -c $cmd } "load --mode $mode --graph $graph"
 }
 function Export([string]$token, [string]$url, [string]$outFile, [string]$graph) {
   WriteText $outFile (Og $token @('export','--server',$url,'--graph',$graph))
 }
-function Verify([string]$file) { Get-Content -Raw -LiteralPath $file | & $PY $JQ verify; return $LASTEXITCODE }
+function Verify([string]$file) { Get-Content -Raw -Encoding utf8 -LiteralPath $file | & $PY $JQ verify; return $LASTEXITCODE }
 
 # Which graphs to sync (mirrors omnigraph-sync.sh discovery). Returns a string[].
 function Get-GraphList {
@@ -149,8 +173,18 @@ function Sync-Graph([string]$Graph) {
 
   if ($DryRunEff) {
     $c = Join-Path $work "central-$Graph.jsonl"; Export $CENTRAL_TOKEN $CENTRAL_URL $c $Graph
-    Log "[$Graph] central verify:"; Verify $c | Out-Null
-    Log "[$Graph] DRY_RUN — no writes. Backup: $backup"
+    # HONOUR the verdict. `Verify … | Out-Null` discarded it, so a dirty or EMPTY central
+    # still printed a reassuring dry-run line — the same false-success that let a wiped
+    # stack read as healthy. A dry run exists to be believed; make it earn that.
+    Log "[$Graph] central verify:"
+    if ((Verify $c) -ne 0) { Log "[$Graph] !! central is dirty or empty — dry run inconclusive."; return 2 }
+    # Report what a real run WOULD push. Without this the dry run cannot answer the only
+    # question worth asking of it, and the bash path's counts had no Windows counterpart.
+    $d = @((Get-Content -Raw -Encoding utf8 -LiteralPath $localFile | & $PY $JQ pushset $c) `
+           | Where-Object { $_.Trim() })
+    $dn = @($d | Where-Object { $_ -match '"type"' }).Count
+    $de = @($d | Where-Object { $_ -match '"edge"' }).Count
+    Log "[$Graph] DRY_RUN — would push $dn node(s), $de edge(s). No writes. Backup: $backup"
     return 0
   }
 
@@ -165,8 +199,8 @@ function Sync-Graph([string]$Graph) {
   $centralPre = Join-Path $work "central-pre-$Graph.jsonl"
   Export $CENTRAL_TOKEN $CENTRAL_URL $centralPre $Graph
   $push = Join-Path $work "push-$Graph.jsonl"
-  WriteText $push ((Get-Content -Raw -LiteralPath $localFile | & $PY $JQ pushset $centralPre) -join "`n")
-  $pushLines = @(Get-Content -LiteralPath $push | Where-Object { $_.Trim() })
+  WriteText $push ((Get-Content -Raw -Encoding utf8 -LiteralPath $localFile | & $PY $JQ pushset $centralPre) -join "`n")
+  $pushLines = @(Get-Content -Encoding utf8 -LiteralPath $push | Where-Object { $_.Trim() })
   $nEdge = @($pushLines | Where-Object { $_ -match '"edge"' }).Count
   $nNode = @($pushLines | Where-Object { $_ -match '"type"' }).Count
 

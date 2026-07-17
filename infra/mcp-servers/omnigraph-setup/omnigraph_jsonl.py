@@ -121,7 +121,30 @@ def verify(lines):
     return n_nodes, d_nodes, n_edges, d_edges, dup_nodes, dup_edges
 
 
+def _force_utf8_stdio():
+    """Read and write UTF-8 regardless of the host locale.
+
+    Omnigraph exports are UTF-8 (JSON always is). Python, however, decodes stdin with the
+    *locale* encoding — `cp1252` on this Windows box — while the central export is opened
+    with `encoding="utf-8"` a few lines up. So the SAME text arrived as two unequal
+    strings, and `pushset` dutifully reported every node containing an em dash, an arrow
+    or an umlaut as "changed" — 52 of basic-analysis's 135 nodes, on every single run,
+    forever. Nothing was corrupted (a cp1252 decode/encode round-trip is byte-lossless),
+    but each run re-pushed those nodes to central for no reason.
+
+    Fixing this in the script rather than by exporting PYTHONIOENCODING at each call site
+    keeps the guarantee with the code that needs it: this file is also run by hand, by
+    systemd, and by the Task Scheduler, and only one of those would have carried the env.
+    """
+    for stream, extra in ((sys.stdin, {}), (sys.stdout, {"newline": "\n"}), (sys.stderr, {})):
+        try:
+            stream.reconfigure(encoding="utf-8", **extra)
+        except (AttributeError, ValueError):
+            pass  # already detached/redirected — the caller's encoding stands
+
+
 def main():
+    _force_utf8_stdio()
     argv = [a for a in sys.argv[1:] if a != "--allow-empty"]
     allow_empty = "--allow-empty" in sys.argv
     cmd = argv[0] if argv else "verify"
