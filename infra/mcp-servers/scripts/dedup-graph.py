@@ -340,6 +340,7 @@ def main():
         time.sleep(2)
 
     # 4. Reload every graph's cleaned data into the fresh (empty) store.
+    short = []
     for g, p in plan.items():
         # GUARD: never overwrite a non-empty graph (that is what silently accumulated
         # nodes on v0.8.1 when a wipe failed). Abort unless the fresh graph is empty.
@@ -363,8 +364,16 @@ def main():
         if r.returncode != 0:
             sys.exit(f"[dedup] {g} overwrite failed; restore from {a.backup_dir}. stderr:\n{r.stderr.decode()[-400:]}")
         got, want = node_count(a, token, g), len(p["merged"])
-        print(f"[dedup]   {g}: {got} nodes" + ("" if got == want else f"  !! expected {want} — inspect drift"))
-    print("[dedup] done — all graphs deduped + reloaded.")
+        print(f"[dedup]   {g}: {got} nodes" + ("" if got == want else f"  !! expected {want}"))
+        if got != want:
+            short.append(f"{g} (got {got}, expected {want})")
+    # NEVER print "done" over a restore that did not land. Reporting success while the
+    # graphs are short/empty is precisely how the 2026-07-17 wipe went unnoticed.
+    if short:
+        sys.exit(f"[dedup] FAILED: these graphs did not come back at their expected counts: "
+                 f"{', '.join(short)}. The stack is up; restore them from {a.backup_dir} "
+                 f"(pre-dedup-<graph>-{ts}.jsonl) before trusting this store.")
+    print("[dedup] done — all graphs deduped + reloaded (counts verified).")
 
 
 if __name__ == "__main__":
