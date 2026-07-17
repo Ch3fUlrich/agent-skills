@@ -147,6 +147,10 @@ OPNsense/Caddy reverse proxy: `omnigraph.ohje.ooguy.com` (API, bearer token),
 `omnigraph-ui.ohje.ooguy.com` (viewer, Authelia), `omnigraph-minio.ohje.ooguy.com`
 (MinIO console, Authelia).
 
+### Optional Local AI Stack (`infra/local-ai/`)
+
+An optional, self-hosted LLM inference and UI stack designed to complement your coding agents. This dockerized environment provides local model execution via Ollama (including a sandboxed `ollama-agent`), API proxying and routing via LiteLLM, a chat interface via Open WebUI, and a browser-based autonomous SWE agent platform via OpenHands. See [`infra/local-ai/README.md`](infra/local-ai/README.md) for setup instructions.
+
 ### Remote access & multi-agent (`infra/remote-access/`)
 
 - **[Herdr](infra/remote-access/herdr/)** — recommended agent multiplexer: run and
