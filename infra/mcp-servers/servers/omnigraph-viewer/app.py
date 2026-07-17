@@ -329,30 +329,64 @@ const CPAL=["#f6c453","#6ea8fe","#e5675f","#57c98a","#b98cf0","#4bc4d6","#f78fb3
 const $=s=>document.querySelector(s);
 const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
-/* ---- clustering: one cluster per GRAPH when several are shown (graph == project) ---- */
-function clusterOf(n){ return S.graphs.length>1 ? n.graph : (n.type==="Project"?n.id:(n.projects&&n.projects.length?n.projects[0]:(n.global?"__global":"__misc"))); }
+/* ---- clustering ----------------------------------------------------------------
+   Several graphs shown -> one cluster per graph (graph == project).
+   A single graph -> detect relational COMMUNITIES so the graph does not collapse
+   into a hub-and-spoke star: ignore the Project's hub edges, take the connected
+   groups of the remaining (relational) edges, and give each its own anchored,
+   hulled cluster. The Project node + the unclustered spokes stay in the centre. */
+function computeCommunities(vis,links){
+  const type={},adj={},byId={};vis.forEach(n=>{type[n.id]=n.type;adj[n.id]=[];byId[n.id]=n;});
+  for(const e of links){                       // relational adjacency only (skip hub edges)
+    if(type[e.from]==="Project"||type[e.to]==="Project")continue;
+    if(adj[e.from]&&adj[e.to]){adj[e.from].push(e.to);adj[e.to].push(e.from);}}
+  const comm={},name={},seen=new Set();let k=0;
+  for(const n of vis){
+    if(type[n.id]==="Project"){comm[n.id]="__hub";continue;}
+    if(seen.has(n.id))continue;
+    const st=[n.id],mem=[];seen.add(n.id);      // connected component over relational edges
+    while(st.length){const u=st.pop();mem.push(u);for(const v of adj[u])if(!seen.has(v)){seen.add(v);st.push(v);}}
+    if(mem.length>=3){const cid="grp"+(k++);
+      const rep=mem.map(m=>byId[m]).sort((a,b)=>(b.type==="Component")-(a.type==="Component")||(b.label||"").length-(a.label||"").length)[0];
+      name[cid]=((rep&&(rep.label||rep.slug))||"").slice(0,18);
+      mem.forEach(m=>comm[m]=cid);
+    } else mem.forEach(m=>comm[m]="•");          // too small to be a cluster
+  }
+  vis.forEach(n=>{if(!(n.id in comm))comm[n.id]="•";});
+  S.commName=name;return comm;
+}
+function clusterOf(n){
+  if(S.graphs.length>1)return n.graph;
+  if(n.type==="Project")return "__hub";
+  const c=S.comm&&S.comm[n.id];                 // relational community if this node is in one…
+  return (c&&c!=="•")?c:("t:"+n.type);          // …otherwise group the spoke by its node type
+}
 function clusterName(cid){
   if(S.graphs.length>1)return cid;
-  if(cid==="__global")return "global";
-  if(cid==="__misc")return "unassigned";
-  const p=(S.data.projects||[]).find(x=>x.id===cid);return p?p.name:cid;
+  if(cid==="__hub")return "";
+  if(cid.slice(0,2)==="t:")return cid.slice(2)+"s";       // "Decisions", "Rules", "Components", …
+  return (S.commName&&S.commName[cid])||"";
 }
-// stable colour per graph, so a graph keeps its colour across selections
 function graphColor(g){const all=S.allGraphs||[g];const i=all.indexOf(g);return CPAL[(i<0?0:i)%CPAL.length];}
 function clusterColor(cid){
   if(S.graphs.length>1)return graphColor(cid);
-  const order=(S.data&&S.data.projects?S.data.projects.map(p=>p.id):[]).concat("__global","__misc");
-  const i=order.indexOf(cid);return CPAL[(i<0?0:i)%CPAL.length];
+  if(cid==="__hub")return "#9aa0a6";                       // neutral grey for the hub
+  if(cid.slice(0,2)==="t:")return COLOR(cid.slice(2))||"#9aa0a6";   // type cluster = the type's colour
+  const ring=(S.cl&&S.cl.ring)||[];const i=ring.indexOf(cid);
+  return CPAL[(i<0?0:i)%CPAL.length];                      // relational community = palette colour
 }
 function buildClusters(vis,W,H){
-  const ids=[...new Set(vis.map(clusterOf))].sort();
-  const info={},n=ids.length,R=Math.min(W,H)*0.34;
-  ids.forEach((cid,i)=>{
-    const a=n>1?(-Math.PI/2+i*2*Math.PI/n):0;
-    info[cid]={color:clusterColor(cid),name:clusterName(cid),
-      anchor:n>1?{x:W/2+R*Math.cos(a),y:H/2+R*Math.sin(a)}:{x:W/2,y:H/2}};
+  const all=[...new Set(vis.map(clusterOf))];
+  const ring=all.filter(c=>c!=="__hub"&&c!=="•").sort();  // real communities sit on a ring
+  S.cl={ring};                                            // set early so clusterColor can index ring
+  const info={},n=ring.length,R=Math.min(W,H)*0.46;
+  all.forEach(cid=>{
+    let anchor={x:W/2,y:H/2};                              // hub + unclustered gather at centre
+    if(cid!=="__hub"&&cid!=="•"){const i=ring.indexOf(cid),a=-Math.PI/2+i*2*Math.PI/Math.max(n,1);
+      anchor={x:W/2+R*Math.cos(a),y:H/2+R*Math.sin(a)};}
+    info[cid]={color:clusterColor(cid),name:clusterName(cid),anchor};
   });
-  return {ids,info,multi:n>1};
+  return {ids:all,ring,info,multi:n>=1};                   // anchored layout whenever a community exists
 }
 
 const qg=()=>"graph="+encodeURIComponent(S.graphs.join(","));
@@ -508,6 +542,9 @@ function renderGraph(){
   const vis=visibleNodes(),ids=new Set(vis.map(n=>n.id));
   const links=(S.data.edges||[]).filter(e=>ids.has(e.from)&&ids.has(e.to));
   S.curVis=vis;S.curLinks=links;
+  S.type={};vis.forEach(n=>S.type[n.id]=n.type);          // id -> type (for hub-edge weakening)
+  S.comm=S.graphs.length>1?null:computeCommunities(vis,links);
+  S.userMoved=0;                                          // fresh layout -> auto-frame is back on
   if(S.focus&&!ids.has(S.focus)){S.focus=null;S.near=null;$("#focusbar").style.display="none";}
   S.cl=buildClusters(vis,W,H);
   const prev=S.pos||{};S.pos={};
@@ -547,13 +584,13 @@ function renderGraph(){
   });
   S.els={linkEls,nodeEls};
 
-  svg.onwheel=ev=>{ev.preventDefault();const sp=svgPt(ev),g=screenToGraph(sp.x,sp.y);
+  svg.onwheel=ev=>{ev.preventDefault();S.userMoved=1;const sp=svgPt(ev),g=screenToGraph(sp.x,sp.y);
     const f=ev.deltaY<0?1.1:1/1.1;S.vp.k=Math.max(.2,Math.min(4,S.vp.k*f));
     S.vp.tx=sp.x-g.x*S.vp.k;S.vp.ty=sp.y-g.y*S.vp.k;vpApply();};
   svg.onmousedown=ev=>{if(ev.target.closest(".node")||ev.target.classList.contains("hit"))return;
     ev.preventDefault();svg.classList.add("panning");
     const s={x:ev.clientX,y:ev.clientY,tx:S.vp.tx,ty:S.vp.ty};let moved=false;
-    const mv=e2=>{if(Math.hypot(e2.clientX-s.x,e2.clientY-s.y)>4)moved=true;
+    const mv=e2=>{if(Math.hypot(e2.clientX-s.x,e2.clientY-s.y)>4){moved=true;S.userMoved=1;}
       S.vp.tx=s.tx+(e2.clientX-s.x);S.vp.ty=s.ty+(e2.clientY-s.y);vpApply();};
     const up=()=>{svg.classList.remove("panning");document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);
       if(!moved&&S.focus)setFocus(null);};        // click empty space = clear focus
@@ -579,7 +616,11 @@ function renderGraph(){
     // focused node's own edges pull, the rest go slack.
     for(const e of links){const pa=P[e.from],pb=P[e.to];if(!pa||!pb)continue;
       const active=!f||e.from===f||e.to===f;
-      let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,fr=(d-(f?85:LINK))*(active?0.03:0.002)*al;
+      // hub edges (to/from the Project) are long + slack so spokes fan out instead of
+      // collapsing into one ball; relational edges are short + tight so communities clump.
+      const hub=S.type[e.from]==="Project"||S.type[e.to]==="Project";
+      const rest=f?85:(hub?205:LINK),str=active?(hub?0.006:0.04):0.002;
+      let dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy)||1,fr=(d-rest)*str*al;
       pa.vx+=dx/d*fr;pa.vy+=dy/d*fr;pb.vx-=dx/d*fr;pb.vy-=dy/d*fr;}
     // gravity toward cluster/centre (or the focus ring), then integrate: damp + clamp
     for(const n of vis){const p=P[n.id];if(n._drag){p.vx=p.vy=0;continue;}
@@ -589,8 +630,11 @@ function renderGraph(){
         else{let dx=p.x-W/2,dy=p.y-H/2,d=Math.hypot(dx,dy)||1; // unrelated: pushed to a ring
           const pull=(FAR-d)*0.02*al;p.vx+=dx/d*pull;p.vy+=dy/d*pull;}
       }else{
-        const a=S.cl.multi?S.cl.info[clusterOf(n)].anchor:{x:W/2,y:H/2};
-        p.vx+=(a.x-p.x)*0.018*al;p.vy+=(a.y-p.y)*0.018*al;
+        const cid=clusterOf(n),a=S.cl.info[cid].anchor;
+        // Project pinned firmly to centre; real communities pulled to their ring
+        // anchor; unclustered spokes only gently centred so they fan out round the hub.
+        const gk=n.type==="Project"?0.05:(cid==="•"?0.006:0.05);
+        p.vx+=(a.x-p.x)*gk*al;p.vy+=(a.y-p.y)*gk*al;
       }
       p.vx*=VDECAY;p.vy*=VDECAY;
       if(p.vx>VMAX)p.vx=VMAX;else if(p.vx<-VMAX)p.vx=-VMAX;
@@ -604,24 +648,28 @@ function renderGraph(){
         if(!vis[i]._drag){a.x-=ux*push;a.y-=uy*push;}
         if(!vis[j]._drag){b.x+=ux*push;b.y+=uy*push;}}}
     paint();
+    // smooth "camera": ease the viewport toward framing the whole graph every tick,
+    // so it settles into view gradually instead of snapping/zooming at the end.
+    // Disabled once the user zooms/pans (S.userMoved) and in focus mode.
+    if(!f&&!S.userMoved){const t=fitTarget(W,H);
+      S.vp.k+=(t.k-S.vp.k)*0.10;S.vp.tx+=(t.tx-S.vp.tx)*0.10;S.vp.ty+=(t.ty-S.vp.ty)*0.10;vpApply();}
     S.alpha*=(1-COOL);
     if(S.alpha>AMIN&&++S.ticks<MAXT)S.sim=requestAnimationFrame(S.tickFn);
-    else{S.sim=null;                                          // settled — frame it once, if untouched
-      if(!f&&S.vp.k===1&&S.vp.tx===0&&S.vp.ty===0)fitView();}
+    else S.sim=null;
   };
   S.ticks=0;S.alpha=1;S.sim=requestAnimationFrame(S.tickFn);
 }
-// Frame the whole settled graph in the viewport (only auto-runs while the view is
-// still at its default — once the user zooms/pans, we never override them).
-function fitView(){
-  const P=S.pos;if(!P)return;const svg=$("#svg"),W=svg.clientWidth||800,H=svg.clientHeight||600;
+// Target viewport that frames the whole graph with padding (does NOT apply it —
+// the sim eases toward this each tick for a smooth camera, no end-of-sim jump).
+function fitTarget(W,H){
+  const P=S.pos,def={k:S.vp.k,tx:S.vp.tx,ty:S.vp.ty};if(!P)return def;
   let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
   for(const n of (S.curVis||[])){const p=P[n.id];if(!p)continue;
     mnx=Math.min(mnx,p.x);mny=Math.min(mny,p.y);mxx=Math.max(mxx,p.x);mxy=Math.max(mxy,p.y);}
-  if(mxx<mnx)return;
+  if(mxx<mnx)return def;
   const gw=(mxx-mnx)||1,gh=(mxy-mny)||1,pad=70;
   const k=Math.max(.2,Math.min(1.6,Math.min((W-2*pad)/gw,(H-2*pad)/gh)));
-  S.vp.k=k;S.vp.tx=W/2-(mnx+mxx)/2*k;S.vp.ty=H/2-(mny+mxy)/2*k;vpApply();
+  return {k,tx:W/2-(mnx+mxx)/2*k,ty:H/2-(mny+mxy)/2*k};
 }
 function paint(){
   if(!S.els)return;const P=S.pos;
