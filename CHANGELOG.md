@@ -5,6 +5,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — one-command sync setup (2026-07-17)
+
+`omnigraph-setup/setup-sync.ps1` (Windows) and `omnigraph-setup/setup-sync.sh`
+(Linux/macOS/WSL) take a host from "the stack is running" to "memory syncs every 5 minutes":
+they read `OMNIGRAPH_TOKEN` from `.env.shared`, detect `DOCKER_NET` from the **running**
+`omnigraph-server` (never a config file — it differs per host and a wrong value fails
+silently), write `omnigraph-setup/.env`, and register a Scheduled Task / systemd `--user`
+timer. `--interval`, `--show`, `--no-schedule`, `-Unregister`.
+
+Two properties worth keeping when editing them:
+
+- **A dry run gates the schedule.** Nothing is scheduled unless a full DRY_RUN sync passes,
+  so a broken setup fails at setup time rather than silently every 5 minutes forever.
+- **A pre-flight gates the write.** Both servers must answer `200` *before* `.env` is
+  touched, so a typo'd `--central-token` cannot replace a working config with a broken one.
+  (Found by testing exactly that: the first version wrote first and validated after.)
+  Same rule `pull_graph.py` learned: never destroy old state until its replacement works.
+
+Verified on Windows end-to-end: the registered task ran on its own trigger with
+`LastTaskResult=0`, and all five graphs stayed identical local↔central with no duplicates.
+
+### Fixed — the sync re-pushed 52 unchanged nodes on every run (2026-07-17)
+
+Every run reported nodes as "changed" that were byte-identical to central — 4 for
+agent-skills, 52 of basic-analysis's 135, 6, 13 — and re-pushed them forever.
+
+The count was exactly the number of records containing **non-ASCII bytes**. `pushset` read
+the local export from **stdin**, which Python decodes with the *locale* encoding (`cp1252`
+here), but read the central export via `open(…, encoding="utf-8")`. The same text became two
+unequal strings, so every node with an em dash, arrow or umlaut compared as changed. Nothing
+was ever corrupted — a cp1252 decode/encode round-trip is byte-lossless — but each run wrote
+to central for no reason. `omnigraph_jsonl.py` now forces UTF-8 stdio itself
+(`_force_utf8_stdio`) rather than relying on a `PYTHONIOENCODING` that only one of its three
+call sites would have carried. All five graphs now report a **0-node, 0-edge** delta.
+
+The same bug class was latent and **worse** in `sync-windows.ps1`, where it damages payloads
+rather than just comparisons: native-command output is decoded with `[Console]::OutputEncoding`
+(the OEM code page, cp850) and text piped *into* a native command is encoded with
+`$OutputEncoding` (ASCII on Windows PowerShell 5.1, which turns `→` into `?`). It now pins
+UTF-8 for all three hand-offs before any data moves. Its `-DryRun` also swallowed the central
+verify verdict (`| Out-Null`) and never computed the delta — both fixed, so a dry run can now
+be believed and reports what it would push.
+
+Regression tests (`test_omnigraph_jsonl.py`, 9/9) drive the CLI as a subprocess with **raw
+bytes** and a legacy child encoding; the previous `text=True` helper could not catch this,
+because it encoded and decoded with the same parent locale and the mismatch cancelled out.
+
 ### Fixed — the local↔central sync, which was corrupting central (2026-07-17)
 
 Running the sync **duplicated every edge on all four central project graphs** (agent-skills

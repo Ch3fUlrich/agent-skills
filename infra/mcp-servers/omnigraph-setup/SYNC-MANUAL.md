@@ -8,77 +8,115 @@ this way).
 
 ---
 
-## TL;DR
+## TL;DR — set it up in one command
+
+`setup-sync` derives what it can, writes `.env`, **proves it with a dry run, and only then**
+schedules anything. Run it from `infra/mcp-servers/omnigraph-setup/`:
 
 ```powershell
-# Windows client — one run, right now
-cd <repo>\infra\mcp-servers
-pwsh -NoProfile -File .\setup\sync-windows.ps1            # real run
-pwsh -NoProfile -File .\setup\sync-windows.ps1 -DryRun    # look, don't touch
+# Windows (pwsh 7)                     # Linux / macOS / WSL
+.\setup-sync.ps1                       # ./setup-sync.sh
 ```
+
+First time on a new machine you must supply central's bearer once — it is the one value
+that cannot be derived (see [Configuration](#configuration--omnigraph-setupenv)):
+
+```powershell
+.\setup-sync.ps1 -CentralUrl https://omnigraph.ohje.ooguy.com -CentralToken <bearer>
+```
+
+| You want | Windows | Linux/macOS |
+|---|---|---|
+| Set up + schedule every 5 min | `.\setup-sync.ps1` | `./setup-sync.sh` |
+| A different cadence | `.\setup-sync.ps1 -IntervalMinutes 15` | `./setup-sync.sh --interval 15` |
+| Config + dry run, no schedule | `.\setup-sync.ps1 -NoSchedule` | `./setup-sync.sh --no-schedule` |
+| See what it resolved, change nothing | `.\setup-sync.ps1 -Show` | `./setup-sync.sh --show` |
+| Stop syncing | `.\setup-sync.ps1 -Unregister` | `systemctl --user disable --now omnigraph-sync.timer` |
+| One sync right now | `.\sync-windows.ps1` | `./omnigraph-sync.sh` |
+| Look, don't touch | `.\sync-windows.ps1 -DryRun` | `DRY_RUN=1 ./omnigraph-sync.sh` |
 
 ```bash
 # check what docker actually has (never trust a doc over this)
-python3 scripts/_omni_env.py          # -> network=… bind=…/volume=…
+python3 ../scripts/_omni_env.py       # -> network=… bind=…/volume=…
 ```
 
 Exit code is the truth: **0 = synced**, non-zero = something failed and said so.
+
+**What it derives for you**, so the values cannot drift apart:
+
+| Value | Where it comes from |
+|---|---|
+| `LOCAL_TOKEN` | `OMNIGRAPH_TOKEN` in `infra/mcp-servers/.env.shared` — the token the local server was started with |
+| `DOCKER_NET` | `docker inspect omnigraph-server` — the **live** network, not a guess |
+| `LOCAL_URL` / `LOCAL_URL_CONTAINER` | the host-side and container-side views of the local server |
+| `DEVICE` | the hostname |
+| `CENTRAL_URL` / `CENTRAL_TOKEN` | **you**, once — then remembered |
+
+Re-running is safe: an existing value always beats a derived one, and nothing ever writes an
+empty over a non-empty. A pre-flight checks both servers answer `200` **before** your working
+`.env` is touched, so a typo'd token cannot cost you a working config.
 
 ---
 
 ## Scheduling (every 5 minutes)
 
+`setup-sync` does this for you — the sections below are what it sets up, for when you want
+to inspect or hand-edit it.
+
 ### Windows — Scheduled Task
 
-Not registered by default. Run this **once**, in an elevated PowerShell (adjust the path):
+`.\setup-sync.ps1` registers a task named **`Omnigraph Sync`** that runs
+`sync-windows.ps1` every 5 minutes.
 
 ```powershell
-$repo = 'C:\Users\mauls\Documents\Code\agent-skills'
-$act  = New-ScheduledTaskAction -Execute 'pwsh.exe' `
-        -Argument "-NoProfile -WindowStyle Hidden -File `"$repo\infra\mcp-servers\setup\sync-windows.ps1`"" `
-        -WorkingDirectory "$repo\infra\mcp-servers"
-$trg  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-        -RepetitionInterval (New-TimeSpan -Minutes 5)          # <-- THE CADENCE. Edit here.
-$set  = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
-        -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
-Register-ScheduledTask -TaskName 'omnigraph-sync' -Action $act -Trigger $trg -Settings $set `
-        -Description 'Reconcile local Omnigraph with central every 5 minutes' -Force
+Get-ScheduledTask 'Omnigraph Sync' | Get-ScheduledTaskInfo   # last run, last result, next run
+Start-ScheduledTask 'Omnigraph Sync'                         # force one now
+.\setup-sync.ps1 -Unregister                                 # remove
 ```
 
+- Runs **as you, only while you are logged on**. That is deliberate: running logged-off means
+  storing your password, and a laptop that syncs while nobody is at it buys little here.
 - `-MultipleInstances IgnoreNew` — if a run overruns 5 minutes the next is skipped, not stacked.
 - `-StartWhenAvailable` — a missed run (laptop asleep) fires when you come back.
-- Runs as you, so it inherits your env. It needs **docker running**; if Docker Desktop is
-  down the run fails loudly and the next one picks up — nothing is lost.
+- Needs **docker running**; if Docker Desktop is down the run fails loudly and the next one
+  picks up — nothing is lost.
+- `LastTaskResult` `267011` means "has not run yet", not an error. `0` is success.
 
-**Change the cadence:** edit `-RepetitionInterval`, re-run the block (`-Force` replaces it).
-Or in Task Scheduler GUI → `omnigraph-sync` → Triggers → Repeat every.
+**Change the cadence:** `.\setup-sync.ps1 -IntervalMinutes 15` (it replaces the task), or
+Task Scheduler GUI → `Omnigraph Sync` → Triggers → Repeat every.
 
-```powershell
-Get-ScheduledTask omnigraph-sync | Get-ScheduledTaskInfo    # last run, last result, next run
-Start-ScheduledTask omnigraph-sync                          # force one now
-Unregister-ScheduledTask omnigraph-sync -Confirm:$false     # remove
-```
-
-Logging is not on by default. To keep one:
-
-```powershell
--Argument "-NoProfile -WindowStyle Hidden -Command `"& '$repo\infra\mcp-servers\setup\sync-windows.ps1' *>&1 | Tee-Object -FilePath '$repo\infra\mcp-servers\setup\backups\sync.log' -Append`""
-```
+> Hand-rolling the trigger? Do **not** pass `-RepetitionDuration ([TimeSpan]::MaxValue)` for
+> "forever": it serialises to `P99999999DT23H59M59S` and Task Scheduler rejects the XML.
+> **Omit `-RepetitionDuration`** — that is what means indefinitely.
 
 ### Linux — systemd timer
 
-`omnigraph-setup/omnigraph-sync.timer` is already `OnUnitActiveSec=5min`:
+`./setup-sync.sh` writes `~/.config/systemd/user/omnigraph-sync.{service,timer}` and enables
+the timer (falling back to a `cron` line if there is no systemd user session).
 
 ```bash
-sudo cp omnigraph-setup/omnigraph-sync.{service,timer} /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now omnigraph-sync.timer
-systemctl list-timers omnigraph-sync.timer
-journalctl -u omnigraph-sync.service -n 50
+systemctl --user list-timers omnigraph-sync.timer
+journalctl --user -u omnigraph-sync.service -n 50
+systemctl --user disable --now omnigraph-sync.timer      # stop
+loginctl enable-linger $USER                             # keep running after logout
 ```
 
-**Change the cadence:** edit `OnUnitActiveSec=` in the `.timer`, then `daemon-reload` +
-`restart`. Add `Persistent=true` if you want missed runs to fire at boot.
+**Change the cadence:** `./setup-sync.sh --interval 15`, or edit `OnUnitActiveSec=` in the
+`.timer` then `systemctl --user daemon-reload && systemctl --user restart omnigraph-sync.timer`.
+
+The tracked `omnigraph-sync.{service,timer}` in this directory are the **system-wide**
+variant (`/etc/systemd/system/`) for a server host; `setup-sync.sh` installs per-user copies
+with the real paths baked in.
+
+> **Both scripts are the same logic.** `omnigraph-sync.sh` (Linux/macOS) and
+> `sync-windows.ps1` (Docker Desktop) drive the same two Python helpers
+> (`omnigraph_jsonl.py`, `pull_graph.py`): delta push straight to central `main`, no device
+> branch, purge-then-load pull, real exit codes. Verified 2026-07-17 on the Windows box:
+> `rc=0`, all 5 graphs clean and identical on both sides, zero delta on a repeat run.
+>
+> On Linux the defaults (`DOCKER_NET=host`, `LOCAL_URL_CONTAINER=$LOCAL_URL`) are right. On
+> Docker Desktop set `DOCKER_NET=mcp-server_mcp-net` and
+> `LOCAL_URL_CONTAINER=http://omnigraph-server:8080` — or just let `setup-sync` detect it.
 
 > **Both scripts are now the same logic.** `omnigraph-sync.sh` (Linux/macOS) and
 > `sync-windows.ps1` (Docker Desktop) both drive the same two Python helpers
@@ -113,37 +151,88 @@ gives `Connection refused` at exactly the wrong moment.
 
 ---
 
-## The missing `OMNIGRAPH_TOKEN` (agent memory, not sync)
+## `OMNIGRAPH_TOKEN` and `OMNIGRAPH_NET` (agent memory, not sync)
 
-**This does not affect the sync** — the sync reads tokens from `omnigraph-setup/.env`. It affects the
-**MCP bridges**: `agent-skills/.mcp.json` and `basic-analysis/.mcp.json` reference
-`${OMNIGRAPH_TOKEN}`, deliberately, because those files are tracked and must never hold a
-bearer. With the variable unset, the bridge starts with an empty token and **the agent has
-no memory** in those repos.
+**Neither affects the sync** — the sync reads everything from `omnigraph-setup/.env`. They
+affect the **MCP bridge**: a repo's tracked `.mcp.json` references `${OMNIGRAPH_TOKEN}` and
+`${OMNIGRAPH_NET}` rather than literals, because a tracked file must never hold a bearer and
+the network name differs per machine. Both fail **silently** when wrong — the bridge starts
+fine, and the agent simply has no memory.
 
-Set it once per machine (the value is `OMNIGRAPH_TOKEN` in `infra/mcp-servers/.env.shared`):
+### What `OMNIGRAPH_NET` is
+
+**It is the name of the Docker network that the `omnigraph-server` container is attached
+to** — a value from `docker network ls`, not a URL, host, port, or interface.
+
+Why it exists at all: the bridge is not a long-running service. Each agent session starts a
+throwaway container (`docker run -i --rm --network ${OMNIGRAPH_NET} … omnigraph-mcp`) that
+talks to `http://omnigraph-server:8080`. That hostname is **Docker's internal DNS alias**,
+and Docker only resolves it for containers **on the same network**. Join the wrong network
+and the name does not resolve.
+
+Docker composes the name as `<compose-project>_<network>`, which is why it differs per host:
+
+| Host | Compose project | `OMNIGRAPH_NET` |
+|---|---|---|
+| local client stack (`docker-compose.server.yml` here) | `mcp-server` | `mcp-server_mcp-net` |
+| central (`coding.vm`, from the Server repo) | `mcp-servers` | `mcp-servers_default` |
+
+Never copy it from a doc — **ask docker**, because only the running container knows:
+
+```bash
+docker inspect omnigraph-server --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
+python3 ../scripts/_omni_env.py     # same thing, plus the MinIO store and its type
+```
+
+Proof of what a wrong value does — the name resolves only from inside the network:
+
+```console
+$ docker run --rm --network mcp-server_mcp-net curlimages/curl -fsS http://omnigraph-server:8080/healthz
+{"status":"ok","version":"0.8.1","internal_schema_version":4}
+$ docker run --rm --network bridge curlimages/curl -fsS http://omnigraph-server:8080/healthz
+curl: (6) Could not resolve host: omnigraph-server
+```
+
+> **The trap on this machine.** `.mcp.json` falls back to `mcp-servers_default` when
+> `OMNIGRAPH_NET` is unset. That network **exists here** (left over from the central-stack
+> naming) but is **empty** — so `docker run` succeeds, nothing errors, and the bridge just
+> cannot find the server. An error like "network not found" would be kinder than what you
+> actually get, which is silence. Set the variable explicitly.
+
+### Setting both
+
+The values are `OMNIGRAPH_TOKEN` from `infra/mcp-servers/.env.shared`, and the detected
+network. `setup-sync` prints the exact lines for your machine at the end of a successful run.
 
 ```powershell
 # Windows — persists for future sessions; restart the agent afterwards
 [Environment]::SetEnvironmentVariable('OMNIGRAPH_TOKEN', '<token from .env.shared>', 'User')
-[Environment]::SetEnvironmentVariable('OMNIGRAPH_BASE_URL', 'http://localhost:8080', 'User')
+[Environment]::SetEnvironmentVariable('OMNIGRAPH_NET',   'mcp-server_mcp-net', 'User')
 ```
 
 ```bash
 # Linux/macOS — in ~/.bashrc / ~/.zshrc, or a systemd user env
 export OMNIGRAPH_TOKEN=<token from .env.shared>
-export OMNIGRAPH_BASE_URL=http://localhost:8080
+export OMNIGRAPH_NET=mcp-server_mcp-net
 ```
 
 Verify in a **new** shell, then restart the agent:
 
 ```powershell
 [Environment]::GetEnvironmentVariable('OMNIGRAPH_TOKEN','User')   # non-empty
+docker network inspect $env:OMNIGRAPH_NET --format '{{range .Containers}}{{.Name}} {{end}}'
+#   ^ MUST list omnigraph-server. If it prints nothing, you have the wrong network.
 ```
-then in a fresh agent session `graphs_list` should return 5 graphs and `schema_get` should
+
+Then in a fresh agent session `graphs_list` should return 5 graphs and `schema_get` should
 show 11 edge types. If you would rather not put the bearer in your OS environment, the
-alternative is a per-project `.mcp.json` under `~/.claude.json` (user-scope, untracked)
-holding the literal token — never in the repo's `.mcp.json`.
+alternative is a user-scope `.mcp.json` under `~/.claude.json` (untracked) holding the
+literal token — never in the repo's `.mcp.json`.
+
+> `OMNIGRAPH_BASE_URL` is **not** in this list on purpose. This repo's `.mcp.json` passes it
+> explicitly (`-e OMNIGRAPH_BASE_URL=http://omnigraph-server:8080`), so setting it in your
+> environment has no effect on the bridge. And do not confuse `OMNIGRAPH_GRAPH_ID` (the
+> **bridge's** graph) with `OMNIGRAPH_GRAPH` (the **viewer's**).
 
 ---
 
@@ -204,6 +293,32 @@ curl -s -X POST "$CENTRAL_URL/graphs/<g>/export" -H "Authorization: Bearer $CENT
 | `Connection refused` from the CLI container | `LOCAL_URL_CONTAINER` is wrong (probably `127.0.0.1`). `pull_graph.py` pre-flights this and refuses to purge. |
 | Sync exits non-zero | read the message — it names the graph and the failing command. Your backup is in `omnigraph-setup/backups/`. Central is only ever touched by a delta, so a failed run leaves it consistent. |
 | A `device/<host>` branch lingers | it blocks `schema apply`. `DELETE /graphs/<g>/branches/device%2F<host>`. The sync sweeps its own. |
+
+## Text encoding — why the helpers force UTF-8
+
+Omnigraph exports are UTF-8 (JSON always is). Windows is not, and every hand-off in this
+directory crosses that gap. Do not "simplify" these away:
+
+| Where | Default | What it did |
+|---|---|---|
+| `omnigraph_jsonl.py` stdin | locale (`cp1252`) | read local as cp1252 while central was read as UTF-8 → **the same text compared unequal**, so every node with an em dash or arrow was re-pushed on *every* run (52 of basic-analysis's 135). Fixed by `_force_utf8_stdio()`. |
+| `.ps1` native-command **output** | `[Console]::OutputEncoding` (OEM, cp850) | decodes docker's UTF-8 export as cp850, then writes it back as UTF-8 — **lossy, real corruption** |
+| `.ps1` native-command **input** | `$OutputEncoding` (ASCII on PS 5.1) | `→` piped into docker/python becomes `?` |
+| `Get-Content` / `Set-Content` | host default (ANSI on 5.1) | silent mangling |
+
+The tell for the comparison bug: the "changed" node count equals the number of export lines
+containing non-ASCII bytes, and it never drops after a successful push.
+
+```bash
+# how many records even could be affected
+python3 -c "import sys;print(sum(1 for r in open(sys.argv[1],'rb') if any(b>127 for b in r)))" backups/local-<graph>-<ts>.jsonl
+```
+
+This is fixed **inside** the scripts rather than by exporting `PYTHONIOENCODING` at the call
+site, because they are run three ways — by hand, by systemd, and by the Task Scheduler — and
+only one of those would have carried the variable. `test_omnigraph_jsonl.py` pins it with
+raw-bytes subprocess tests; note that `subprocess.run(text=True)` **cannot** catch this class
+of bug, as it encodes and decodes with the same parent locale so any mismatch cancels out.
 
 ## Known limitations
 

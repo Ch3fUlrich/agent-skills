@@ -46,6 +46,26 @@ Expose via OPNsense os-caddy (already in `server/network/opnsense/caddy.d/`):
 `omnigraph.ohje.ooguy.com` (API, bearer only) and `omnigraph-ui.ohje.ooguy.com`
 (viewer, Authelia).
 
+## Setting up the sync — start here
+
+[`setup-sync.ps1`](setup-sync.ps1) (Windows) and [`setup-sync.sh`](setup-sync.sh)
+(Linux/macOS/WSL) configure **and schedule** the sync in one command. They read
+`OMNIGRAPH_TOKEN` from `../.env.shared`, detect the docker network from the **running**
+`omnigraph-server`, write `.env`, prove it with a dry run, and only then register the
+Scheduled Task / systemd timer (default: every 5 minutes).
+
+```powershell
+.\setup-sync.ps1 -CentralUrl https://omnigraph.ohje.ooguy.com -CentralToken <BEARER>
+```
+```bash
+./setup-sync.sh --central-url https://omnigraph.ohje.ooguy.com --central-token <BEARER>
+```
+
+Central's bearer is the one value that cannot be derived — it is a different secret from the
+local token in `.env.shared`. Pass it once; it is remembered. Re-running is safe: existing
+values win over derived ones, and a pre-flight rejects bad credentials **before** your `.env`
+is touched. Full reference: [`SYNC-MANUAL.md`](SYNC-MANUAL.md).
+
 ## Client setup
 
 Use [`client-setup.sh`](client-setup.sh):
