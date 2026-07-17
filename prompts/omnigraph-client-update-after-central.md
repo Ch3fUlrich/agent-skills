@@ -1,5 +1,23 @@
 # Prompt — update a CLIENT after central was brought up to date
 
+> ## ⚠️ DO NOT SEND THIS — superseded by [`omnigraph-client-make-sync-safe.md`](omnigraph-client-make-sync-safe.md)
+>
+> Following this prompt on **2026-07-17 damaged central**: task 2 tells the client to run
+> the sync, and the sync's push merge-loads the *whole* local export onto a device branch
+> forked from central's `main`. Edges have no `@key`, so every edge central already had was
+> appended a second time — agent-skills 27→54, basic-analysis 120→221, invest 81→125,
+> homelab-server 18→32 — while the script reported `rc=0` and *"pulled central main -> local
+> main"*. The pull had in fact failed on every graph. Central has since been repaired and
+> re-verified clean.
+>
+> Two further errors in this prompt: it tells a **Windows** client to run
+> `./setup/omnigraph-sync.sh`, which cannot work there (it bind-mounts a `mktemp -d` path
+> that Git Bash mangles, so every graph fails with "local export/backup failed" while the
+> server is up — `sync-windows.ps1` is the Windows twin); and its task-2 gate ("if sync
+> reports duplicates … STOP") trusts the script's own report, which was the thing that lied.
+>
+> Kept as the record of what went wrong. **Use the superseding prompt.**
+
 Send this to an agent **with shell + docker access on a client machine** (e.g. the
 Windows dev box, compose project `mcp-server`, network `mcp-server_mcp-net`). It is the
 companion to `omnigraph-central-bring-up-to-date.md`: central (coding.vm) has now been
