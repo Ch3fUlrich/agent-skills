@@ -99,8 +99,8 @@ the OPNsense `os-caddy` reverse proxy:
 | `omnigraph-minio.ohje.ooguy.com` | `coding.vm:9001` (MinIO console) | Authelia SSO (admin) |
 
 Clients: **online** = MCP → the public API on `main`; **offline-capable** = local
-stack + `setup/omnigraph-sync.sh` timer that pushes to a `device/<host>` branch
-and merges into `main` when reachable (`infra/mcp-servers/setup/`).
+stack + `omnigraph-setup/omnigraph-sync.sh` timer that pushes to a `device/<host>` branch
+and merges into `main` when reachable (`infra/mcp-servers/omnigraph-setup/`).
 
 ### Two stacks, one set of scripts — detected, not assumed
 

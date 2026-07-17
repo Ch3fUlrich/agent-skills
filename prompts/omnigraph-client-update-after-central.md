@@ -11,7 +11,7 @@
 > re-verified clean.
 >
 > Two further errors in this prompt: it tells a **Windows** client to run
-> `./setup/omnigraph-sync.sh`, which cannot work there (it bind-mounts a `mktemp -d` path
+> `./omnigraph-setup/omnigraph-sync.sh`, which cannot work there (it bind-mounts a `mktemp -d` path
 > that Git Bash mangles, so every graph fails with "local export/backup failed" while the
 > server is up — `sync-windows.ps1` is the Windows twin); and its task-2 gate ("if sync
 > reports duplicates … STOP") trusts the script's own report, which was the thing that lied.
@@ -59,8 +59,8 @@ failing gate** — you have backups from task 1.
 The sync is multi-graph aware. **Dry-run first**, confirm it lists all five graphs and
 writes nothing, then run it for real:
 ```bash
-DRY_RUN=1 ./setup/omnigraph-sync.sh      # expect: 5 graphs, no writes
-./setup/omnigraph-sync.sh
+DRY_RUN=1 ./omnigraph-setup/omnigraph-sync.sh      # expect: 5 graphs, no writes
+./omnigraph-setup/omnigraph-sync.sh
 ```
 It pushes your local onto a `device/<host>` branch on central, native-merges to central
 `main`, verifies no duplicates, then **overwrites your local from clean central** (a

@@ -138,7 +138,7 @@ Full setup and per-agent wiring:
 authoritative `main`; online clients point their MCP straight at it, and
 offline-capable clients run a local copy that a timer reconciles when the
 internet returns — agents never manage branches themselves. See
-[`infra/mcp-servers/setup/`](infra/mcp-servers/setup/).
+[`infra/mcp-servers/omnigraph-setup/`](infra/mcp-servers/omnigraph-setup/).
 
 **Deployed instance (this homelab).** The stack runs on `coding.vm` from the
 single-source compose in

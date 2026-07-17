@@ -108,7 +108,7 @@ So agents write to local `main` and stay dumb about branches; the sync creates
   and verified via [`omnigraph_jsonl.py`](omnigraph_jsonl.py); the local pull is
   an `overwrite` of a deduped central export.
 - `-DryRun` / `DRY_RUN=1` snapshots + verifies **both** sides without writing.
-- Backups land in `setup/backups/local-main-<ts>.jsonl` (gitignored).
+- Backups land in `omnigraph-setup/backups/local-main-<ts>.jsonl` (gitignored).
 - The full production send/merge procedure — canary-first, the embedding
   reconciliation (standardize on CPU-capable `nomic-embed-text`), risks and
   rollback — is in

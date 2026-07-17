@@ -143,7 +143,7 @@ and had never run. Everything below followed from that one failure.
 - Credential-**access** memory (methods + file locations, never secret values)
   stored in the `homelab-server` graph, plus a hard rule against storing secrets
   in the internet-exposed graph.
-- `infra/mcp-servers/setup/`: client/server setup guide, `client-setup.sh`,
+- `infra/mcp-servers/omnigraph-setup/`: client/server setup guide, `client-setup.sh`,
   and `omnigraph-sync.sh` (+ systemd timer) for automatic device-branch sync.
 - `coding-principles` skill + starter: DRY, TDD, single responsibility,
   document-the-why, changelog/ADR backtracking, MCP-first navigation.

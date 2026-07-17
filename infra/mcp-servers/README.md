@@ -45,7 +45,7 @@ docker compose --env-file .env.shared --env-file .env.client \
 See the **[local runbook](docs/OMNIGRAPH-LOCAL-RUNBOOK.md)** (verified setup +
 every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 [`servers/omnigraph/README.md`](servers/omnigraph/README.md),
-[`setup/`](setup/) (client/server + offline sync) and
+[`omnigraph-setup/`](setup/) (client/server + offline sync) and
 [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md).
 
 ## Active Servers
@@ -70,7 +70,7 @@ no cloud key), configured in [`cluster/cluster.yaml`](cluster/cluster.yaml); the
 
 **Clients & offline sync** — online clients point their MCP at the server on
 `main`; offline-capable clients run a local copy + a sync timer that reconciles
-via a `device/<host>` branch. See [`setup/`](setup/) (`client-setup.sh`,
+via a `device/<host>` branch. See [`omnigraph-setup/`](setup/) (`client-setup.sh`,
 `omnigraph-sync.sh`).
 
 **Deployed instance (this homelab).** Runs on `coding.vm` from the single-source
@@ -342,7 +342,7 @@ mcp-servers/
 │       ├── package.json
 │       └── node_modules/
 │
-├── setup/                               # Server/client setup + offline sync
+├── omnigraph-setup/                     # Server/client setup + offline sync
 │
 ├── docs/                                # Documentation files
 │   ├── OMNIGRAPH-LOCAL-RUNBOOK.md       # Verified local setup + every fix

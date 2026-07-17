@@ -2,20 +2,20 @@
 
 > ## STATUS 2026-07-17: mostly DONE on the Windows client. Only §2 remains.
 >
-> Fixed and verified on `bz-wg-pdw028` — `setup/sync-windows.ps1` now: pushes a **delta**
+> Fixed and verified on `bz-wg-pdw028` — `omnigraph-setup/sync-windows.ps1` now: pushes a **delta**
 > (`omnigraph_jsonl.py pushset` — all changed/new nodes, only edges central lacks), skips
 > identical nodes (they caused `Concurrent modification: table version N already exists`),
 > uses **no device branch** (`branch create` hits a Lance internal error, `branch merge` the
-> above), pulls via `setup/pull_graph.py` (purge-then-load; `overwrite` on a populated graph
+> above), pulls via `omnigraph-setup/pull_graph.py` (purge-then-load; `overwrite` on a populated graph
 > trips a Lance bug and can land while exiting 1), and **checks exit codes** so it fails
 > loudly instead of logging success.
 >
 > **Proof:** 4 consecutive full runs — rc=0 on the last three, all 5 graphs identical
 > central↔local, `verify` clean on both sides, **zero edge growth**. Cadence is **5 minutes**
 > (not hourly); registration + everything else is in
-> [`../infra/mcp-servers/setup/SYNC-MANUAL.md`](../infra/mcp-servers/setup/SYNC-MANUAL.md).
+> [`../infra/mcp-servers/omnigraph-setup/SYNC-MANUAL.md`](../infra/mcp-servers/omnigraph-setup/SYNC-MANUAL.md).
 >
-> **STILL OPEN — §2 below:** `setup/omnigraph-sync.sh` (Linux) is **unported** and still has
+> **STILL OPEN — §2 below:** `omnigraph-setup/omnigraph-sync.sh` (Linux) is **unported** and still has
 > the whole-export push that duplicated central's edges. Do not enable the Linux timer until
 > it matches the PowerShell twin. §3 (the pull) and §4/§5 (proof + scheduling) are done; §6
 > (the `OMNIGRAPH_TOKEN` env var) is deferred by the user and documented in the manual.
@@ -57,10 +57,10 @@ any sync, check `edges` vs `distinct edges` on both sides — not the exit code.
    invest 81→125, homelab-server 18→32. This is `operations.md` rule 6 firing exactly as
    documented — the scripts' own docstrings say *"prefer native branches_merge over raw
    `load --merge`"* and then do a raw `load --merge`.
-   - **`setup/sync-windows.ps1` is FIXED** — it now sends a delta via
+   - **`omnigraph-setup/sync-windows.ps1` is FIXED** — it now sends a delta via
      `omnigraph_jsonl.py pushset` (all nodes — they are `@key(slug)` so merge upserts
      safely — but only the edges central lacks).
-   - **`setup/omnigraph-sync.sh` is NOT fixed.** Line ~93 still merge-loads
+   - **`omnigraph-setup/omnigraph-sync.sh` is NOT fixed.** Line ~93 still merge-loads
      `/w/local.jsonl` whole. **A Linux client running it will re-pollute central.**
 2. **Failures are invisible.** `sync-windows.ps1`'s `Og`/`OgLoad` swallowed stderr and
    never checked `$LASTEXITCODE`; a non-zero exit from a *native* command is not a
@@ -82,7 +82,7 @@ any sync, check `edges` vs `distinct edges` on both sides — not the exit code.
    local server up?)" — while the server is up. `sync-windows.ps1` exists precisely
    because of this and pipes over stdin instead. (Its `--network host` note is stale on
    this box: a `--network host` container reaches `127.0.0.1:8080` fine here.)
-5. **Nothing is scheduled.** `setup/omnigraph-sync.timer` is systemd-only and set to
+5. **Nothing is scheduled.** `omnigraph-setup/omnigraph-sync.timer` is systemd-only and set to
    `OnUnitActiveSec=5min`, not hourly. There is **no Windows scheduled task** at all.
 6. **`OMNIGRAPH_TOKEN` is not in the environment.** Both `agent-skills/.mcp.json` and
    `basic-analysis/.mcp.json` reference `${OMNIGRAPH_TOKEN}` (correctly — they are tracked,
@@ -112,13 +112,13 @@ python3 scripts/_omni_env.py          # trust this over any doc: your live netwo
 ```
 Back up **every local and every central graph** to `.graph-backup/` (export per graph).
 Record, per graph and per side: `nodes`, `edges`, `distinct edges`
-(`… | python3 setup/omnigraph_jsonl.py verify`).
+(`… | python3 omnigraph-setup/omnigraph_jsonl.py verify`).
 
 **Gate:** a non-empty backup per graph per side; both sides currently verify **clean**; you
 can state the counts. If central is already dirty, repair it before anything else (see
 "Repairing central" below) — do not sync into a dirty central.
 
-### 2. Fix `setup/omnigraph-sync.sh` to match the PowerShell twin
+### 2. Fix `omnigraph-setup/omnigraph-sync.sh` to match the PowerShell twin
 
 Port both fixes:
 - **Delta push:** replace the whole-export `load --mode merge` with
@@ -172,12 +172,12 @@ probe made the round trip in both directions.
 ### 5. Only now: arm it hourly
 
 - **Windows** (this box) — a Scheduled Task running `pwsh -NoProfile -File
-  <repo>\infra\mcp-servers\setup\sync-windows.ps1`, hourly, whether or not the user is
+  <repo>\infra\mcp-servers\omnigraph-setup\sync-windows.ps1`, hourly, whether or not the user is
   logged on, **not** only on AC power, and with "run task as soon as possible after a
-  missed start". Log stdout+stderr to a rotating file under `setup/backups/` or a `logs/`
+  missed start". Log stdout+stderr to a rotating file under `omnigraph-setup/backups/` or a `logs/`
   dir. Prefer `Register-ScheduledTask` with a repetition interval of 1 hour and an
   indefinite duration.
-- **Linux** — set `setup/omnigraph-sync.timer` to hourly (`OnUnitActiveSec=1h`,
+- **Linux** — set `omnigraph-setup/omnigraph-sync.timer` to hourly (`OnUnitActiveSec=1h`,
   `Persistent=true` so a missed run fires on boot) and enable it.
 - Make the job **idempotent and non-overlapping**: if a run is still going, skip rather
   than stack (a lock file, or the task's "do not start a new instance" policy).
@@ -219,8 +219,8 @@ will block `schema apply`.
   fresh graph. Do not run it against a populated one to "fix" this.
 - `OMNIGRAPH_GRAPH_ID` = the MCP **bridge**'s graph. `OMNIGRAPH_GRAPH` = the **viewer**'s.
   Different variables.
-- Central's bearer ≠ the local bearer. `setup/.env` carries `CENTRAL_TOKEN` separately.
-- The `GRAPH=memory` in `setup/.env` is a legacy single-graph var; the scripts auto-discover
+- Central's bearer ≠ the local bearer. `omnigraph-setup/.env` carries `CENTRAL_TOKEN` separately.
+- The `GRAPH=memory` in `omnigraph-setup/.env` is a legacy single-graph var; the scripts auto-discover
   all graphs unless `GRAPHS` is set. Leave it alone unless you mean it.
 
 ## Report back — with command output, not claims

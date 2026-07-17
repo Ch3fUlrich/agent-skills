@@ -142,14 +142,36 @@ def main():
                  f"Pass --target-load-url with a container-reachable URL "
                  f"(e.g. http://omnigraph-server:8080).\n{err.strip()[:300]}")
 
-    # purge, then load into the empty graph (the only reliable write path on v0.8.1)
+    # Purge, then load into the (near-)empty graph — the only reliable write path on v0.8.1.
     purge(a.target_url, a.target_token, g, tgt)
     now = export(a.target_url, a.target_token, g)
     n2, e2, _ = stats(now)
-    if n2 or e2:
-        sys.exit(f"[pull:{g}] ABORT: target not empty after purge ({n2}/{e2}); nothing loaded")
 
-    payload = "\n".join(json.dumps(r) for r in src) + "\n"
+    # Deleting a node USUALLY cascades its edges — but not always: observed 2026-07-17 on a
+    # graph that held a duplicate node, where all 19 nodes went but all 27 edges stayed.
+    # So do not assume an empty graph. Load only what is actually missing (same rule as the
+    # push: nodes upsert by @key, edges must not be re-sent or they duplicate). An earlier
+    # version aborted here and left the graph purged — a failure path must never destroy data.
+    if n2:
+        print(f"[pull:{g}] !! purge left {n2} node(s) — restoring from backup", file=sys.stderr)
+        load_merge(load_url, a.target_token, g,
+                   "\n".join(json.dumps(r) for r in backup) + "\n", a.net)
+        return 5
+    if e2:
+        print(f"[pull:{g}] purge left {e2} orphan edge(s) (cascade did not fire) — "
+              f"loading only what is missing")
+
+    have_edges = {(r["edge"], r["from"], r["to"]) for r in now if "edge" in r}
+    missing = [r for r in src if "edge" not in r or (r["edge"], r["from"], r["to"]) not in have_edges]
+    stray = have_edges - {(r["edge"], r["from"], r["to"]) for r in src if "edge" in r}
+    if stray:
+        print(f"[pull:{g}] !! {len(stray)} orphan edge(s) are NOT in the source and cannot be "
+              f"deleted (no delete-edge API) — restoring from backup", file=sys.stderr)
+        load_merge(load_url, a.target_token, g,
+                   "\n".join(json.dumps(r) for r in backup) + "\n", a.net)
+        return 6
+
+    payload = "\n".join(json.dumps(r) for r in missing) + "\n"
     try:
         load_merge(load_url, a.target_token, g, payload, a.net)
     except RuntimeError as exc:

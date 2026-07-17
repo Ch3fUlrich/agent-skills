@@ -153,7 +153,7 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
     failing.
 
 11. **You do not manage device branches.** Write durable memory to `main`; the
-    sync automation (`setup/omnigraph-sync.sh` / `sync-windows.ps1` on a timer)
+    sync automation (`omnigraph-setup/omnigraph-sync.sh` / `sync-windows.ps1` on a timer)
     creates `device/<host>`, merges to central `main`, and reconciles back. The
     sync **verify gate refuses to pull a central that has duplicates** — that is
     correct (it protects a clean local); clean central (rule 6) then re-sync.
@@ -175,5 +175,5 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
 | Push a repo's memory to central | delete its child nodes on `main` → `load --merge` its fresh subset |
 | Bulk clean dups | run `scripts/dedup-graph.py` on the server host |
 
-See also: [schema.md](schema.md), `infra/mcp-servers/setup/README.md`,
+See also: [schema.md](schema.md), `infra/mcp-servers/omnigraph-setup/README.md`,
 `docs/REMOTE-SYNC-TEST-PLAN.md`.

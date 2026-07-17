@@ -77,7 +77,7 @@ services:
 
   # ═══ OFFLINE ONLY (profile "offline") — local Omnigraph memory ═════════════
   #   Lets the agent keep working with no connection to the central server.
-  #   setup/omnigraph-sync.sh reconciles this into central `main` when online.
+  #   omnigraph-setup/omnigraph-sync.sh reconciles this into central `main` when online.
   omnigraph-local-minio:
     image: minio/minio:latest
     container_name: omnigraph-local-minio

@@ -22,7 +22,7 @@
       restore from backup if the pull fails
     - VERIFY local; delete the device branch unless -KeepDeviceBranch
 
-  Config: setup/.env or env vars —
+  Config: omnigraph-setup/.env or env vars —
     CENTRAL_URL, CENTRAL_TOKEN, LOCAL_TOKEN (required)
     GRAPHS  (comma/space list; default: all graphs central exposes)
     GRAPH   (legacy single non-'memory' graph)      DEVICE (default: hostname)
@@ -37,7 +37,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# --- load setup/.env ---
+# --- load omnigraph-setup/.env ---
 $envFile = Join-Path $here '.env'
 if (Test-Path $envFile) {
   foreach ($line in Get-Content $envFile) {
@@ -46,7 +46,7 @@ if (Test-Path $envFile) {
     }
   }
 }
-function Need($n) { $v = [Environment]::GetEnvironmentVariable($n); if (-not $v) { throw "set $n (in setup/.env)" }; $v }
+function Need($n) { $v = [Environment]::GetEnvironmentVariable($n); if (-not $v) { throw "set $n (in omnigraph-setup/.env)" }; $v }
 $CENTRAL_URL   = Need 'CENTRAL_URL'
 $CENTRAL_TOKEN = Need 'CENTRAL_TOKEN'
 $LOCAL_TOKEN   = Need 'LOCAL_TOKEN'

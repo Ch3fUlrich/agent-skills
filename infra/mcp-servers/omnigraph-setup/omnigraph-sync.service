@@ -8,6 +8,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# Point at your checkout; secrets/config resolved from setup/.env next to it.
-ExecStart=%h/code/agent-skills/infra/mcp-servers/setup/omnigraph-sync.sh
+# Point at your checkout; secrets/config resolved from omnigraph-setup/.env next to it.
+ExecStart=%h/code/agent-skills/infra/mcp-servers/omnigraph-setup/omnigraph-sync.sh
 Nice=10

@@ -18,7 +18,7 @@ when duplicates exist does it rebuild (reset the store + `load --mode overwrite`
 the cleaned graph — the one write path that is reliable on omnigraph-server
 v0.8.1). A pre-change NDJSON backup is always written.
 
-Run manually, or wire it into setup/omnigraph-sync.sh after a branch merge.
+Run manually, or wire it into omnigraph-setup/omnigraph-sync.sh after a branch merge.
 
 Examples:
   python scripts/dedup-graph.py --dry-run          # report duplicates only
