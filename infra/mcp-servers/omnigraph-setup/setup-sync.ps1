@@ -323,10 +323,12 @@ if (-not $env:OMNIGRAPH_TOKEN -or -not $env:OMNIGRAPH_NET -or -not $netHasServer
     OMNIGRAPH_TOKEN = $(if ($env:OMNIGRAPH_TOKEN) { 'set' } else { 'NOT SET — the bridge will send an empty bearer' })
     OMNIGRAPH_NET   = $(if ($env:OMNIGRAPH_NET) { "$env:OMNIGRAPH_NET$(if (-not $netHasServer) { '  <-- exists but omnigraph-server is NOT on it' })" } else { "NOT SET — .mcp.json falls back to 'mcp-servers_default', which on THIS machine exists but is EMPTY" })
 
-  Set both for future sessions (then restart your agent):
+  Fix both (and the rest of the bridge setup) with the sibling script — it also builds the
+  omnigraph-mcp image, removes any user-scope override that would silently point every repo
+  at the wrong graph, and verifies by driving the real bridge:
 
-    [Environment]::SetEnvironmentVariable('OMNIGRAPH_TOKEN', '<the token in .env.shared>', 'User')
-    [Environment]::SetEnvironmentVariable('OMNIGRAPH_NET',   '$DOCKER_NET', 'User')
+    .\setup-agent-memory.ps1 -Check     # diagnose, change nothing
+    .\setup-agent-memory.ps1            # fix
 
   OMNIGRAPH_NET is the DOCKER NETWORK NAME omnigraph-server is attached to — the detected
   value for this host is '$DOCKER_NET'. See SYNC-MANUAL.md ("What OMNIGRAPH_NET is").

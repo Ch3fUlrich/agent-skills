@@ -45,10 +45,32 @@ docker compose --env-file .env.shared --env-file .env.client \
 ./scripts/linux/init-graphify-projects.sh
 ```
 
+Then wire up the two halves of memory — **they are different things and both scripts are
+idempotent, so run them on any new machine and after any stack change**:
+
+```powershell
+cd omnigraph-setup
+.\setup-agent-memory.ps1     # the MCP BRIDGE your agent reads memory through
+.\setup-sync.ps1             # the TIMER that reconciles local <-> central (every 5 min)
+```
+```bash
+cd omnigraph-setup
+./setup-agent-memory.sh      # same, Linux/macOS/WSL
+./setup-sync.sh
+```
+
+`setup-agent-memory` is the one to reach for **whenever memory looks broken or a graph looks
+empty**: it builds the `omnigraph-mcp` image (published to no registry, so it must be built
+per host), sets `OMNIGRAPH_TOKEN`/`OMNIGRAPH_NET` from `.env.shared` and `docker inspect`,
+removes any user-scope `omnigraph` in `~/.claude.json` that would silently point every repo
+at the wrong graph, audits each repo's `.mcp.json`, and verifies by driving the real bridge.
+`--check`/`-Check` diagnoses without changing anything and exits non-zero on any problem.
+
 See the **[local runbook](docs/OMNIGRAPH-LOCAL-RUNBOOK.md)** (verified setup +
 every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 [`servers/omnigraph/README.md`](servers/omnigraph/README.md),
-[`omnigraph-setup/`](omnigraph-setup/) (client/server + offline sync) and
+[`omnigraph-setup/`](omnigraph-setup/) (client/server + offline sync),
+[`omnigraph-setup/SYNC-MANUAL.md`](omnigraph-setup/SYNC-MANUAL.md) (the operator manual) and
 [docs/INSTALL-GUIDE.md](docs/INSTALL-GUIDE.md).
 
 ## Active Servers
@@ -345,6 +367,16 @@ mcp-servers/
 │       └── node_modules/
 │
 ├── omnigraph-setup/                     # Server/client setup + offline sync
+│   ├── setup-agent-memory.ps1/.sh       # THE MCP BRIDGE: image, env vars, user-scope
+│   │                                    #   override, per-repo .mcp.json audit. --check to diagnose
+│   ├── setup-sync.ps1/.sh               # THE TIMER: writes .env, dry-runs, then schedules (5 min)
+│   ├── sync-windows.ps1                 # One sync run (Docker Desktop)
+│   ├── omnigraph-sync.sh                # One sync run (Linux/macOS) — same logic
+│   ├── omnigraph_jsonl.py               # Delta/dedup/verify helper (forces UTF-8 stdio)
+│   ├── pull_graph.py                    # Purge-then-load pull, with a pre-flight + restore
+│   ├── client-setup.sh                  # Print/register the MCP block for a client
+│   ├── SYNC-MANUAL.md                   # Operator manual (scheduling, OMNIGRAPH_NET, gotchas)
+│   └── backups/                         # Every run snapshots local first (untracked)
 │
 ├── docs/                                # Documentation files
 │   ├── OMNIGRAPH-LOCAL-RUNBOOK.md       # Verified local setup + every fix

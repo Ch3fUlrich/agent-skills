@@ -46,7 +46,40 @@ Expose via OPNsense os-caddy (already in `server/network/opnsense/caddy.d/`):
 `omnigraph.ohje.ooguy.com` (API, bearer only) and `omnigraph-ui.ohje.ooguy.com`
 (viewer, Authelia).
 
-## Setting up the sync — start here
+## Two setup scripts — they fix different things
+
+These are constantly confused, so: **the sync is not the bridge.** You usually want both.
+
+| Script | Fixes | Reads | Symptom when missing |
+|---|---|---|---|
+| `setup-agent-memory.{ps1,sh}` | the **MCP bridge** your agent reads memory *through* | the environment + each repo's `.mcp.json` | agent has no memory, or reads the **wrong graph** |
+| `setup-sync.{ps1,sh}` | the **timer** reconciling local ↔ central | `.env` next to it | local and central drift apart |
+
+```powershell
+.\setup-agent-memory.ps1 -Check    # diagnose, change nothing   (./setup-agent-memory.sh --check)
+.\setup-agent-memory.ps1           # fix what is fixable        (./setup-agent-memory.sh)
+```
+
+**Start here if memory looks broken or empty.** Every failure it repairs is *silent* — the
+bridge starts, answers, and is simply wrong:
+
+- a same-named `omnigraph` in `~/.claude.json` (**user scope**) overrides every repo's
+  `.mcp.json`. One pinned to `graph_id: memory` on 2026-07-17 hid every project's graph; an
+  agent read `memory`'s 2 Preferences, concluded `basic-analysis` (135 nodes, intact) had
+  been **wiped**, and began rebuilding it into the globals-only graph.
+- `OMNIGRAPH_TOKEN` unset → empty bearer → `missing bearer token`
+- `OMNIGRAPH_NET` wrong → `fetch failed` (the network can **exist but be empty**, so
+  `docker run` succeeds and only DNS quietly fails)
+- `omnigraph-mcp:latest` not built → `pull access denied` (it is published to no registry)
+
+It builds the image, removes the override (backing up `~/.claude.json` first), sets both env
+vars — reading the token from `.env.shared` and the network from `docker inspect`, so
+neither is typed or guessed — audits every sibling repo's `.mcp.json`, and finally **drives
+the real bridge** and prints the row count per graph. `--check` exits non-zero if anything
+is wrong, so it works in a health check. A `.mcp.json` belongs to its own repo, so those it
+reports rather than edits.
+
+## Setting up the sync
 
 [`setup-sync.ps1`](setup-sync.ps1) (Windows) and [`setup-sync.sh`](setup-sync.sh)
 (Linux/macOS/WSL) configure **and schedule** the sync in one command. They read

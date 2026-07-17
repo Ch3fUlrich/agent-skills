@@ -134,11 +134,23 @@ Full setup and per-agent wiring:
 > [`coding-principles`](skills/coding-principles/SKILL.md) — a whole MCP server to
 > re-serve two lines was duplication. Keep the bearer out of the tracked file: use
 > `"OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}"` and export it, along with `OMNIGRAPH_NET`
-> (the docker network differs per host — probe it with
-> `infra/mcp-servers/scripts/_omni_env.py`). See this repo's own
-> [`.mcp.json`](.mcp.json). A declared graph is not live until
-> `infra/mcp-servers/scripts/apply-cluster.sh` runs — verify with `graphs_list` /
-> `schema_get`, not by reading the config.
+> (the docker network differs per host). See this repo's own [`.mcp.json`](.mcp.json).
+> A declared graph is not live until `infra/mcp-servers/scripts/apply-cluster.sh` runs —
+> verify with `graphs_list` / `schema_get`, not by reading the config.
+>
+> **Wiring all of that up is one command** — it builds the bridge image, sets both env vars,
+> removes any user-scope override, audits every repo's `.mcp.json`, and proves it by driving
+> the real bridge:
+> ```powershell
+> cd infra/mcp-servers/omnigraph-setup
+> .\setup-agent-memory.ps1 -Check    # diagnose  (./setup-agent-memory.sh --check)
+> .\setup-agent-memory.ps1           # fix
+> ```
+> **If a graph ever looks empty, suspect config before data.** A same-named `omnigraph` in
+> `~/.claude.json` (user scope) silently outranks a repo's `.mcp.json`: on 2026-07-17 one
+> pinned to `memory` made every repo read the wrong graph, and an agent nearly rebuilt an
+> intact 135-node graph on top of it. `0 rows except 2 Preferences` **is** the `memory`
+> graph. `setup-agent-memory --check` detects exactly this.
 
 **Client vs server, offline & auto-sync.** A server (always-on) owns the
 authoritative `main`; online clients point their MCP straight at it, and
