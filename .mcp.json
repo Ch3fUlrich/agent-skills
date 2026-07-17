@@ -1,43 +1,45 @@
 {
   "$comment": [
     "Project-scoped MCP servers for THIS repo. Merged with the user-level servers in",
-    "~/.claude.json; a same-named server here wins, which is how this repo gets its own",
-    "Omnigraph graph instead of the shared globals graph.",
+    "~/.claude.json; a same-named server here wins, which pins this repo to its own",
+    "Omnigraph graph rather than the machine-global default.",
     "",
-    "Per-project graph isolation: `omnigraph` is pinned to the `agent-skills` graph. A",
-    "bridge serves exactly one graph (no tool takes a graph argument), so reading the",
-    "global-scope Preferences in `memory` needs the second `omnigraph-globals` server.",
-    "Treat that one as read-only. See skills/structured-memory/SKILL.md.",
+    "Uses the docker bridge, not `npx @modernrelay/omnigraph-mcp`: node/npm/npx are NOT",
+    "installed on coding.vm, so an npx bridge cannot start there. docker works on every",
+    "machine that runs the stack.",
     "",
-    "OMNIGRAPH_TOKEN is read from the environment and must never be written here (this",
-    "file is tracked). Set it once per machine, e.g. on Windows:",
-    "  [Environment]::SetEnvironmentVariable('OMNIGRAPH_TOKEN', '<token>', 'User')",
-    "or export it from infra/mcp-servers/.env.shared before launching your agent."
+    "Per-project graph isolation: `omnigraph` is pinned to the `agent-skills` graph. A bridge serves",
+    "exactly ONE graph: it is chosen by OMNIGRAPH_GRAPH_ID (OMNIGRAPH_GRAPH is the *viewer's*",
+    "variable, not this one) and no tool takes a graph argument. Never write this repo's data",
+    "to the shared `memory` graph.",
+    "",
+    "There is deliberately NO second `omnigraph-globals` bridge (removed 2026-07-17). It",
+    "existed only to read the shared `memory` graph, which holds just two global Preferences",
+    "-- TDD-by-default and MCP-first navigation -- and those are already Principles 2 and 6 of",
+    "skills/coding-principles/SKILL.md, which every agent loads. A whole extra MCP server to",
+    "re-serve two lines was duplication, and it listed every omnigraph tool twice in the",
+    "picker. Full protocol: ~/code/agent-skills/skills/structured-memory/SKILL.md.",
+    "",
+    "OMNIGRAPH_TOKEN is read from the environment and must never be written here (this file",
+    "is tracked). Export it once per machine before launching your agent."
   ],
   "mcpServers": {
     "omnigraph": {
-      "command": "npx",
+      "command": "docker",
       "args": [
-        "-y",
-        "@modernrelay/omnigraph-mcp"
-      ],
-      "env": {
-        "OMNIGRAPH_BASE_URL": "${OMNIGRAPH_BASE_URL:-http://localhost:8080}",
-        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}",
-        "OMNIGRAPH_GRAPH_ID": "agent-skills"
-      }
-    },
-    "omnigraph-globals": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modernrelay/omnigraph-mcp"
-      ],
-      "env": {
-        "OMNIGRAPH_BASE_URL": "${OMNIGRAPH_BASE_URL:-http://localhost:8080}",
-        "OMNIGRAPH_TOKEN": "${OMNIGRAPH_TOKEN}",
-        "OMNIGRAPH_GRAPH_ID": "memory"
-      }
+        "run",
+        "-i",
+        "--rm",
+        "--network",
+        "mcp-servers_default",
+        "-e",
+        "OMNIGRAPH_BASE_URL=http://omnigraph-server:8080",
+        "-e",
+        "OMNIGRAPH_GRAPH_ID=agent-skills",
+        "-e",
+        "OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN}",
+        "omnigraph-mcp:latest"
+      ]
     }
   }
 }

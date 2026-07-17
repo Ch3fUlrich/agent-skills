@@ -159,18 +159,16 @@ project data.
   the omnigraph MCP bridge (a project-scoped `.mcp.json` env, or export it before
   launching). If it is still `memory`, you are on the globals graph — switch it.
   **Never write project-specific nodes to the shared `memory` graph.**
-- **Reading globals needs a SECOND bridge.** `OMNIGRAPH_GRAPH_ID` pins a bridge to
-  exactly one graph, and no tool (`query`/`mutate`/`load`) takes a graph argument —
-  so a project-scoped agent cannot reach `memory` at all. To recall house style,
-  declare a second server in the same `.mcp.json`:
-
-  ```jsonc
-  "omnigraph":         { /* … */ "env": { "OMNIGRAPH_GRAPH_ID": "<repo>" } },  // read+write
-  "omnigraph-globals": { /* … */ "env": { "OMNIGRAPH_GRAPH_ID": "memory" } }   // read only
-  ```
-
-  Treat `omnigraph-globals` as read-only: the only writes `memory` should ever take
-  are new genuinely-global `Preference`s.
+- **One bridge per repo — do NOT add a second one for the globals.** `OMNIGRAPH_GRAPH_ID`
+  pins a bridge to exactly one graph and no tool (`query`/`mutate`/`load`) takes a graph
+  argument, so a project-scoped agent genuinely cannot reach `memory`. That is fine and
+  deliberate: `memory` holds only two global `Preference`s — TDD-by-default and MCP-first
+  navigation — and **both are already Principles 2 and 6 of
+  `skills/coding-principles/SKILL.md`**, which every agent loads anyway. A second
+  `omnigraph-globals` bridge to re-serve two lines was pure duplication (and listed every
+  omnigraph tool twice in the picker), so it was removed on 2026-07-17.
+  Global house style belongs in the skills — the single source of truth (Principle 1).
+  Only add a globals bridge if `memory` ever holds something the skills do not.
 - **Inside your project graph, still scope + link:** every project-specific node
   is a `Project` node's satellite — edge it to the `Project` (slug = repo folder
   name) and add relational edges (see "Link richly" above).
