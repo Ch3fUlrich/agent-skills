@@ -1,4 +1,24 @@
-# Prompt — make client sync correct, then arm it hourly
+# Prompt — make client sync correct, then arm it
+
+> ## STATUS 2026-07-17: mostly DONE on the Windows client. Only §2 remains.
+>
+> Fixed and verified on `bz-wg-pdw028` — `setup/sync-windows.ps1` now: pushes a **delta**
+> (`omnigraph_jsonl.py pushset` — all changed/new nodes, only edges central lacks), skips
+> identical nodes (they caused `Concurrent modification: table version N already exists`),
+> uses **no device branch** (`branch create` hits a Lance internal error, `branch merge` the
+> above), pulls via `setup/pull_graph.py` (purge-then-load; `overwrite` on a populated graph
+> trips a Lance bug and can land while exiting 1), and **checks exit codes** so it fails
+> loudly instead of logging success.
+>
+> **Proof:** 4 consecutive full runs — rc=0 on the last three, all 5 graphs identical
+> central↔local, `verify` clean on both sides, **zero edge growth**. Cadence is **5 minutes**
+> (not hourly); registration + everything else is in
+> [`../infra/mcp-servers/setup/SYNC-MANUAL.md`](../infra/mcp-servers/setup/SYNC-MANUAL.md).
+>
+> **STILL OPEN — §2 below:** `setup/omnigraph-sync.sh` (Linux) is **unported** and still has
+> the whole-export push that duplicated central's edges. Do not enable the Linux timer until
+> it matches the PowerShell twin. §3 (the pull) and §4/§5 (proof + scheduling) are done; §6
+> (the `OMNIGRAPH_TOKEN` env var) is deferred by the user and documented in the manual.
 
 Send this to an agent **with shell + docker access on a client machine** (the Windows dev
 box: compose project `mcp-server`, network `mcp-server_mcp-net`; a Linux client is the

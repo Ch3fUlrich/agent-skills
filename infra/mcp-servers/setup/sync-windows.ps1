@@ -51,7 +51,12 @@ $CENTRAL_URL   = Need 'CENTRAL_URL'
 $CENTRAL_TOKEN = Need 'CENTRAL_TOKEN'
 $LOCAL_TOKEN   = Need 'LOCAL_TOKEN'
 # LOCAL server as seen from INSIDE the CLI container (compose service name):
-$LOCAL_URL  = if ($env:LOCAL_URL_CONTAINER) { $env:LOCAL_URL_CONTAINER } else { 'http://omnigraph-server:8080' }
+# Two views of the SAME local server, and they are not interchangeable:
+#   $LOCAL_URL     — as seen from inside the CLI container (compose service name)
+#   $LOCAL_API_URL — as seen from this host (the published port), for direct HTTP calls
+# Using the container name from the host (or 127.0.0.1 from inside a container) fails.
+$LOCAL_URL     = if ($env:LOCAL_URL_CONTAINER) { $env:LOCAL_URL_CONTAINER } else { 'http://omnigraph-server:8080' }
+$LOCAL_API_URL = if ($env:LOCAL_URL) { $env:LOCAL_URL } else { 'http://127.0.0.1:8080' }
 $DEVICE     = if ($env:DEVICE) { $env:DEVICE } else { $env:COMPUTERNAME }
 $IMAGE      = if ($env:OMNIGRAPH_IMAGE) { $env:OMNIGRAPH_IMAGE } else { 'modernrelay/omnigraph-server:v0.8.1' }
 $NET        = if ($env:DOCKER_NET) { $env:DOCKER_NET } else { 'mcp-server_mcp-net' }
@@ -153,14 +158,29 @@ function Sync-Graph([string]$Graph) {
   Export $CENTRAL_TOKEN $CENTRAL_URL $centralPre $Graph
   $push = Join-Path $work "push-$Graph.jsonl"
   WriteText $push ((Get-Content -Raw -LiteralPath $localFile | & $PY $JQ pushset $centralPre) -join "`n")
-  $nEdge = @(Get-Content -LiteralPath $push | Where-Object { $_ -match '"edge"' }).Count
-  $nNode = @(Get-Content -LiteralPath $push | Where-Object { $_ -match '"type"' }).Count
-  Log "[$Graph] pushing delta: $nNode node(s), $nEdge new edge(s) (edges central already has are skipped)"
+  $pushLines = @(Get-Content -LiteralPath $push | Where-Object { $_.Trim() })
+  $nEdge = @($pushLines | Where-Object { $_ -match '"edge"' }).Count
+  $nNode = @($pushLines | Where-Object { $_ -match '"type"' }).Count
 
-  Og $CENTRAL_TOKEN @('branch','create',$BRANCH,'--server',$CENTRAL_URL,'--graph',$Graph) | Out-Null
-  OgLoad $CENTRAL_TOKEN $CENTRAL_URL $BRANCH 'merge' $push $Graph | Out-Null
-  Og $CENTRAL_TOKEN @('branch','merge',$BRANCH,'--into','main','--server',$CENTRAL_URL,'--graph',$Graph,'--yes') | Out-Null
-  Log "[$Graph] merged $BRANCH -> main on central"
+  # Push the delta STRAIGHT to central main — no device branch.
+  #
+  # The old branch dance (create -> load -> merge -> delete) exists for "review before
+  # merge", which buys nothing on an unattended 5-minute timer, and on omnigraph v0.8.1 it
+  # walks into three separate defects (all reproduced 2026-07-17):
+  #   * `branch create`  -> Lance internal: "Clone operation should not enter build_manifest"
+  #   * `branch merge`   -> "Concurrent modification: table version N already exists for
+  #                          node:<Type>" when the branch touched a table main is level with
+  #   * pushing the whole export -> duplicate edges (no @key on edges)
+  # A delta merge-load onto main has none of those: nodes upsert by @key(slug), and only
+  # edges central lacks are sent, so it cannot duplicate. Safety comes from the delta, the
+  # pre-write backup, and the verify gates — not from the branch.
+  if ($pushLines.Count -eq 0) {
+    Log "[$Graph] nothing to push (local adds nothing to central)"   # the common case on a timer
+  } else {
+    Log "[$Graph] pushing delta -> central main: $nNode changed/new node(s), $nEdge new edge(s)"
+    OgLoad $CENTRAL_TOKEN $CENTRAL_URL '' 'merge' $push $Graph | Out-Null
+    Log "[$Graph] pushed to central main"
+  }
 
   # 4. export central + verify NO duplicates before we trust it.
   # The merge can land after this read (the manifest advances asynchronously), so a
@@ -169,17 +189,34 @@ function Sync-Graph([string]$Graph) {
   Log "[$Graph] central verify:"
   if ((Verify $central) -ne 0) { Log "[$Graph] !! central has DUPLICATES after merge — NOT overwriting local. Backup: $backup"; return 2 }
 
-  # 5. pull central -> local via OVERWRITE (deduped input; local := clean central)
-  $clean = Join-Path $work "central-$Graph.clean.jsonl"
-  WriteText $clean ((Get-Content -Raw -LiteralPath $central | & $PY $JQ dedup) -join "`n")
-  try { OgLoad $LOCAL_TOKEN $LOCAL_URL '' 'overwrite' $clean $Graph | Out-Null }
-  catch { Log "[$Graph] !! local overwrite failed — restoring from backup"; OgLoad $LOCAL_TOKEN $LOCAL_URL '' 'overwrite' $localFile $Graph | Out-Null; return 3 }
-  Log "[$Graph] pulled central main -> local main (overwrite, deduped)"
+  # 5. pull central -> local (local := clean central).
+  #
+  # Delegated to pull_graph.py, which purges local and merge-loads into the EMPTY graph.
+  # `load --mode overwrite` into a POPULATED graph trips a Lance bug on v0.8.1
+  # (`stage_create_btree_index … all columns in a record batch must have the same length`)
+  # — and worse, it sometimes lands anyway while exiting 1, so you cannot even trust its
+  # failure. Loading into an empty graph is the one reliable path (it is how central was
+  # repaired). pull_graph.py refuses to purge unless the source is non-empty and
+  # duplicate-free, checks the purge actually emptied the graph before loading, restores
+  # from backup if the load fails, and verifies the result matches the source.
+  # Two target URLs on purpose: --target-url is hit from THIS host (export/mutate), while
+  # --target-load-url is hit from inside the CLI container (the load). They are different
+  # hosts — 127.0.0.1 inside the container is the container.
+  & $PY (Join-Path $here 'pull_graph.py') $Graph `
+      --source-url $CENTRAL_URL --source-token $CENTRAL_TOKEN `
+      --target-url $LOCAL_API_URL --target-load-url $LOCAL_URL --target-token $LOCAL_TOKEN `
+      --net $NET --backup $backup
+  if ($LASTEXITCODE -ne 0) { Log "[$Graph] !! pull failed (exit $LASTEXITCODE) — backup: $backup"; return 3 }
 
   # 6. verify local + optional branch cleanup
   $after = Join-Path $work "local-$Graph.after.jsonl"; Export $LOCAL_TOKEN $LOCAL_URL $after $Graph
   Log "[$Graph] local post-sync verify:"; Verify $after | Out-Null
-  if (-not $KeepBranchEff) { Og $CENTRAL_TOKEN @('branch','delete',$BRANCH,'--server',$CENTRAL_URL,'--graph',$Graph,'--yes') | Out-Null; Log "[$Graph] deleted device branch $BRANCH" }
+  # No device branch is created any more (see the push above), so there is nothing to clean
+  # up. Sweep any left over by an older run, so they can't block `schema apply`.
+  if (-not $KeepBranchEff) {
+    try { Og $CENTRAL_TOKEN @('branch','delete',$BRANCH,'--server',$CENTRAL_URL,'--graph',$Graph,'--yes') | Out-Null
+          Log "[$Graph] removed stale device branch $BRANCH" } catch { }
+  }
   Log "[$Graph] sync complete. Local backup: $backup"
   return 0
 }

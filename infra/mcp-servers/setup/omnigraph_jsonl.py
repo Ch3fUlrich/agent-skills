@@ -52,20 +52,50 @@ def dedup(lines):
     return list(seen.values())
 
 
-def pushset(local_lines, central_lines):
-    """What is safe to merge-load from LOCAL onto a branch forked from CENTRAL's main.
+# Fields that legitimately differ between two copies of the "same" node and must not
+# count as a change: `id` mirrors `slug`, and `embedding` is regenerable — and is *erased*
+# by a merge whose record omits it, so comparing on it would push noise forever.
+VOLATILE = ("embedding", "id")
 
-    Nodes: all of them — they are @key(slug), so a merge upserts and never duplicates.
-    Edges: ONLY those central does not already have. Edges have no @key, so merge-loading
-    an edge that already exists APPENDS a second copy. Pushing the full local export onto
-    a main-forked branch therefore duplicates every shared edge — which is exactly how
-    central ended up with 2x edges on 2026-07-17. Send the delta instead.
+
+def _payload(rec):
+    return {k: v for k, v in (rec.get("data") or {}).items() if k not in VOLATILE}
+
+
+def pushset(local_lines, central_lines):
+    """The DELTA that is safe to merge-load from LOCAL onto a branch forked from CENTRAL.
+
+    Two independent reasons this must be a delta and not the whole export:
+
+    1. Edges have no `@key`, so merge-loading an edge central already has APPENDS a second
+       copy; the branch-merge then carries the duplicate into main. Pushing everything is
+       exactly how central got 2x edges on every project graph (2026-07-17).
+    2. Pushing a node that is *identical* to central's still bumps that table's version on
+       the device branch, and the branch-merge then fails with
+       `Concurrent modification: table version N already exists for node:<Type>` — the
+       merge cannot fast-forward because main is already at N. So an unchanged node is not
+       harmless: it breaks the whole sync.
+
+    Emit a node only when central lacks the slug or its payload actually differs
+    (ignoring VOLATILE fields); emit an edge only when central lacks it. An empty result
+    means "nothing to push" — the caller should skip the branch entirely.
     """
-    have = {rec_key(r) for _ln, r in load(central_lines) if "edge" in r}
+    c_edges = set()
+    c_nodes = {}
+    for _ln, r in load(central_lines):
+        if "edge" in r:
+            c_edges.add(rec_key(r))
+        elif "type" in r:
+            c_nodes[node_key(r)] = _payload(r)
     out = []
     for ln, rec in dedup_pairs(local_lines):
-        if "edge" in rec and rec_key(rec) in have:
-            continue
+        if "edge" in rec:
+            if rec_key(rec) in c_edges:
+                continue
+        elif "type" in rec:
+            k = node_key(rec)
+            if k in c_nodes and c_nodes[k] == _payload(rec):
+                continue  # byte-identical (modulo volatile fields) — pushing it breaks the merge
         out.append(ln)
     return out
 
