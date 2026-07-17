@@ -19,11 +19,36 @@ See [`docs/architecture.md`](docs/architecture.md) for how the pieces fit and
 
 ## Pillar 1 — Skills
 
-> **Start Here:** For a complete directory of available skills, MCP servers, and the orchestration routing map, see the [Agent Skills Repository Index (`skills/repository-index/SKILL.md`)](skills/repository-index/SKILL.md).
+### Start here: the router (`repository-index`)
+
+**[`skills/repository-index/SKILL.md`](skills/repository-index/SKILL.md) is the entry point
+for every agent, and the one file to read before deciding how to do anything else.**
+
+A skill an agent does not know about is a skill it will not load — and nothing announces the
+omission. The work simply comes out worse: conventions re-derived that were already written
+down, whole files read where a symbol lookup would do, and everything learned in the session
+lost at the end. The router exists so that never depends on an agent happening to browse
+`skills/`.
+
+It answers three questions in one place:
+
+| The router tells you | So an agent can |
+|---|---|
+| **Which MCP server answers which question** — omnigraph for memory, serena for code, graphify for blast radius, context7 for library docs, and what each *isn't* for | reach for the right tool instead of `Read`-ing whole files (Principle 6 of `coding-principles`, and where most of the token savings come from) |
+| **Which skills are always-on vs. triggered** — `coding-principles` and `structured-memory` apply to *any* task; `html-working-documents` or the review swarm only when their trigger fires | stop treating the baseline as an escalation, and stop invoking heavy machinery for a one-line fix |
+| **The routing decision tree** — session start (recall → activate → baseline), the task itself, then session end (verify → **persist**) | close the memory loop it opened, rather than letting recall shrink over time |
+
+Triggers are **observable** ("diff touches > 3 files", "the answer would exceed ~100 lines of
+markdown"), not vibes like "any complex task" — an agent can evaluate them without judgement
+calls. Adding a skill without a router row means nobody routes to it, so
+[`CONTRIBUTING.md`](CONTRIBUTING.md) makes the row part of adding the skill.
+
+`skills/SYNC.md` is **not** a router — it is the vendoring ledger (upstream, licence, sync
+date) for the borrowed skills.
 
 | Skill | Purpose |
 |---|---|
-| [`repository-index`](skills/repository-index/SKILL.md) | The master routing map for all MCP servers and agent skills. |
+| [`repository-index`](skills/repository-index/SKILL.md) | **The router — read first.** Maps every MCP server and skill to the trigger that should load it. |
 | [`coding-principles`](skills/coding-principles/SKILL.md) | Engineering baseline: DRY, TDD, single responsibility, document-the-why, changelog/ADR backtracking, MCP-first navigation. |
 | [`structured-memory`](skills/structured-memory/SKILL.md) | Typed, cross-project, cross-agent memory on Omnigraph — recall at session start, persist durable decisions at end. |
 | [`mcp-servers-setup`](skills/mcp-servers-setup/SKILL.md) | Configure and use the self-hosted MCP stack for token-efficient coding. |

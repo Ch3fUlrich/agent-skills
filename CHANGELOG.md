@@ -5,6 +5,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — the router did not route to half the skills (2026-07-17)
+
+`skills/repository-index/SKILL.md` is the file every instruction file points agents at
+first — and it listed **6 of 11 skills**. The five it omitted included `coding-principles`
+and `structured-memory`, the two that apply to *every* task. An agent told "start at the
+router" would never have found them there.
+
+- **All 11 skills are now routed**, split by how they are actually used: §2a always-on
+  (`coding-principles`, `structured-memory`, `mcp-servers-setup`), §2b task-shaped, §2c
+  orchestration/review. The old table implied everything was an escalation for big tasks;
+  the baseline is not an escalation.
+- **Superpowers was described as "workflow extensions and internet access … when you need to
+  search the web".** It has no web access — it is `systematic-debugging`,
+  `test-driven-development`, `brainstorming`, `verification-before-completion`. Corrected,
+  and **`context7` added** — the server that *does* answer library/framework questions was
+  missing from the MCP table entirely.
+- The `omnigraph` row still claimed it "automatically syncs at start/end of sessions"; it is
+  a 5-minute timer. Now records the per-graph pin, the silent-failure env vars, and the
+  operational-rules prerequisite.
+- **The decision tree began at "is it a simple tweak?"**, so its only path for small changes
+  routed past memory, Serena and the baseline entirely. It now opens with session start
+  (recall → activate → baseline) and closes with session end (verify → **persist**) — the
+  loop it previously opened and never closed. Recall without persist is a memory that only
+  ever shrinks.
+
+`README.md` gains a proper explanation of what the router *is* and why it exists, rather
+than a one-line pointer: a skill an agent does not know about is a skill it will not load,
+and nothing announces the omission.
+
+### Added — every sibling repo now points at the router (2026-07-17)
+
+`Server/CLAUDE.md`, `basic-analysis/{AGENTS,CLAUDE}.md` and `Invest/AGENTS.md` each pointed
+at individual skills but never at the map. All four now open with a **START HERE** section.
+Path per repo's own convention (`../agent-skills/…`; Server also notes `~/code/agent-skills`
+is the coding.vm form and does not exist on a workstation).
+
+Fixing them surfaced stale instructions that would have re-caused this week's incident:
+
+- **`basic-analysis` still documented the `omnigraph-globals` server** in four places —
+  removed on 2026-07-17, and dropped from its `.mcp.json` yesterday. Its docs were still
+  telling agents to read globals from a server that only answers "invalid bearer token".
+- **`Invest/AGENTS.md` said its memory lived in the `memory` graph.** It lives in `invest`
+  (71 nodes). Following that text would have written project data into the globals-only
+  graph — the exact thing per-project isolation exists to prevent.
+- **`Invest` had no `.mcp.json` at all**, relying on the user-scope override removed
+  yesterday; it now had *no* bridge. Added one pinned to `invest` — verified through the
+  real bridge at 152 rows.
+
+Each file now also carries the fingerprint that settles a false alarm: `0 rows except
+2 Preferences` **is** the `memory` graph, not a wipe — check config with
+`setup-agent-memory --check` before rebuilding anything.
+
 ### Added — `setup-agent-memory.{ps1,sh}`: the bridge setup, automated (2026-07-17)
 
 The sibling of `setup-sync`, and the two are constantly confused, so the READMEs now lead
