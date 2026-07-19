@@ -16,6 +16,7 @@ loads it. Read it first; it tells you which of these to open.
 | `structured-memory/references/operations.md` | **before** any Omnigraph query/mutate/load/sync |
 | `html-working-documents` | plan / research / review / report / diagram / prototype |
 | `mcp-servers-setup` | wiring or debugging the stack |
+| `homelab-access` | **before** any SSH / `DOCKER_HOST=ssh://` / firewall / NAS command |
 | `swarm-orchestration` | multi-file work (drives `pr-approval-agent`, `qa-swarm`, `review-triage`, `no-mistakes`, `babysit-prs`) |
 | `herdr-orchestration` | agent work that must **outlive the session**, be human-supervised, use a non-Claude agent, or wait on a long-running process |
 

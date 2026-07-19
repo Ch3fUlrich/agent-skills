@@ -55,6 +55,7 @@ skipped: the work just comes out worse.
 | Skill / Path | Purpose | Routing Trigger |
 | :--- | :--- | :--- |
 | `skills/html-working-documents` | Self-contained HTML artifacts for planning, research, review, diagrams, reports, prototypes, handoff. | The answer would exceed ~100 lines of markdown, or needs a diagram/table/interactive view. |
+| `skills/homelab-access` | SSH aliases, the `claude-ops` key, per-host shell/user quirks, and what is deliberately unreachable. | **Before any command that touches a VM, the firewall, or the NAS** — including `DOCKER_HOST=ssh://`. Cheaper than rediscovering that `ping` is blocked or that OPNsense runs `csh`. |
 | `skills/repository-index` | This file. | You are lost, new to the repo, or unsure which skill applies. |
 
 ## 2c. Orchestration & review skills
