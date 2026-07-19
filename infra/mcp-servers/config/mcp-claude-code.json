@@ -1,4 +1,25 @@
 {
+  "$comment": [
+    "Reference TEMPLATE. By itself it does nothing -- scripts/*/register-claude-code-mcp.*",
+    "merges the entries you name into ~/.claude.json (USER scope).",
+    "",
+    "DO NOT register `graphify` or `graphify-docker` from here into user scope (2026-07-19).",
+    "Both are repo-bound: they resolve graphify-out/graph.json relative to a single mounted",
+    "path, so one user-scope entry serves ONE repo's graph to EVERY repo. That was the actual",
+    "bug -- a user-scope graphify-docker pinned to -w /home/s/code/agent-skills meant Invest",
+    "and Server silently queried agent-skills' graph. It has been removed from ~/.claude.json.",
+    "",
+    "Graphify belongs in PROJECT scope: give each repo a .mcp.json with its own",
+    "`graphify-docker` mounting that repo at /repo (see ~/code/{agent-skills,Invest,Server}/",
+    ".mcp.json). Do not rely on a project entry to out-rank a user-scope one: the published",
+    "order is local > project > user, but this repo has a 2026-07-17 incident on record where",
+    "a user-scope `omnigraph` won anyway (an unapproved .mcp.json loads no project servers at",
+    "all, which looks identical). Keep user scope EMPTY of both instead -- then there is",
+    "nothing to lose to, whichever rule applies. See CLAUDE.md 'MCP config precedence'.",
+    "",
+    "Same applies to `omnigraph` (pinned per repo via OMNIGRAPH_GRAPH_ID). Serena and",
+    "playwright are genuinely repo-agnostic and are fine in user scope."
+  ],
   "mcpServers": {
     "serena": {
       "command": "uvx",

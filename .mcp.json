@@ -18,7 +18,17 @@
     "  Fix all four: infra/mcp-servers/omnigraph-setup/setup-agent-memory.ps1 -Check (or .sh --check)",
     "",
     "Transport is docker, not npx: node/npx is absent on coding.vm.",
-    "Router: skills/repository-index/SKILL.md · Memory: skills/structured-memory/SKILL.md"
+    "Router: skills/repository-index/SKILL.md · Memory: skills/structured-memory/SKILL.md",
+    "",
+    "GRAPHIFY (2026-07-19) — same trap as omnigraph, different server. `graphify-docker`",
+    "resolves graphify-out/graph.json relative to its MOUNT, so one user-scope entry serves",
+    "one repo's graph to EVERY repo. A global one pinned to -w /home/s/code/agent-skills was",
+    "doing exactly that: Invest and Server silently read THIS repo's graph. It has been",
+    "removed from ~/.claude.json and each repo now declares its own, so no user-scope entry",
+    "exists to win and the precedence question never arises. Same check as above — neither",
+    "`omnigraph` nor `graphify-docker` may appear in user scope.",
+    "Rebuild this repo's graph (deterministic, no LLM key):",
+    "  docker run --rm -v \"$PWD:/repo\" -w /repo --entrypoint python graphify-mcp:latest -m graphify update ."
   ],
   "mcpServers": {
     "omnigraph": {
@@ -36,6 +46,17 @@
         "-e",
         "OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN}",
         "omnigraph-mcp:latest"
+      ]
+    },
+    "graphify-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-v",
+        "${CODE_ROOT:-/home/s/code}/agent-skills:/repo",
+        "graphify-mcp:latest"
       ]
     }
   }
