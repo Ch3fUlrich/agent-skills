@@ -53,22 +53,34 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
    argument — so `schema_get`/`query`/`mutate` always act on that graph. Reading a second
    graph (e.g. global `Preference`s in `memory`) requires a **second** MCP server entry.
 
-2. **Edge GQ casing is asymmetric.** `insert`/`delete` use the **PascalCase edge
+2. **`.gq` is neither Cypher nor GraphQL — both habits fail at character 1.** The
+   parser wants a named `query` envelope with **brace-delimited** clauses and
+   `$`-prefixed variables. Cypher parentheses/bare-return and a GraphQL
+   `mutation { }` wrapper both die as `parse error: expected query_file`, pointing
+   at column 1 with no hint about what it wanted — easy to misread as "the server
+   is broken" rather than "wrong dialect".
+   - right: `query list_projects() { match { $p: Project } return { $p.slug } }`
+   - wrong: `match (p:Project) return p.slug` · `query q { match (p:Project) ... }`
+   - wrong: `mutation { insert Decision { ... } }` — writes are *also* `query`
+     blocks; the body verb (`insert`/`update`/`delete`) is what makes them writes,
+     and they dispatch through `mutate`, not `query`.
+
+3. **Edge GQ casing is asymmetric.** `insert`/`delete` use the **PascalCase edge
    TYPE** name; **match/traversal** uses **lowerCamelCase**.
    - write: `insert DecidedIn { from: $d, to: $p }` · `delete AppliesTo where ...`
    - read: `match { $d: Decision  $d decidedIn $p }`
    - `insert decidedIn { ... }` fails with `parse error: expected type_name`.
    - Edge `data` block is `{}` when the edge has no properties — just `from`/`to`.
 
-3. **D₂ rule — a mutation is insert/update-only OR delete-only, never both.**
+4. **D₂ rule — a mutation is insert/update-only OR delete-only, never both.**
    Mixing a `delete` with an `insert`/`update` in one query is rejected at parse
    time. Split delete-then-insert into two separate `mutate` calls.
 
-4. **Parameterize; never string-interpolate.** `query q($slug: String) { ... }`
+5. **Parameterize; never string-interpolate.** `query q($slug: String) { ... }`
    with `params: {slug: ...}`. Ranking ops (`nearest`/`bm25`/`rrf`) require a
    trailing `limit N` — they order, they don't filter.
 
-5. **Verify every write.** `commits_list` head before/after, or re-export and
+6. **Verify every write.** `commits_list` head before/after, or re-export and
    diff. A 504 is **not** failure — the server may commit after the proxy drops
    the response; check the head before retrying. What a blind retry costs depends
    on *what* you wrote:
@@ -88,7 +100,7 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
      the next call re-pins. If it persists, write onto a fresh branch via
      `load --from main` instead, which doesn't suffer `main`'s concurrent-commit drift.
 
-6. **Duplicate edges are the classic trap.** Edges are **not** slug-keyed, so a
+7. **Duplicate edges are the classic trap.** Edges are **not** slug-keyed, so a
    cross-store `load --mode merge` (device-branch merge, reconciling two clients)
    **appends** them → duplicates. There is **no API to delete an individual edge**
    (edges expose no queryable `id`; `where from=.. and to=..` doesn't parse).
@@ -104,24 +116,24 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
    - **Prevent it:** prefer native `branches_merge` (edge-de-duplicating) over raw
      `load --merge` for cross-store reconciliation.
 
-7. **Never `overwrite` a shared `main`.** It clobbers other projects' data, and
+8. **Never `overwrite` a shared `main`.** It clobbers other projects' data, and
    overwrite-on-a-populated graph hits a Lance index bug on v0.8.1. Use
    `merge` / `branches_merge` on `main`; `overwrite` is only safe on a fresh store
    or a throwaway branch you own.
 
-8. **Replace one project's subgraph on a shared `main` cleanly** (the proven
+9. **Replace one project's subgraph on a shared `main` cleanly** (the proven
    recipe, e.g. pushing a repo's refreshed memory up): (a) `delete <Type> where
    slug=..` every child node of that project (edges cascade); (b) `load --mode
    merge` the project's node+edge subset exported from the source (fresh → zero
    dup edges). Keep the `Project` node; select the subset by slug prefix. Verify
    the two sides' node+edge sets are then identical.
 
-9. **Slugs: lowercase kebab-case, stable.** Auto-merge keys on `slug`; a case
+10. **Slugs: lowercase kebab-case, stable.** Auto-merge keys on `slug`; a case
    variant (`Invest` vs `invest`) or drift creates a **duplicate node** it can't
    collapse on its own (then needs `dedup-graph.py`). Reuse the same slug to make
    re-writes idempotent.
 
-10. **`load --mode merge` does NOT (re)compute embeddings — merged Decisions go
+11. **`load --mode merge` does NOT (re)compute embeddings — merged Decisions go
     INVISIBLE to vector search.** This is Omnigraph's documented behaviour
     (`omnigraph://best-practices/search`): merge updates the `@embed("rationale")`
     source but leaves the vector stale, and a `Decision` with a null `embedding` is
@@ -176,13 +188,13 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
     without it recall degrades to graph traversal + scalar indexes rather than
     failing.
 
-11. **You do not manage device branches.** Write durable memory to `main`; the
+12. **You do not manage device branches.** Write durable memory to `main`; the
     sync automation (`omnigraph-setup/omnigraph-sync.sh` / `sync-windows.ps1` on a timer)
     creates `device/<host>`, merges to central `main`, and reconciles back. The
     sync **verify gate refuses to pull a central that has duplicates** — that is
     correct (it protects a clean local); clean central (rule 6) then re-sync.
 
-12. **Remote ops from a client** use the CLI-in-container (bearer + public URL),
+13. **Remote ops from a client** use the CLI-in-container (bearer + public URL),
     e.g. `docker run --rm -i --network <compose-net> -e OMNIGRAPH_BEARER_TOKEN=…
     --entrypoint omnigraph <image> query|mutate|load|export --server <URL>
     --graph memory`. Destructive remote writes need `--yes`. You **cannot** reset
