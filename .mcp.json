@@ -29,6 +29,8 @@
     "Never in user scope (~/.claude.json): one global entry answered for every repo until",
     "2026-07-19 — Invest and Server silently read THIS repo's graph. Verify every repo:",
     "  bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh    (--fix to repair)",
+    "  Windows: infra/mcp-servers/scripts/windows/check-graphify-scope.ps1 -Fix",
+    "  On Windows set CODE_ROOT first -- the POSIX default below cannot exist there.",
     "Rebuild (--user is REQUIRED; without it the container writes root-owned files that the",
     "next rebuild cannot overwrite):",
     "  docker run --rm --user \"$(id -u):$(id -g)\" -v \"$PWD:/repo\" -w /repo \\",

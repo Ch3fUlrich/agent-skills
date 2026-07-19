@@ -128,10 +128,22 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo \
 them. Keeping user scope empty of them also means no same-named entry can ever compete
 with the project one, which sidesteps the precedence question entirely.
 
-Verify all three gates for every repo at once:
+Verify all three gates for every repo at once (`--fix`/`-Fix` applies the safe
+repairs; both exit non-zero so they work in hooks/CI):
 ```bash
-bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh
+bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh --fix          # Linux/WSL
 ```
+```powershell
+.\infra\mcp-servers\scripts\windows\check-graphify-scope.ps1 -Fix           # Windows
+```
+
+**On Windows, set `CODE_ROOT`.** The committed mounts read
+`${CODE_ROOT:-/home/s/code}/<repo>:/repo` — that POSIX default is right on Linux
+and cannot exist on Windows, so docker mounts nothing and the server answers from
+an empty graph. `setx CODE_ROOT "C:/Users/<you>/code"`, then restart Claude Code.
+The PowerShell checker flags this case by name. Ownership differs too: Docker
+Desktop surfaces container-created files as the host user, so `--user` matters
+only on Linux/WSL — the `.ps1` deliberately omits that gate.
 
 ### Superpowers — Workflow Skills (14 skills)
 
