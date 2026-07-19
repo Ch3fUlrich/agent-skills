@@ -84,6 +84,55 @@ graphify path "apply-cluster.sh" "cluster.yaml"
 
 **Rule**: Graphify does not replace Serena. Use Serena for symbol-level navigation and Graphify for broader relationship questions when a graph exists.
 
+#### Per-repo setup — THREE gates, and every one fails silently
+
+Graphify is **repo-bound**: the server resolves `graphify-out/graph.json` relative to
+its mount, so one server serves exactly one repo. All three gates must be open, and
+none of them errors when shut — you get wrong answers or a missing tool, never a
+message. Miss gate 1 and another repo's graph answers for yours (this is what happened
+to `Invest`/`Server` until 2026-07-19: a user-scope entry pinned to `agent-skills`
+answered for every repo).
+
+| # | Gate | Where | Symptom if missed |
+|---|------|-------|-------------------|
+| 1 | Server declared **project-scoped**, mounting *this* repo | `<repo>/.mcp.json` | another repo's graph answers, silently |
+| 2 | Server **approved** | `<repo>/.claude/settings.local.json` → `enabledMcpjsonServers` | tool absent; no prompt, no error |
+| 3 | Graph **built** | `<repo>/graphify-out/graph.json` | server starts, serves nothing |
+
+Gate 2 is the one that bites: adding a server to `.mcp.json` is **not** enough — an
+unapproved project server is skipped without a word. `.mcp.json` is tracked and cannot
+approve itself (deliberate: a repo must not auto-run servers on clone). Approve in the
+untracked local settings, or set `enableAllProjectMcpServers: true` there.
+
+```jsonc
+// <repo>/.mcp.json — gate 1. Mount THIS repo; the image's WORKDIR is already /repo.
+"graphify-docker": {
+  "command": "docker",
+  "args": ["run","-i","--rm","-v","${CODE_ROOT:-/home/s/code}/<REPO>:/repo","graphify-mcp:latest"]
+}
+```
+```jsonc
+// <repo>/.claude/settings.local.json — gate 2 (untracked)
+{ "enabledMcpjsonServers": ["omnigraph", "graphify-docker"] }
+```
+```bash
+# gate 3 — deterministic AST graph, no LLM/API key. --user is REQUIRED: the container
+# runs as root and bind-mount writes land root-owned, so the next rebuild (and any
+# host-side `graphify`/git clean) fails with permission denied on your own files.
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo \
+  --entrypoint python graphify-mcp:latest -m graphify update .
+```
+
+**Never put `graphify-docker` (or `omnigraph`) in user scope** (`~/.claude.json` →
+`mcpServers`). Both are repo-bound; one global entry serves one repo's data to all of
+them. Keeping user scope empty of them also means no same-named entry can ever compete
+with the project one, which sidesteps the precedence question entirely.
+
+Verify all three gates for every repo at once:
+```bash
+bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh
+```
+
 ### Superpowers — Workflow Skills (14 skills)
 
 | Skill | When to Use |

@@ -18,7 +18,13 @@
     "nothing to lose to, whichever rule applies. See CLAUDE.md 'MCP config precedence'.",
     "",
     "Same applies to `omnigraph` (pinned per repo via OMNIGRAPH_GRAPH_ID). Serena and",
-    "playwright are genuinely repo-agnostic and are fine in user scope."
+    "playwright are genuinely repo-agnostic and are fine in user scope.",
+    "",
+    "A project entry is not enough on its own: project servers must ALSO be approved in",
+    "<repo>/.claude/settings.local.json -> enabledMcpjsonServers (untracked; a tracked",
+    ".mcp.json cannot approve itself). An unapproved server is skipped silently -- no",
+    "prompt, no error, the tool is just missing. Verify every repo's full wiring with",
+    "  bash scripts/linux/check-graphify-scope.sh --fix"
   ],
   "mcpServers": {
     "serena": {
