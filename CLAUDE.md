@@ -28,6 +28,9 @@ python -c "import json,pathlib;print(sorted((json.loads((pathlib.Path.home()/'.c
 | Symptom | Cause | Fix |
 |---|---|---|
 | wrong/empty graph, `0 rows except 2 Preferences` | user-scope override | remove it (above) |
+| MCP tool **absent entirely** — no prompt, no error | project server in `.mcp.json` never **approved** | add it to `.claude/settings.local.json` → `enabledMcpjsonServers` (a tracked `.mcp.json` cannot approve itself) |
+| graph answers describe **another repo** | `graphify-docker` is repo-bound; a user-scope or wrong-mount entry serves one repo to all | `bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh --fix` |
+| rebuild fails `permission denied` on your own files | container ran as root without `--user` | same checker `--fix` (chowns them back) |
 | `missing bearer token` | `OMNIGRAPH_TOKEN` unset | export it |
 | `fetch failed` | wrong `OMNIGRAPH_NET` (a network can **exist but be empty**) | probe `scripts/_omni_env.py` |
 | `pull access denied for omnigraph-mcp` | image not built (on no registry) | `docker build -t omnigraph-mcp:latest infra/mcp-servers/servers/omnigraph-mcp` |
