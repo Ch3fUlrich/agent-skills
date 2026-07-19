@@ -67,6 +67,7 @@ skipped: the work just comes out worse.
 | `skills/review-triage` | Paul D'Ambra | MIT | Triage scoring, the Human Participation Gate, and dual-mode narration. | Automatically triggered after `qa-swarm` to format results. |
 | `skills/no-mistakes` | Kun Chen | MIT | Local pre-push validation proxy loop to keep main branch clean. | Used by `@engineer` before declaring a task complete. |
 | `skills/babysit-prs` | Phil Haack | MIT | Asynchronous state tracking for CI test runs and retry loops. | Used by `@engineer` to poll for CI test completion asynchronously. |
+| `skills/herdr-orchestration` | Internal | - | Driving the Herdr socket API: spawn/observe/synchronize agents in **persistent** panes. | Work must outlive the session, a human supervises it, a **non-Claude** agent is needed, or you wait on a long-running process. **Not** a replacement for `Agent`/`Workflow` — see its §1. |
 
 ## 3. Routing Decision Tree
 
