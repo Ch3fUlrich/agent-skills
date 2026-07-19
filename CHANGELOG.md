@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — `herdr-orchestration` skill: what Herdr is *for*, and what it is not (2026-07-19)
+
+[ADR 0002](docs/decisions/0002-herdr-multiplexer.md) adopted Herdr and
+`infra/remote-access/herdr/` documents installing it, but nothing under `skills/` covered
+**driving** it — so the router could not route to it and its socket API was, in practice,
+invisible to agents.
+
+The risk was not that agents would miss it; it was that they would find it and misuse it.
+"Agent orchestration" plus 14.6k stars invites replacing the `Agent`/`Workflow` tools with
+Herdr, which trades typed return objects for **scraped terminal text** — losing schemas,
+automatic result plumbing, resume, and budget accounting. The skill therefore leads with the
+decision flow: native tools by default, Herdr only for the four things they genuinely cannot
+do — outliving the session, non-Claude agents, human-in-the-loop, and long-lived process sync.
+
+Every command was verified against 0.7.4 rather than taken from docs, which surfaced traps
+that all fail **silently**:
+
+| Trap | Why it bites |
+|---|---|
+| `agent read --source recent` returns `""` | `--source visible` returns the text. A working spawn reads as producing nothing; poll loops spin to timeout. |
+| status is **heuristic** without the integration hook | Herdr shows `working`/`idle` either way, so it looks correct — but `agent wait --status idle` can fire while a model is thinking. `herdr integration status` reports `claude: not installed` on this host. |
+| `agent send` writes literal text, no Enter | The prompt sits in the input box; needs `pane send-keys <pane> Enter`. |
+| panes share the working tree | Parallel agents corrupt each other — `herdr worktree create` per agent. |
+
+Routed from `skills/repository-index` §2c and the `AGENTS.md` trigger table.
+
 ### Changed — agent instructions halved; `omnigraph-globals` erased, not explained (2026-07-17)
 
 Instruction files are paid for on **every** session, so their length is a running cost. The
