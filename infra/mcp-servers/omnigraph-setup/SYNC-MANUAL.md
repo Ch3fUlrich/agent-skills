@@ -159,15 +159,24 @@ from the bearer token)"*, and that was confirmed against a live server. Making i
 mean a bearer token per device, i.e. a secret to distribute to and rotate on every machine.
 
 So the sync `POST`s `\<VIEWER_URL\>/api/sync-ping?graph=<g>` after each graph, and the viewer
-records what it observes on the connection: the **source IP**, mapped to a device name via
-`OMNIGRAPH_DEVICE_MAP` (`ip=name,…` on the viewer), else reverse DNS, else the bare IP. A
-commit is attributed to the first ping that follows it within `PING_WINDOW_SEC` (default
-900); anything older stays blank rather than guessing — a wrong device name is worse than
-none. The ping is best-effort and never fails a sync.
+records what it observes on the connection: the **source IP**. A commit is attributed to the
+first ping that follows it within `PING_WINDOW_SEC` (default 900); anything older stays blank
+rather than guessing — a wrong device name is worse than none. The ping is best-effort and
+never fails a sync.
 
-> A sync running **on coding.vm itself** reaches the viewer through the docker bridge
-> gateway (`172.18.0.1`), never its LAN address — map that IP explicitly or it shows up as
-> the gateway.
+**Names are detected, not configured.** Reverse DNS answers this on any LAN whose router
+registers its DHCP clients — verified here: `192.168.178.73 → coding.vm`, `.159 → cloud.vm`.
+The one address that cannot resolve is the docker bridge gateway, which is exactly what a
+sync running **on the viewer's own host** arrives as; the viewer reads that gateway from its
+own routing table (not a hardcoded `172.x`, which changes with the compose project) and looks
+up the host instead. Lookups are cached, because `gethostbyaddr` ignores socket timeouts and
+an unreachable resolver would otherwise stall a worker on every ping.
+
+`OMNIGRAPH_DEVICE_MAP` (`ip=name,…` on the viewer) exists only as an **override** for a host
+the LAN DNS cannot name. Normally leave it empty.
+
+> Point `VIEWER_URL` at the viewer **directly** (`http://coding.vm:8090`). Through a reverse
+> proxy every sync would arrive with the proxy's address and all devices would look alike.
 
 **Those two local URLs are not interchangeable.** The script talks to the server both
 directly (from the host) and through a throwaway CLI container (on the docker network).

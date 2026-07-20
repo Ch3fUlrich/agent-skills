@@ -19,6 +19,7 @@ import html
 import json
 import os
 import socket
+import struct
 import time
 
 import requests
@@ -210,7 +211,8 @@ def _commits(graph, branch="main"):
 # every machine). The one place a device identifies itself for free is the TCP connection,
 # so the sync pings this endpoint after each graph and we attribute by the observed IP.
 SYNC_PINGS = os.environ.get("SYNC_PINGS", "/data/sync-pings.json")
-# "ip=name,ip=name" — optional; falls back to reverse DNS, then the bare IP.
+# OPTIONAL override, "ip=name,ip=name". Normally leave it empty: names are detected
+# automatically (see _ping_device). Only needed for a host the LAN DNS cannot name.
 DEVICE_MAP = {}
 for _pair in os.environ.get("OMNIGRAPH_DEVICE_MAP", "").split(","):
     if "=" in _pair:
@@ -221,16 +223,53 @@ for _pair in os.environ.get("OMNIGRAPH_DEVICE_MAP", "").split(","):
 # guessing (a wrong device name is worse than none).
 PING_WINDOW_US = int(float(os.environ.get("PING_WINDOW_SEC", "900")) * 1_000_000)
 MAX_PINGS = 500
+_NAME_CACHE = {}
+
+
+def _gateway_ip():
+    """This container's default gateway = the docker HOST as it appears to us.
+
+    A sync running on the viewer's own host reaches us through the bridge gateway,
+    never that host's LAN address, so its PTR lookup would otherwise miss. Read it
+    from the routing table instead of hardcoding a bridge subnet — the bridge number
+    changes with the compose project.
+    """
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.read().splitlines()[1:]:
+                cols = line.split()
+                if len(cols) > 2 and cols[1] == "00000000":      # destination 0.0.0.0
+                    return socket.inet_ntoa(struct.pack("<L", int(cols[2], 16)))
+    except Exception:  # noqa: BLE001 — no /proc (non-Linux) just means "no local case"
+        pass
+    return None
 
 
 def _ping_device(ip):
-    """Device name for a source IP: explicit map, else reverse DNS, else the IP."""
+    """Device name for a source IP — detected, not configured.
+
+    Reverse DNS answers this on any LAN whose router registers its DHCP clients
+    (verified here: .73 -> coding.vm, .159 -> cloud.vm). The one address that cannot
+    resolve is the docker bridge gateway, which is what a sync on the viewer's OWN host
+    arrives as — that is looked up as the host rather than left as a bare 172.x address.
+    DEVICE_MAP stays available to override a host the DNS cannot name.
+
+    Cached: gethostbyaddr ignores socket timeouts, so an unreachable resolver would
+    otherwise stall a gunicorn worker on every ping instead of just the first.
+    """
     if ip in DEVICE_MAP:
         return DEVICE_MAP[ip]
+    if ip in _NAME_CACHE:
+        return _NAME_CACHE[ip]
+    lookup = ip
+    if ip in ("127.0.0.1", "::1") or ip == _gateway_ip():
+        lookup = _gateway_ip() or ip
     try:
-        return socket.gethostbyaddr(ip)[0].split(".")[0]
+        name = socket.gethostbyaddr(lookup)[0].split(".")[0]
     except Exception:  # noqa: BLE001 — no PTR record is normal, not an error
-        return ip
+        name = ip
+    _NAME_CACHE[ip] = name
+    return name
 
 
 def _pings_read():
