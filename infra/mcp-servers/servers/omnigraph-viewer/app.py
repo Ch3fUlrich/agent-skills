@@ -171,6 +171,56 @@ def api_graphs():
     return jsonify({"graphs": _graphs(), "current": GRAPH_ID})
 
 
+def _commits(graph, branch="main"):
+    """Commit log for a graph's branch. Each commit carries created_at (µs since
+    epoch) and actor_id — the latter is the sync SOURCE once the sync tags its
+    pushes (null until then). Newest first; timestamp-less rows dropped."""
+    try:
+        r = requests.get(f"{OMNIGRAPH_URL}/graphs/{graph}/commits",
+                         params={"branch": branch}, headers=_headers, timeout=TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        rows = data.get("commits") or data.get("rows") or (data if isinstance(data, list) else [])
+    except Exception:  # noqa: BLE001 — one unreachable graph must not blank the panel
+        return []
+    out = []
+    for c in rows:
+        ts = c.get("created_at") or c.get("createdAt")
+        if not ts:
+            continue
+        out.append({
+            "commit": c.get("graph_commit_id") or c.get("graphCommitId"),
+            "ts_us": ts,
+            "source": c.get("actor_id") or c.get("actorId"),
+            "merge": bool(c.get("merged_parent_commit_id") or c.get("mergedParentCommitId")),
+        })
+    out.sort(key=lambda c: c["ts_us"], reverse=True)
+    return out
+
+
+@app.get("/api/sync-history")
+def api_sync_history():
+    """Per-graph last-synced time + recent history. 'Last synced' is the newest
+    commit on the graph's main branch (clients only ever write central via the
+    sync), and 'source' is that commit's actor_id."""
+    try:
+        limit = max(1, min(50, int(request.args.get("limit", 10))))
+    except (TypeError, ValueError):
+        limit = 10
+    out = []
+    for g in _graphs():
+        cs = _commits(g, "main")
+        out.append({
+            "graph": g,
+            "last_synced_us": cs[0]["ts_us"] if cs else None,
+            "last_source": cs[0]["source"] if cs else None,
+            "commits": len(cs),
+            "history": cs[:limit],
+        })
+    out.sort(key=lambda x: (x["last_synced_us"] or 0), reverse=True)
+    return jsonify({"graphs": out})
+
+
 def _branch_op(method, graph, path, payload=None):
     """Proxy a branch write to the omnigraph server. Slashed names (device/<host>)
     need body-based merge (source/target) and a %2F-encoded delete path — the plain
@@ -302,6 +352,7 @@ tr.match{outline:2px solid var(--acc);outline-offset:-2px}
   <h1>Omnigraph Memory</h1>
   <button id="v-graph" class="on">Graph</button>
   <button id="v-table">Table</button>
+  <button id="v-sync" title="last sync time + history per graph, with source">Sync log</button>
   <input id="search" placeholder="search nodes / edges…">
   <span class="sp"></span>
   <label class="muted" style="color:var(--mut)">branch</label>
@@ -480,10 +531,32 @@ function matches(n){
 function render(){
   $("#v-graph").classList.toggle("on",S.view==="graph");
   $("#v-table").classList.toggle("on",S.view==="table");
+  $("#v-sync").classList.toggle("on",S.view==="sync");
   $("#stage").classList.toggle("hidden",S.view!=="graph");
-  $("#table").classList.toggle("hidden",S.view!=="table");
+  $("#table").classList.toggle("hidden",S.view==="graph");   // #table area holds Table OR Sync log
   $("#legend").style.display=S.view==="graph"?"":"none";
-  if(S.view==="graph")renderGraph();else renderTable();
+  if(S.view==="graph")renderGraph();
+  else if(S.view==="sync")renderSyncLog();
+  else renderTable();
+}
+/* ---------- sync log view: last-synced time + history + source per graph ---------- */
+function tsStr(us){if(!us)return"—";const d=new Date(us/1000);const p=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());}
+function agoStr(us){if(!us)return"never";let s=(Date.now()-us/1000)/1000;
+  if(s<90)return"just now";let m=s/60;if(m<60)return Math.round(m)+"m ago";let h=m/60;if(h<48)return Math.round(h)+"h ago";return Math.round(h/24)+"d ago";}
+async function renderSyncLog(){
+  $("#table").innerHTML='<p class="muted" style="padding-top:12px">loading sync history…</p>';
+  let j;try{j=await(await fetch("/api/sync-history")).json();}catch(e){$("#table").innerHTML='<p class="err">'+esc(e)+'</p>';return;}
+  const out=(j.graphs||[]).map(g=>{
+    const hist=(g.history||[]).map(h=>
+      `<tr><td>${esc(tsStr(h.ts_us))}</td><td>${h.source?esc(h.source):'<span class=muted>—</span>'}</td><td class=muted>${esc((h.commit||"").slice(0,12))}${h.merge?' <span title="merge commit">⤵</span>':''}</td></tr>`
+    ).join("")||'<tr><td colspan=3 class=muted>no commits</td></tr>';
+    return `<section><h2><span class=dot style="background:${graphColor(g.graph)}"></span>${esc(g.graph)}
+      <span class="count">${esc(agoStr(g.last_synced_us))}</span>
+      ${g.last_source?`<span class="muted">via ${esc(g.last_source)}</span>`:''}</h2>
+      <div style="overflow-x:auto"><table><thead><tr><th>synced (local time)</th><th>source</th><th>commit</th></tr></thead><tbody>${hist}</tbody></table></div></section>`;
+  }).join("");
+  $("#table").innerHTML=`<div style="padding-top:12px"><p class="muted">“Last synced” = newest commit on each graph’s <b>main</b> (clients write central only via the sync). <b>Source</b> = the commit’s actor — shows “—” until the sync tags its pushes.</p></div>`+(out||'<p class="muted">no graphs.</p>');
 }
 /* ---------- force-directed graph: build DOM once, update positions per tick ---------- */
 const NS="http://www.w3.org/2000/svg";
@@ -776,6 +849,7 @@ function renderTable(){
 /* ---------- wire header ---------- */
 $("#v-graph").onclick=()=>{S.view="graph";render();};
 $("#v-table").onclick=()=>{S.view="table";render();};
+$("#v-sync").onclick=()=>{S.view="sync";render();};
 $("#search").oninput=e=>{S.q=e.target.value;S.removed=new Set();if(S.view==="graph")applyHighlight();else renderTable();};
 $("#branch").onchange=e=>{S.branch=e.target.value;resetLayout();load();};
 $("#b-new").onclick=doBranchNew;$("#b-merge").onclick=doBranchMerge;$("#b-del").onclick=doBranchDel;
