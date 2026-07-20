@@ -20,22 +20,17 @@
     "Transport is docker, not npx: node/npx is absent on coding.vm.",
     "Router: skills/repository-index/SKILL.md · Memory: skills/structured-memory/SKILL.md",
     "",
-    "GRAPHIFY — `graphify-docker` is REPO-BOUND: it resolves graphify-out/graph.json relative",
-    "to its MOUNT, so one entry serves exactly one repo. THREE gates, all silent when missed:",
-    "  1 declared here, mounting THIS repo   -> else another repo's graph answers for yours",
-    "  2 approved in .claude/settings.local.json enabledMcpjsonServers (untracked; a tracked",
-    "    .mcp.json cannot approve itself) -> else the tool is simply ABSENT, no prompt, no error",
-    "  3 graphify-out/graph.json built       -> else the server starts and serves nothing",
-    "Never in user scope (~/.claude.json): one global entry answered for every repo until",
-    "2026-07-19 — Invest and Server silently read THIS repo's graph. Verify every repo:",
-    "  bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh    (--fix to repair)",
-    "  Windows: infra/mcp-servers/scripts/windows/check-graphify-scope.ps1 -Fix",
-    "  On Windows set CODE_ROOT first -- the POSIX default below cannot exist there.",
-    "Rebuild (--user is REQUIRED; without it the container writes root-owned files that the",
-    "next rebuild cannot overwrite):",
-    "  docker run --rm --user \"$(id -u):$(id -g)\" -v \"$PWD:/repo\" -w /repo \\",
-    "    --entrypoint python graphify-mcp:latest -m graphify update .",
-    "Full rules: skills/mcp-servers-setup/SKILL.md -> Graphify -> Per-repo setup."
+    "GRAPHIFY is NOT declared here — it is a SINGLE user-scope entry (~/.claude.json),",
+    "cwd-relative, so one definition serves whichever repo you launch from. Workstation (uv):",
+    "  \"graphify\": { \"command\": \"uv\", \"args\": [\"run\",\"--with\",\"graphifyy[mcp]\",",
+    "                 \"python\",\"-m\",\"graphify.serve\",\"graphify-out/graph.json\"] }",
+    "Server (Docker): a `graphify-mcp` PATH wrapper running",
+    "  docker run -i --rm -v \"$PWD:/repo\" graphify-mcp:latest",
+    "Unlike omnigraph, graphify takes NO per-repo entry: a cwd-relative single definition",
+    "serves each repo its own graph, so there is nothing to pin per project (the old",
+    "per-repo `graphify-docker`, retired 2026-07-20).",
+    "Verify: infra/mcp-servers/scripts/{linux/check-graphify-scope.sh,windows/check-graphify-scope.ps1}.",
+    "Full rules: skills/mcp-servers-setup/SKILL.md -> Graphify."
   ],
   "mcpServers": {
     "omnigraph": {
@@ -53,17 +48,6 @@
         "-e",
         "OMNIGRAPH_TOKEN=${OMNIGRAPH_TOKEN}",
         "omnigraph-mcp:latest"
-      ]
-    },
-    "graphify-docker": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-v",
-        "${CODE_ROOT:-/home/s/code}/agent-skills:/repo",
-        "graphify-mcp:latest"
       ]
     }
   }

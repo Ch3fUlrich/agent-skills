@@ -1,31 +1,34 @@
 #!/usr/bin/env bash
 # MCP Server Stack — Graphify Scope Check (Linux)
 # ============================================================================
-# Graphify is REPO-BOUND: the server resolves graphify-out/graph.json relative
-# to its bind mount, so one server serves exactly one repo. Three gates must
-# all be open, and NONE of them errors when shut:
+# Graphify is wired as ONE cwd-relative `graphify` entry in USER scope
+# (~/.claude.json) — NEVER per repo. graphify.serve is stdio and inherits its
+# launch directory, so a single entry with the RELATIVE path
+# graphify-out/graph.json serves whichever repo you started Claude Code in.
+#   Workstation: command `uv` ... graphify.serve graphify-out/graph.json
+#   Server:      command `graphify-mcp` (the bin/ wrapper: docker -v "$PWD:/repo")
+# See skills/mcp-servers-setup/SKILL.md -> Graphify.
 #
-#   1. project-scoped server in <repo>/.mcp.json mounting THAT repo
-#        missed -> another repo's graph answers for yours, silently
-#   2. approval in <repo>/.claude/settings.local.json enabledMcpjsonServers
-#        missed -> tool simply absent; no prompt, no error
-#   3. a built graph at <repo>/graphify-out/graph.json
-#        missed -> server starts and serves nothing
+# What this checks:
+#   USER scope  ~/.claude.json
+#     - exactly one `graphify` entry, cwd-relative (uv, or the graphify-mcp wrapper)
+#         missing        -> repos with a graph won't be served
+#         hardcoded mount-> serves ONE repo to EVERY repo (the retired bug)
+#     - NO `omnigraph` or `graphify-docker` in user scope
+#         omnigraph is genuinely per-repo (project scope); graphify-docker is retired
+#   PER repo  (any repo with a graphify-out/ graph)
+#     - NO graphify entry in <repo>/.mcp.json — graphify is user-scope, not per repo
+#     - a built graph at <repo>/graphify-out/graph.json
+#     - no root-owned graphify-out (a Docker rebuild without --user leaves files you
+#       cannot overwrite) — only reachable on the server/Docker path
 #
-# Plus two traps this script also catches:
-#   - graphify-docker/omnigraph in USER scope (~/.claude.json): one global
-#     entry serves one repo's data to every repo (the 2026-07-19 bug)
-#   - root-owned graphify-out: the container runs as root, so a rebuild
-#     without --user leaves files you cannot overwrite
+# Usage:  bash linux/check-graphify-scope.sh [--code-root DIR] [--fix]
+#   --fix  apply the safe, UNTRACKED-only repairs: drop a stray graphify approval
+#          from a repo's settings.local.json and chown root-owned graphify-out
+#          back to you. Never edits tracked files, never registers user-scope
+#          entries (that is `claude mcp add`, printed for you), never builds a graph.
 #
-# Usage:
-#   bash linux/check-graphify-scope.sh [--code-root DIR] [--fix]
-#
-#   --fix  apply the safe repairs: approve the server in local settings and
-#          chown root-owned graphify-out back to you. Never edits tracked
-#          files and never builds a graph (that is a real extraction run).
-#
-# Exit 0 = every participating repo is fully wired.
+# Exit 0 = user scope correct and every repo with a graph is served by it.
 # ============================================================================
 set -uo pipefail
 
@@ -48,29 +51,53 @@ echo "${C}  Graphify — scope check   (code root: $CODE_ROOT)${N}"
 echo "${C}======================================================================${N}"
 
 # ---------------------------------------------------------------- user scope
-# Repo-bound servers must never live here: a single global entry answers for
-# every repo, which is exactly the failure this check exists to prevent.
+# Graphify BELONGS here as one cwd-relative entry; omnigraph/graphify-docker do not.
 echo ""
 echo "USER SCOPE  ~/.claude.json"
-LEAKED=$(python3 - <<'PY'
+read -r GSTATUS BAD < <(python3 - <<'PY'
 import json, pathlib
 p = pathlib.Path.home() / '.claude.json'
 try:
     ms = json.loads(p.read_text()).get('mcpServers') or {}
 except Exception:
     ms = {}
-print(' '.join(n for n in ('graphify-docker', 'graphify', 'omnigraph') if n in ms))
+bad = [n for n in ('omnigraph', 'graphify-docker') if n in ms]
+g = ms.get('graphify')
+status = 'MISSING'
+if g:
+    args = g.get('args') or []
+    cmd = g.get('command', '')
+    # A hardcoded absolute bind mount (…:/repo where the host side is not $PWD/${..})
+    # is the retired per-repo style; a cwd-relative graph path or the wrapper is correct.
+    hard = any(':/repo' in a and not a.lstrip().startswith('$') for a in args)
+    rel = ('graphify-out/graph.json' in args) or cmd == 'graphify-mcp'
+    if hard and not rel:
+        status = 'HARDCODED'
+    elif rel or cmd in ('uv', 'uvx', 'python', 'graphify-mcp'):
+        status = 'OK'
+    else:
+        status = 'UNKNOWN'
+print(status, ' '.join(bad))
 PY
 )
-if [ -n "$LEAKED" ]; then
-    echo "  ${R}X repo-bound server(s) in user scope: $LEAKED${N}"
-    echo "    ${D}Serves ONE repo's data to EVERY repo. Remove with:${N}"
-    for s in $LEAKED; do
-        echo "    ${D}claude mcp remove -s user $s${N}"
-    done
+case "$GSTATUS" in
+    OK)       echo "  ${G}v graphify present and cwd-relative${N}" ;;
+    MISSING)  echo "  ${R}X graphify MISSING — repos with a graph won't be served${N}"
+              echo "    ${D}Workstation: claude mcp add -s user graphify -- \\${N}"
+              echo "    ${D}  uv run --with 'graphifyy[mcp]' python -m graphify.serve graphify-out/graph.json${N}"
+              echo "    ${D}Server: build graphify-mcp:latest, put bin/graphify-mcp on PATH, then${N}"
+              echo "    ${D}  claude mcp add -s user graphify -- graphify-mcp${N}"
+              PROBLEMS=$((PROBLEMS + 1)) ;;
+    HARDCODED) echo "  ${R}X graphify hardcodes a repo mount — serves ONE repo to EVERY repo${N}"
+              echo "    ${D}Replace with the cwd-relative uv entry or the graphify-mcp wrapper.${N}"
+              PROBLEMS=$((PROBLEMS + 1)) ;;
+    *)        echo "  ${Y}~ graphify present but its command/args are unrecognised — verify by hand${N}" ;;
+esac
+if [ -n "${BAD:-}" ]; then
+    echo "  ${R}X must NOT be in user scope: $BAD${N}"
+    echo "    ${D}omnigraph is per-repo (project scope); graphify-docker is retired. Remove:${N}"
+    for s in $BAD; do echo "    ${D}claude mcp remove -s user $s${N}"; done
     PROBLEMS=$((PROBLEMS + 1))
-else
-    echo "  ${G}v clean — no repo-bound servers in user scope${N}"
 fi
 
 # ------------------------------------------------------------------ per repo
@@ -78,103 +105,65 @@ for repo in "$CODE_ROOT"/*/; do
     repo="${repo%/}"
     name="$(basename "$repo")"
     [ -d "$repo/.git" ] || continue
-    # "Participating" = declares a graphify server or has a graph. A repo with
-    # neither simply does not use graphify; silence is correct there.
-    [ -f "$repo/.mcp.json" ] || [ -d "$repo/graphify-out" ] || continue
-    grep -q graphify "$repo/.mcp.json" 2>/dev/null || [ -d "$repo/graphify-out" ] || continue
+    # "Participating" = has a built graph. graphify is no longer declared per repo,
+    # so a project .mcp.json is not what opts a repo in — the graphify-out/ dir is.
+    [ -d "$repo/graphify-out" ] || continue
 
     echo ""
     echo "${C}$name${N}  ${D}$repo${N}"
 
-    # -- gate 1: project-scoped server mounting THIS repo ------------------
-    MOUNT=$(python3 - "$repo" <<'PY'
-import json, sys, pathlib, re
+    # -- gate 1: NO graphify entry in the project .mcp.json ----------------
+    STRAY=$(python3 - "$repo" <<'PY'
+import json, sys, pathlib
 repo = pathlib.Path(sys.argv[1])
 try:
-    srv = (json.loads((repo/'.mcp.json').read_text()).get('mcpServers') or {}).get('graphify-docker')
+    ms = json.loads((repo/'.mcp.json').read_text()).get('mcpServers') or {}
 except Exception:
-    srv = None
-if not srv:
-    print('MISSING'); raise SystemExit
-args = srv.get('args') or []
-mount = next((a for a in args if ':/repo' in a), '')
-host = mount.split(':/repo')[0]
-host = re.sub(r'\$\{([A-Za-z_]\w*)(?::-([^}]*))?\}', lambda m: m.group(2) or '', host)
-print('OK' if pathlib.Path(host).resolve() == repo.resolve() else f'WRONG {host}')
+    ms = {}
+print(' '.join(n for n in ms if 'graphify' in n))
 PY
 )
-    case "$MOUNT" in
-        OK) echo "  ${G}v gate 1  project-scoped server mounts this repo${N}" ;;
-        MISSING)
-            echo "  ${R}X gate 1  no graphify-docker in $name/.mcp.json${N}"
-            echo "    ${D}Another repo's graph may answer for this one. See${N}"
-            echo "    ${D}skills/mcp-servers-setup/SKILL.md -> Graphify -> Per-repo setup${N}"
-            PROBLEMS=$((PROBLEMS + 1)) ;;
-        *)  echo "  ${R}X gate 1  mounts the WRONG path: ${MOUNT#WRONG }${N}"
-            echo "    ${D}It will serve that repo's graph, not this one.${N}"
-            PROBLEMS=$((PROBLEMS + 1)) ;;
-    esac
-
-    # -- gate 2: approved in untracked local settings ----------------------
-    SETTINGS="$repo/.claude/settings.local.json"
-    APPROVED=$(python3 - "$SETTINGS" <<'PY'
-import json, sys, pathlib
-p = pathlib.Path(sys.argv[1])
-try:
-    d = json.loads(p.read_text())
-except Exception:
-    print('NOFILE'); raise SystemExit
-if d.get('enableAllProjectMcpServers') is True:
-    print('ALL')
-elif 'graphify-docker' in (d.get('enabledMcpjsonServers') or []):
-    print('YES')
-else:
-    print('NO')
-PY
-)
-    if [ "$APPROVED" = YES ] || [ "$APPROVED" = ALL ]; then
-        echo "  ${G}v gate 2  approved in local settings${N}"
+    if [ -z "$STRAY" ]; then
+        echo "  ${G}v gate 1  no project-scope graphify entry (correct — it's user scope)${N}"
     else
-        if [ "$FIX" -eq 1 ]; then
-            mkdir -p "$repo/.claude"
+        echo "  ${R}X gate 1  stray project graphify entry: $STRAY${N}"
+        echo "    ${D}graphify is a single user-scope entry; remove '$STRAY' from${N}"
+        echo "    ${D}$name/.mcp.json (tracked — edit by hand) and its approval below.${N}"
+        PROBLEMS=$((PROBLEMS + 1))
+        # --fix only touches the UNTRACKED approval, never the tracked .mcp.json
+        SETTINGS="$repo/.claude/settings.local.json"
+        if [ "$FIX" -eq 1 ] && [ -f "$SETTINGS" ]; then
             python3 - "$SETTINGS" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
-d = {}
-if p.exists():
-    try: d = json.loads(p.read_text())
-    except Exception: d = {}
-lst = d.setdefault('enabledMcpjsonServers', [])
-if 'graphify-docker' not in lst:
-    lst.append('graphify-docker')
-p.write_text(json.dumps(d, indent=2) + '\n')
+try: d = json.loads(p.read_text())
+except Exception: raise SystemExit
+lst = d.get('enabledMcpjsonServers')
+if isinstance(lst, list):
+    d['enabledMcpjsonServers'] = [s for s in lst if 'graphify' not in s]
+    p.write_text(json.dumps(d, indent=2) + '\n')
 PY
-            echo "  ${Y}~ gate 2  FIXED — approved graphify-docker in local settings${N}"
-        else
-            echo "  ${R}X gate 2  not approved -> the tool will be silently ABSENT${N}"
-            echo "    ${D}Add to $name/.claude/settings.local.json (untracked):${N}"
-            echo "    ${D}  { \"enabledMcpjsonServers\": [\"graphify-docker\"] }   (or --fix)${N}"
-            PROBLEMS=$((PROBLEMS + 1))
+            echo "  ${Y}~ gate 1  --fix removed the stray graphify approval from local settings${N}"
         fi
     fi
 
-    # -- gate 3: a graph exists -------------------------------------------
+    # -- gate 2: a graph exists -------------------------------------------
     if [ -f "$repo/graphify-out/graph.json" ]; then
         AGE=$(( ( $(date +%s) - $(stat -c %Y "$repo/graphify-out/graph.json") ) / 86400 ))
         if [ "$AGE" -gt 14 ]; then
-            echo "  ${Y}~ gate 3  graph exists but is ${AGE}d old — consider rebuilding${N}"
+            echo "  ${Y}~ gate 2  graph exists but is ${AGE}d old — consider rebuilding${N}"
         else
-            echo "  ${G}v gate 3  graph present (${AGE}d old)${N}"
+            echo "  ${G}v gate 2  graph present (${AGE}d old)${N}"
         fi
     else
-        echo "  ${R}X gate 3  no graphify-out/graph.json — server would serve nothing${N}"
-        echo "    ${D}cd $repo && docker run --rm --user \"\$(id -u):\$(id -g)\" \\${N}"
-        echo "    ${D}  -v \"\$PWD:/repo\" -w /repo --entrypoint python graphify-mcp:latest \\${N}"
-        echo "    ${D}  -m graphify update .${N}"
+        echo "  ${R}X gate 2  no graphify-out/graph.json — server would serve nothing${N}"
+        echo "    ${D}cd $repo && uv run --with 'graphifyy[mcp]' graphify update .${N}"
+        echo "    ${D}(server without uv: docker run --rm -v \"\$PWD:/repo\" -w /repo \\${N}"
+        echo "    ${D}   --entrypoint python graphify-mcp:latest -m graphify update .)${N}"
         PROBLEMS=$((PROBLEMS + 1))
     fi
 
-    # -- trap: root-owned artefacts from a --user-less rebuild -------------
+    # -- trap: root-owned artefacts from a --user-less Docker rebuild -------
     if [ -d "$repo/graphify-out" ]; then
         ROOTED=$(find "$repo/graphify-out" ! -user "$(id -un)" 2>/dev/null | wc -l)
         if [ "$ROOTED" -gt 0 ]; then
@@ -184,7 +173,7 @@ PY
                     && echo "  ${Y}~ owner  FIXED — chowned $ROOTED file(s) back to you${N}" \
                     || { echo "  ${R}X owner  $ROOTED file(s) not yours; chown failed${N}"; PROBLEMS=$((PROBLEMS + 1)); }
             else
-                echo "  ${R}X owner  $ROOTED file(s) not owned by you (rebuilt without --user)${N}"
+                echo "  ${R}X owner  $ROOTED file(s) not owned by you (Docker rebuild without --user)${N}"
                 echo "    ${D}The next rebuild will fail with permission denied. Run with --fix${N}"
                 PROBLEMS=$((PROBLEMS + 1))
             fi
@@ -195,7 +184,7 @@ done
 echo ""
 echo "${C}----------------------------------------------------------------------${N}"
 if [ "$PROBLEMS" -eq 0 ]; then
-    echo "${G}  All gates open — every participating repo serves its own graph.${N}"
+    echo "${G}  Graphify wiring correct — one user-scope entry serves every repo's own graph.${N}"
 else
     echo "${R}  $PROBLEMS problem(s) found — see the fixes above (or re-run with --fix).${N}"
 fi

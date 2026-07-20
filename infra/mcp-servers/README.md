@@ -155,18 +155,18 @@ Graphify provides built-in tools to visualize your project graph. After extracti
 - **Call-flow Diagrams:** `uv run --with graphifyy[mcp] graphify export callflow-html` (generates mermaid flowcharts)
 - **Custom Force-Directed Graphs:** Because the graph is exported as a standard `graph.json`, you can use standard Python libraries (like `networkx` or `vis.js` templates) to render interactive physics-based graphs.
 
-## Graphify as a Docker Container
+## Graphify as a Docker Container — the SERVER path
 
-If you don't want a host-level `uv`/Python toolchain, `servers/graphify-mcp/`
-builds a Docker image with `graphifyy[mcp]` preinstalled and runs the same
-stdio server (`graphify.serve`) — see `servers/graphify-mcp/README.md` for
-build, graph-generation, handshake-testing, and registration instructions.
-It's registered in `config/mcp-claude-code.json` as `graphify-docker`
-alongside the default `uv`-based `graphify` entry (register whichever one
-you actually built/want with `register-claude-code-mcp.ps1 -Server
-graphify-docker`). Because `graphify.serve` is stdio-only, this is a
-`docker run -i --rm` subprocess per session, not a long-running compose
-service like `serena`.
+Graphify is wired as **one cwd-relative `graphify` entry in user scope**, never per repo
+(see `skills/mcp-servers-setup/SKILL.md` → Graphify). On a **workstation** that entry is
+`uv`. On a **server** (e.g. `coding.vm`) that lacks a per-user `uv`/Python toolchain,
+`servers/graphify-mcp/` builds a Docker image with `graphifyy[mcp]` preinstalled running the
+same stdio server (`graphify.serve`); the tracked wrapper `bin/graphify-mcp` injects
+`-v "$PWD:/repo"` (MCP args aren't shell-expanded) so the single entry
+`"graphify": { "command": "graphify-mcp" }` still serves whichever repo you launch from.
+See `servers/graphify-mcp/README.md` for build, graph-generation, and handshake-testing.
+Because `graphify.serve` is stdio-only, this is a `docker run -i --rm` subprocess per
+session, not a long-running compose service like `serena`.
 
 ## Graphify + Local Ollama — Known Gotchas
 
