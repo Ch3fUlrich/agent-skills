@@ -31,7 +31,11 @@ project_name: ""              # Auto-detected from directory name if empty
 #   serena project create . --index
 #
 # The line below is just an example for a Python project with docs/config:
-languages: ["python", "markdown", "yaml", "toml", "json"] # only what's present
+languages: ["python", "yaml", "toml", "json"] # only what's present — and never `markdown`
+# `markdown` used to be in that list and must not come back: marksman is not in the serena
+# image, and a language whose server is missing does not merely lose its own symbols — its
+# initialize failure takes the language server MANAGER down, so every symbol tool for the
+# project then errors (same opaque "manager not initialized" as the jedi trap below).
 #
 # Python backend choice: use "python" (Pyright), not "python_jedi". Serena
 # bootstraps Pyright itself via uvx on first use -- nothing to install. The

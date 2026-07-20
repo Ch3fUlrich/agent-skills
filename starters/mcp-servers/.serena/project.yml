@@ -1,4 +1,15 @@
-languages: ["python", "html", "typescript", "markdown", "scss", "yaml", "csharp", "bash", "powershell", "json", "toml", "rust", "cpp", "go"]
+# TRIM THIS to the languages your repo actually contains, and never list one whose
+# language server is not in the serena image.
+#
+# A missing server does NOT degrade to "no symbols for that language". Its initialize
+# fails, the language server MANAGER fails with it, and then EVERY symbol tool for the
+# project errors with "The language server manager is not initialized" — the whole repo
+# goes dark. `markdown` is the usual culprit: marksman is not in the image, and markdown
+# has no call graph worth an LSP anyway (headings are a grep). It is deliberately absent
+# below. Verified on Invest 2026-07-20, which was fully broken by exactly this.
+#
+# Proven working in this image: bash, json, python, rust, toml, yaml.
+languages: ["python", "bash", "yaml", "json"]
 encoding: "utf-8"
 ignore_all_files_in_gitignore: true
 ls_specific_settings: {}
