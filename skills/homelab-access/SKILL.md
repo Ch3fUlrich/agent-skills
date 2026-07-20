@@ -15,38 +15,43 @@ committed template). The `# >>> claude-ops <alias> >>>` blocks in `~/.ssh/config
 by `Server/server/coding/setup-ssh-keys.sh` — edit `hosts.txt` and re-run it rather than
 hand-editing those blocks, or the two drift.
 
-## Two accounts, complementary powers — pick the right one
+## Three accounts, different powers — pick the right one
 
-This is the single most useful thing on this page, and it is easy to get wrong: **`s` and
-`claude-ops` are both reachable on every Linux VM, and neither is a superset of the other.**
+The single most useful thing on this page, and the easiest to get wrong: **three accounts are
+reachable on every Linux VM with the same `claude-ops` key, and they are not a hierarchy.**
 
-| | `s` — alias `<host>-vm` | `claude-ops` — alias `<host>-ops` |
-|---|---|---|
-| In `docker` group | ✅ plain `docker` works | ❌ plain `docker` → `permission denied … docker.sock` |
-| `DOCKER_HOST=ssh://` | ✅ **use this** | ❌ |
-| Passwordless sudo | ❌ prompts for a password | ✅ **NOPASSWD**, scoped |
-| sudo scope | — | exactly `/usr/bin/docker`, `/usr/bin/systemctl`, `/usr/local/bin/docker-compose` |
+| | `s` — alias `<host>-vm` | `claude-ops` — alias `<host>-ops` | `svc-ops` — alias `<host>-svc` |
+|---|---|---|---|
+| In `docker` group | ✅ plain `docker` works | ❌ `permission denied … docker.sock` | ❌ (but `sudo docker` works) |
+| `DOCKER_HOST=ssh://` | ✅ **use this** | ❌ | ❌ |
+| Passwordless sudo | ❌ prompts | ✅ scoped | ✅ **`(ALL) NOPASSWD: ALL`** |
+| sudo scope | — | only `/usr/bin/docker`, `/usr/bin/systemctl`, `/usr/local/bin/docker-compose` | **everything — full root** |
 
-So: **container work → `<host>-vm`. `systemctl` or root-owned paths → `<host>-ops`.**
+- **Container work → `<host>-vm`** (`DOCKER_HOST=ssh://` needs the docker *group*, not sudo).
+- **`systemctl` / quick service work → `<host>-ops`.**
+- **Anything else needing root** — editing `/etc`, `apt`, mounts, arbitrary files — **→ `<host>-svc`.**
 
 ```bash
-DOCKER_HOST=ssh://cloud-vm docker compose ps      # container work, as s
-ssh cloud-ops 'sudo -n systemctl restart nfs-client.target'   # service work, as claude-ops
+DOCKER_HOST=ssh://cloud-vm docker compose ps          # as s
+ssh cloud-ops 'sudo -n systemctl restart docker'      # as claude-ops
+ssh media-svc 'sudo -n sed -i ... /etc/fstab'         # as svc-ops (full root)
 ```
 
-**"Claude cannot sudo" is only true for `s`.** `sudo systemctl …` *is* available via the `-ops`
-aliases. Before filing something in `manual_todo.md` as user-only, check whether it is just
-`systemctl` or `docker` — if so, `claude-ops` can already do it. Anything outside those three
-binaries (apt, editing `/etc`, partitioning, Proxmox, Tailscale admin) genuinely is manual.
+**"Claude cannot sudo" is false.** It is true only for `s`. `svc-ops` has unrestricted
+passwordless root on all four Linux VMs (verified 2026-07-20), and it is what Ansible
+playbooks with `become: true` should run as — no become password needed. **Before filing
+anything in `manual_todo.md` as user-only because it "needs sudo", check `svc-ops` first.**
+Genuinely manual = Proxmox, the NAS, Fritzbox, Tailscale admin, and other external accounts —
+not root on the VMs.
 
 ## Hosts
 
-| Alias | Address | User | Shell | Status | Notes |
+| Alias | Address | Users | Shell | Status | Notes |
 |---|---|---|---|---|---|
-| `cloud-vm` / `cloud-ops` | .159 | `s` / `claude-ops` | bash | ✅ | Jellyfin/*arr, NFS client, LidMeta, Harbor |
-| `manage-vm` / `manage-ops` | .160 | `s` / `claude-ops` | bash | ✅ | Authelia, Semaphore, Ansible control |
-| `media-vm` / `media-ops` | .161 | `s` / `claude-ops` | bash | ✅ | Media stack |
-| `hosting-vm` / `hosting-ops` | .162 | `s` / `claude-ops` | bash | ✅ | Public-facing hosting |
+| `cloud-{vm,ops,svc}` | .159 | `s` / `claude-ops` / `svc-ops` | bash | ✅ | Jellyfin/*arr, NFS client, LidMeta, Harbor |
+| `manage-{vm,ops,svc}` | .160 | `s` / `claude-ops` / `svc-ops` | bash | ✅ | Authelia, Semaphore, Ansible control |
+| `media-{vm,ops,svc}` | .161 | `s` / `claude-ops` / `svc-ops` | bash | ✅ | Media stack |
+| `hosting-{vm,ops,svc}` | .162 | `s` / `claude-ops` / `svc-ops` | bash | ✅ | Public-facing hosting |
 | `opnsense` | **.76** | `root` | **csh** | ✅ | Edge firewall. Also `opnsense-vm`. See quirks |
 | `omv-vm` | .153 | `root` | bash | ❌ | OpenMediaVault NAS. **Key not installed** — see below |
 
@@ -97,9 +102,9 @@ a fleet reboot would take the media stack down with it.
 ## Verify access
 
 ```bash
-for h in cloud-vm manage-vm media-vm hosting-vm cloud-ops manage-ops media-ops hosting-ops; do
-  printf '%-12s ' "$h"; ssh -o BatchMode=yes -o ConnectTimeout=8 "$h" 'id -un' 2>&1 | tail -1
-done
+for p in vm ops svc; do for n in cloud manage media hosting; do
+  printf '%-12s ' "$n-$p"; ssh -o BatchMode=yes -o ConnectTimeout=8 "$n-$p" 'id -un' 2>&1 | tail -1
+done; done
 ssh -o BatchMode=yes opnsense "sh -c 'hostname'"              # csh — needs the wrapper
 ssh -o BatchMode=yes cloud-ops 'sudo -n -l' | tail -3          # confirm the NOPASSWD scope
 ssh -G opnsense | grep -E '^(hostname|user|identityfile) '     # what an alias resolves to
