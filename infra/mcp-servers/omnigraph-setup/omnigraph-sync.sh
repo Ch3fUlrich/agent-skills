@@ -38,6 +38,11 @@
 #                                            — 127.0.0.1 there is the container itself.
 #   GRAPHS(=all graphs central exposes)      "a,b" or "a b"
 #   GRAPH(=memory; legacy single-graph)      honoured only if not 'memory'
+#   VIEWER_URL(=)                            central viewer, e.g. http://coding.vm:8090.
+#                                            Set it and each synced graph is attributed to
+#                                            THIS DEVICE in the viewer's Sync log, by the
+#                                            source IP the viewer sees. Unset = no
+#                                            attribution (the sync itself is unaffected).
 #   DEVICE(=hostname)                        only used to sweep a stale device/<host> branch
 #   DOCKER_NET(=host)                        CLI-container network
 #   BACKUP_DIR(=<here>/backups)  OMNIGRAPH_IMAGE(=…)  PYTHON(=python3)
@@ -152,6 +157,15 @@ sync_graph() {
         --target-url "$LOCAL_URL" --target-load-url "$LOCAL_URL_CONTAINER" \
         --target-token "$LOCAL_TOKEN" --net "$DOCKER_NET" --backup "$backup"; then
     log "[$G] pull failed — backup: $backup"; return 3
+  fi
+
+  # 4b. tell the viewer WHICH DEVICE just synced. It reads the source IP off this
+  #     connection — a commit records no client address, and actor_id comes from the
+  #     bearer token (one shared token => `default` for everyone), so the IP is the only
+  #     free identity. Best-effort by design: attribution must never fail a sync.
+  if [ -n "${VIEWER_URL:-}" ]; then
+    curl -fsS -m 10 -X POST "${VIEWER_URL%/}/api/sync-ping?graph=$G" -o /dev/null \
+      || log "[$G] sync-ping to $VIEWER_URL failed (attribution only — sync itself is fine)"
   fi
 
   # 5. sweep a stale device branch from an older version of this script (it blocks

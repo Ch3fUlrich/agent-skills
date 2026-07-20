@@ -26,6 +26,9 @@
     CENTRAL_URL, CENTRAL_TOKEN, LOCAL_TOKEN (required)
     GRAPHS  (comma/space list; default: all graphs central exposes)
     GRAPH   (legacy single non-'memory' graph)      DEVICE (default: hostname)
+    VIEWER_URL (e.g. http://coding.vm:8090) — set it and each synced graph is attributed
+      to THIS DEVICE in the viewer's Sync log, by the source IP the viewer sees. Unset =
+      no attribution; the sync itself is unaffected either way.
     DRY_RUN, KEEP_DEVICE_BRANCH (also the -DryRun / -KeepDeviceBranch switches)
   Run in PowerShell 7 (pwsh). See docs/REMOTE-SYNC-TEST-PLAN.md.
 #>
@@ -77,6 +80,8 @@ $LOCAL_TOKEN   = Need 'LOCAL_TOKEN'
 $LOCAL_URL     = if ($env:LOCAL_URL_CONTAINER) { $env:LOCAL_URL_CONTAINER } else { 'http://omnigraph-server:8080' }
 $LOCAL_API_URL = if ($env:LOCAL_URL) { $env:LOCAL_URL } else { 'http://127.0.0.1:8080' }
 $DEVICE     = if ($env:DEVICE) { $env:DEVICE } else { $env:COMPUTERNAME }
+# Optional: central viewer, for source-IP sync attribution (see the header).
+$VIEWER_URL = $env:VIEWER_URL
 $IMAGE      = if ($env:OMNIGRAPH_IMAGE) { $env:OMNIGRAPH_IMAGE } else { 'modernrelay/omnigraph-server:v0.8.1' }
 $NET        = if ($env:DOCKER_NET) { $env:DOCKER_NET } else { 'mcp-server_mcp-net' }
 $BACKUP_DIR = if ($env:BACKUP_DIR) { $env:BACKUP_DIR } else { Join-Path $here 'backups' }
@@ -257,6 +262,19 @@ function Sync-Graph([string]$Graph) {
     Log "[$Graph] !! local is dirty or empty AFTER the sync — this is the state the pull left. Backup: $backup"
     return 4
   }
+  # 6b. tell the viewer WHICH DEVICE just synced. It reads the source IP off this
+  # connection — a commit records no client address, and actor_id comes from the bearer
+  # token (one shared token => `default` for everyone), so the IP is the only free
+  # identity. Best-effort by design: attribution must never fail a sync.
+  if ($VIEWER_URL) {
+    try {
+      Invoke-RestMethod -Method Post -TimeoutSec 10 `
+        -Uri "$($VIEWER_URL.TrimEnd('/'))/api/sync-ping?graph=$Graph" | Out-Null
+    } catch {
+      Log "[$Graph] sync-ping to $VIEWER_URL failed (attribution only — sync itself is fine)"
+    }
+  }
+
   # No device branch is created any more (see the push above), so there is nothing to clean
   # up. Sweep any left over by an older run, so they can't block `schema apply`.
   if (-not $KeepBranchEff) {

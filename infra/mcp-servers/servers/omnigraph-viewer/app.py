@@ -14,9 +14,12 @@ exist inside one graph.
 Human auth is handled in front of this service (Authelia via Caddy); the app has no auth
 of its own — never expose it without the SSO/proxy in front.
 """
+import fcntl
 import html
 import json
 import os
+import socket
+import time
 
 import requests
 from flask import Flask, Response, jsonify, request
@@ -173,8 +176,9 @@ def api_graphs():
 
 def _commits(graph, branch="main"):
     """Commit log for a graph's branch. Each commit carries created_at (µs since
-    epoch) and actor_id — the latter is the sync SOURCE once the sync tags its
-    pushes (null until then). Newest first; timestamp-less rows dropped."""
+    epoch) and actor_id. actor_id is NOT the device: the server resolves it from the
+    bearer token, every client shares one token, so it reads `default` for all of them
+    (see _ping_device). Newest first; timestamp-less rows dropped."""
     try:
         r = requests.get(f"{OMNIGRAPH_URL}/graphs/{graph}/commits",
                          params={"branch": branch}, headers=_headers, timeout=TIMEOUT)
@@ -198,27 +202,117 @@ def _commits(graph, branch="main"):
     return out
 
 
+# ─── sync attribution by SOURCE IP ────────────────────────────────────────────
+# Which DEVICE pushed cannot be read back off a commit: a commit record carries only
+# graph_commit_id / created_at / actor_id / manifest_* / parent ids — no client address —
+# and the server logs no request IPs either. actor_id is resolved from the BEARER TOKEN,
+# so it takes a token per device to vary it; that was rejected (secrets to distribute to
+# every machine). The one place a device identifies itself for free is the TCP connection,
+# so the sync pings this endpoint after each graph and we attribute by the observed IP.
+SYNC_PINGS = os.environ.get("SYNC_PINGS", "/data/sync-pings.json")
+# "ip=name,ip=name" — optional; falls back to reverse DNS, then the bare IP.
+DEVICE_MAP = {}
+for _pair in os.environ.get("OMNIGRAPH_DEVICE_MAP", "").split(","):
+    if "=" in _pair:
+        _ip, _name = _pair.split("=", 1)
+        DEVICE_MAP[_ip.strip()] = _name.strip()
+# A ping lands just AFTER the commit it reports. Attribute a commit to the first ping
+# that follows it within this window; anything older stays unattributed rather than
+# guessing (a wrong device name is worse than none).
+PING_WINDOW_US = int(float(os.environ.get("PING_WINDOW_SEC", "900")) * 1_000_000)
+MAX_PINGS = 500
+
+
+def _ping_device(ip):
+    """Device name for a source IP: explicit map, else reverse DNS, else the IP."""
+    if ip in DEVICE_MAP:
+        return DEVICE_MAP[ip]
+    try:
+        return socket.gethostbyaddr(ip)[0].split(".")[0]
+    except Exception:  # noqa: BLE001 — no PTR record is normal, not an error
+        return ip
+
+
+def _pings_read():
+    try:
+        with open(SYNC_PINGS) as f:
+            return json.load(f) or []
+    except Exception:  # noqa: BLE001 — absent/corrupt file just means "no pings yet"
+        return []
+
+
+def _pings_append(rec):
+    """Append under an exclusive lock — gunicorn runs 2 workers, so a plain
+    read-modify-write would lose records raced between them."""
+    os.makedirs(os.path.dirname(SYNC_PINGS) or ".", exist_ok=True)
+    with open(SYNC_PINGS + ".lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            rows = _pings_read()
+            rows.append(rec)
+            rows = rows[-MAX_PINGS:]
+            tmp = SYNC_PINGS + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(rows, f)
+            os.replace(tmp, SYNC_PINGS)   # atomic: readers never see a half file
+        finally:
+            fcntl.flock(lk, fcntl.LOCK_UN)
+
+
+@app.post("/api/sync-ping")
+def api_sync_ping():
+    """Called by omnigraph-sync after it finishes a graph. Records only what the
+    SERVER observes (source IP + arrival time) plus a graph id validated against the
+    cluster — nothing the caller sends is stored verbatim, so this stays safe to leave
+    open on the LAN alongside the read-only viewer."""
+    graph = (request.args.get("graph") or "").strip()
+    if graph not in _graphs():
+        return jsonify({"error": "unknown graph"}), 400
+    ip = request.remote_addr or "?"
+    rec = {"graph": graph, "ip": ip, "device": _ping_device(ip),
+           "ts_us": int(time.time() * 1_000_000)}
+    try:
+        _pings_append(rec)
+    except Exception as e:  # noqa: BLE001 — attribution is a nicety; never fail a sync
+        return jsonify({"stored": False, "error": str(e), **rec}), 200
+    return jsonify({"stored": True, **rec})
+
+
+def _attribute(commits, pings):
+    """Stamp each commit with the device whose ping first followed it, in-window."""
+    ps = sorted(pings, key=lambda p: p["ts_us"])
+    for c in commits:
+        for p in ps:
+            if 0 <= p["ts_us"] - c["ts_us"] <= PING_WINDOW_US:
+                c["device"] = p["device"]
+                c["device_ip"] = p["ip"]
+                break
+    return commits
+
+
 @app.get("/api/sync-history")
 def api_sync_history():
-    """Per-graph last-synced time + recent history. 'Last synced' is the newest
-    commit on the graph's main branch (clients only ever write central via the
-    sync), and 'source' is that commit's actor_id."""
+    """Per-graph last-synced time + recent history. 'Last synced' is the newest commit
+    on the graph's main branch (clients only ever write central via the sync). 'source'
+    is the DEVICE that pushed, resolved from the source IP of its sync ping; `actor`
+    (the server's token actor) is reported alongside for diagnosis."""
     try:
         limit = max(1, min(50, int(request.args.get("limit", 10))))
     except (TypeError, ValueError):
         limit = 10
+    pings = _pings_read()
     out = []
     for g in _graphs():
-        cs = _commits(g, "main")
+        cs = _attribute(_commits(g, "main"), [p for p in pings if p.get("graph") == g])
         out.append({
             "graph": g,
             "last_synced_us": cs[0]["ts_us"] if cs else None,
-            "last_source": cs[0]["source"] if cs else None,
+            "last_source": (cs[0].get("device") or cs[0].get("source")) if cs else None,
             "commits": len(cs),
             "history": cs[:limit],
         })
     out.sort(key=lambda x: (x["last_synced_us"] or 0), reverse=True)
-    return jsonify({"graphs": out})
+    return jsonify({"graphs": out, "pings": len(pings)})
 
 
 def _branch_op(method, graph, path, payload=None):
@@ -548,15 +642,21 @@ async function renderSyncLog(){
   $("#table").innerHTML='<p class="muted" style="padding-top:12px">loading sync history…</p>';
   let j;try{j=await(await fetch("/api/sync-history")).json();}catch(e){$("#table").innerHTML='<p class="err">'+esc(e)+'</p>';return;}
   const out=(j.graphs||[]).map(g=>{
-    const hist=(g.history||[]).map(h=>
-      `<tr><td>${esc(tsStr(h.ts_us))}</td><td>${h.source?esc(h.source):'<span class=muted>—</span>'}</td><td class=muted>${esc((h.commit||"").slice(0,12))}${h.merge?' <span title="merge commit">⤵</span>':''}</td></tr>`
-    ).join("")||'<tr><td colspan=3 class=muted>no commits</td></tr>';
+    const hist=(g.history||[]).map(h=>{
+      // device (from the ping's source IP) is the real answer; actor is the shared
+      // token name and only worth showing when nothing better is known.
+      const src=h.device
+        ? `<span title="source IP ${esc(h.device_ip||"?")}">${esc(h.device)}</span>`
+        : (h.source?`<span class=muted title="server token actor, shared by every device">${esc(h.source)}</span>`
+                   :'<span class=muted>—</span>');
+      return `<tr><td>${esc(tsStr(h.ts_us))}</td><td>${src}</td><td class=muted>${esc((h.commit||"").slice(0,12))}${h.merge?' <span title="merge commit">⤵</span>':''}</td></tr>`;
+    }).join("")||'<tr><td colspan=3 class=muted>no commits</td></tr>';
     return `<section><h2><span class=dot style="background:${graphColor(g.graph)}"></span>${esc(g.graph)}
       <span class="count">${esc(agoStr(g.last_synced_us))}</span>
       ${g.last_source?`<span class="muted">via ${esc(g.last_source)}</span>`:''}</h2>
       <div style="overflow-x:auto"><table><thead><tr><th>synced (local time)</th><th>source</th><th>commit</th></tr></thead><tbody>${hist}</tbody></table></div></section>`;
   }).join("");
-  $("#table").innerHTML=`<div style="padding-top:12px"><p class="muted">“Last synced” = newest commit on each graph’s <b>main</b> (clients write central only via the sync). <b>Source</b> = the commit’s actor — shows “—” until the sync tags its pushes.</p></div>`+(out||'<p class="muted">no graphs.</p>');
+  $("#table").innerHTML=`<div style="padding-top:12px"><p class="muted">“Last synced” = newest commit on each graph’s <b>main</b> (clients write central only via the sync). <b>Source</b> = the <b>device</b>, resolved from the source IP of the sync’s ping — a commit itself records no client address. Greyed names are the server’s token actor (<code>default</code> for every device), shown only where no ping matched.</p></div>`+(out||'<p class="muted">no graphs.</p>');
 }
 /* ---------- force-directed graph: build DOM once, update positions per tick ---------- */
 const NS="http://www.w3.org/2000/svg";
