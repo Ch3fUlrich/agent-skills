@@ -45,7 +45,21 @@ mcp_serena_activate_project(project="agent-skills")
 mcp_serena_find_symbol(name_path_pattern="function_name")
 ```
 
-**Project isolation & settings**: Automatic via `.serena/project.yml` per repo. If language detection fails, ensure `languages: ["python", "html", "typescript", "markdown", "scss", "yaml"]` is specified.
+**Project isolation & settings**: Automatic via `.serena/project.yml` per repo. If language
+detection fails, list **only the languages the repo actually contains** —
+e.g. `languages: ["python", "bash", "yaml", "json"]`.
+
+> **Never list a language whose server is not in the image — `markdown` above all.**
+> A missing server does not degrade to "no symbols for that language": its `initialize`
+> fails, the language server **manager** fails with it, and every symbol tool for that
+> project then errors with `The language server manager is not initialized`. The repo goes
+> dark, and the message names neither the language nor the cause. `marksman` is not in the
+> serena image, and markdown has no call graph worth an LSP anyway — headings are a grep.
+> This took Invest's Serena down completely until 2026-07-20.
+>
+> Proven working in this image: `bash, json, python, rust, toml, yaml`. After editing
+> `project.yml`, **restart `serena-mcp`** — it holds the activated project in memory and
+> will not re-read the file on its own.
 
 **Note**: Serena memory tools are disabled. Use Omnigraph (structured memory) for all persistent memory instead.
 
