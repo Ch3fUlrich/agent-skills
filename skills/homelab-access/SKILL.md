@@ -53,7 +53,7 @@ not root on the VMs.
 | `media-{vm,ops,svc}` | .161 | `s` / `claude-ops` / `svc-ops` | bash | ✅ | Media stack |
 | `hosting-{vm,ops,svc}` | .162 | `s` / `claude-ops` / `svc-ops` | bash | ✅ | Public-facing hosting |
 | `opnsense` | **.76** | `root` | **csh** | ✅ | Edge firewall. Also `opnsense-vm`. See quirks |
-| `omv-vm` | .153 | `root` | bash | ❌ | OpenMediaVault NAS. **Key not installed** — see below |
+| `omv-vm` | .153 | `root` | bash | ✅ | OpenMediaVault NAS (Debian 12 + OMV 7). **root only** — see below |
 
 `pfsense-vm` (.156) is **decommissioned** — `No route to host`. OPNsense at `.76` replaced it.
 If you find that alias anywhere, it is stale.
@@ -87,17 +87,27 @@ configd until `service configd restart`. For the REST API, use the `opnsense-api
 **Serena cannot open gitignored files** (`Path … is ignored; cannot access for safety reasons`).
 `hosts.txt` is one — use the built-in Read/Edit for it specifically.
 
-## The NAS is not provisioned
+## The NAS — reachable, but the rules are different
 
-`omv-vm` (.153) refuses the key: `Permission denied (publickey,password)`. Port 22 *does*
-answer — sshd offers auth methods — so the host is up; the `claude-ops` pubkey simply was never
-added to its `authorized_keys`. Installing it needs the NAS root password, which agents do not
-have. Standing manual task (`Server/manual_todo.md`).
+`omv-vm` (.153) accepts the `claude-ops` key **as `root`** (installed 2026-07-20; before that it
+returned `Permission denied (publickey,password)`). Debian 12 + OpenMediaVault 7.
 
-**Never add the NAS to the Ansible `[homelab]` inventory.** `os-update.yml`,
-`manage-unattended-upgrades.yml` and `reboot-host.yml` must never touch it; they carry
-`excluded_hosts: [omv, nas, openmediavault, truenas]` as a backstop. NFS exports live here, and
-a fleet reboot would take the media stack down with it.
+**`root` is the only account.** There is no `s`, `claude-ops` or `svc-ops` here — those exist
+only on the Ubuntu VMs. So `<host>-ops`/`<host>-svc` have no NAS equivalent, and Ansible against
+the NAS logs in as root with `ansible_become=false`.
+
+**Never add the NAS to the Ansible `[homelab]` inventory.** That group is what `os-update.yml`,
+`manage-unattended-upgrades.yml`, `reboot-host.yml` and `prune-docker.yml` target, and none may
+touch the box serving the NFS exports — a fleet reboot or volume prune would take the media
+stack down. They carry `excluded_hosts: [omv, nas, openmediavault, truenas]` as a backstop, but
+inventory membership is the real control. The NAS has its own `nas` group and its own playbook
+(`omv-update.yml`), which asserts it is not pointed anywhere else.
+
+**Updating it:** use `apt upgrade` (safe subset), not `omv-upgrade`. OMV's wrapper is
+`dist-upgrade --auto-remove --allow-unauthenticated`, which on a live NFS server can remove or
+replace packages and restart `nfs-server` under mounted clients. Measured 2026-07-20: the safe
+subset took 79 of 81 updates with 0 removals; the two it held back were a new kernel, which only
+matters after a reboot that would drop every client anyway.
 
 ## Verify access
 
