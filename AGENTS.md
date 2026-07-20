@@ -27,6 +27,9 @@ loads it. Read it first; it tells you which of these to open.
 - `memory` graph = 2 global `Preference`s only (already Principles 2 & 6 of
   `coding-principles`). **Never write project data there.**
 - Omnigraph is the only memory layer — no fallback (ADR 0003).
+- **`.gq` is GraphQuery, not GraphQL** — `query() { match {…} return {…} }`; **no** top-level
+  `mutation {}` wrapper; writes are `query` blocks (`insert`/`update`/`delete`) sent via `mutate`.
+  Full syntax + traps: `skills/structured-memory/SKILL.md`.
 
 Two env vars must exist **before launch** (never committed):
 

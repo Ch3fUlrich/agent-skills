@@ -25,6 +25,30 @@ first), `query` (read GQ), `mutate` (write GQ, insert/update/delete), `load`
 (bulk NDJSON upsert by `@key`), `branches_create` / `branches_merge` /
 `branches_delete`, `commits_list` (verify writes), `snapshot`, `health`.
 
+## `.gq` is GraphQuery — NOT GraphQL (read before your first query)
+
+Omnigraph's query language is **`.gq` (GraphQuery)**. Agents trained on GraphQL or Cypher
+reflexively write a `mutation { … }` wrapper or a bare `$d: Decision`, and every such call
+fails at character 1 with `parse error: expected query_file` / `expected query_body` — which
+looks like a broken server but is just the wrong dialect. The working shapes:
+
+```gq
+query list($lim: Int)     { match { $d: Decision } return { $d.slug, $d.title } limit 40 }
+query one($s: String)     { match { $d: Decision { slug: $s } } return { $d.rationale } }
+query decided($s: String) { match { $d: Decision { slug: $s } $d decidedIn $p } return { $p.slug } }
+```
+
+- Every block is a named `query name() { match { … } return { … } }` — a **bare binding, or
+  a top-level `mutation { }` wrapper, is a parse error.** Writes are *also* `query` blocks; the
+  verb inside (`insert` / `update` / `delete`) is what makes them writes, and they dispatch via
+  **`mutate`**, not `query`.
+- Edge names are **PascalCase** in `insert`/`delete` (`insert DecidedIn { from, to }`) but
+  **lowerCamelCase** in traversal (`$d decidedIn $p`).
+- `nearest` / `bm25` / `rrf` **order**, they don't filter — always a trailing `limit N`.
+- A mutation is insert/update-only **or** delete-only, never both.
+
+Depth + every debugged failure mode: [references/operations.md](references/operations.md) rules 2–6.
+
 ## First action every session — recall
 
 Before editing code, load prior memory for the current project:
