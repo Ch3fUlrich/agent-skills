@@ -142,7 +142,32 @@ with the real paths baked in.
 | `GRAPHS` | optional: `"a,b"` to sync a subset. Unset = every graph central exposes |
 | `GRAPH` | legacy single-graph var. Ignored unless set to something other than `memory` |
 | `DEVICE` | hostname; only used to name a leftover branch to sweep |
+| `VIEWER_URL` | optional: `http://coding.vm:8090`. Attributes each synced graph to **this device** in the viewer's Sync log (see below). Unset = no attribution; the sync is unaffected |
 | `DRY_RUN` / `KEEP_DEVICE_BRANCH` | same as the `-DryRun` / `-KeepDeviceBranch` switches |
+
+### Sync attribution — why it goes by source IP
+
+The viewer's **Sync log** shows which device pushed each commit. That answer is not in the
+data: a commit record carries only `graph_commit_id / created_at / actor_id / manifest_* /
+parent ids` — **no client address** — and the server logs no request IPs either.
+
+`actor_id` looks like the answer and is not. The server resolves it from the **bearer
+token** (`OMNIGRAPH_SERVER_BEARER_TOKENS_JSON` is an actor→token map), and every client
+shares one token, so it reads `default` for all of them. The CLI's `--as <ACTOR>` flag does
+**not** help — its own help says *"no effect on remote writes (the server resolves the actor
+from the bearer token)"*, and that was confirmed against a live server. Making it vary would
+mean a bearer token per device, i.e. a secret to distribute to and rotate on every machine.
+
+So the sync `POST`s `\<VIEWER_URL\>/api/sync-ping?graph=<g>` after each graph, and the viewer
+records what it observes on the connection: the **source IP**, mapped to a device name via
+`OMNIGRAPH_DEVICE_MAP` (`ip=name,…` on the viewer), else reverse DNS, else the bare IP. A
+commit is attributed to the first ping that follows it within `PING_WINDOW_SEC` (default
+900); anything older stays blank rather than guessing — a wrong device name is worse than
+none. The ping is best-effort and never fails a sync.
+
+> A sync running **on coding.vm itself** reaches the viewer through the docker bridge
+> gateway (`172.18.0.1`), never its LAN address — map that IP explicitly or it shows up as
+> the gateway.
 
 **Those two local URLs are not interchangeable.** The script talks to the server both
 directly (from the host) and through a throwaway CLI container (on the docker network).

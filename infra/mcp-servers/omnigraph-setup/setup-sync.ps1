@@ -128,6 +128,9 @@ $LOCAL_URL           = Pick 'LOCAL_URL'           ''            'http://127.0.0.
 $LOCAL_URL_CONTAINER = Pick 'LOCAL_URL_CONTAINER' ''            'http://omnigraph-server:8080'
 $DOCKER_NET          = Pick 'DOCKER_NET'          ''            $detNet
 $DEVICE              = Pick 'DEVICE'              ''            $env:COMPUTERNAME.ToLower()
+# Optional. Left empty unless already set or exported: guessing a viewer URL would make
+# every sync retry a bogus host. Empty simply means "no attribution".
+$VIEWER_URL          = Pick 'VIEWER_URL'          ''            $env:VIEWER_URL
 
 if ($LOCAL_TOKEN -ne $sharedToken) {
   Warn @"
@@ -229,6 +232,12 @@ LOCAL_TOKEN=$LOCAL_TOKEN
 DOCKER_NET=$DOCKER_NET
 
 DEVICE=$DEVICE
+
+# Central viewer, for the Sync log's "source" column. The viewer attributes a push to a
+# device by the SOURCE IP of this ping — a commit records no client address, and actor_id
+# comes from the shared bearer token (so it reads ``default`` for every device). Optional:
+# empty = no attribution, sync unaffected. e.g. http://coding.vm:8090
+VIEWER_URL=$VIEWER_URL
 # GRAPHS unset => sync every graph central exposes (per-project isolation means all of them).
 "@
 [System.IO.File]::WriteAllText($envFile, $body, $utf8NoBom)

@@ -112,6 +112,9 @@ LOCAL_URL="$(pick LOCAL_URL "" "http://127.0.0.1:8080")"
 LOCAL_URL_CONTAINER="$(pick LOCAL_URL_CONTAINER "" "http://omnigraph-server:8080")"
 DOCKER_NET="$(pick DOCKER_NET "" "$DET_NET")"
 DEVICE="$(pick DEVICE "" "$DEVICE_D")"
+# Optional. Left empty unless you already set it or export it: guessing a viewer URL would
+# make every sync retry a bogus host. Empty simply means "no attribution".
+VIEWER_URL="$(pick VIEWER_URL "" "${VIEWER_URL:-}")"
 
 # LOCAL_TOKEN must equal .env.shared's token — the local server was started with it.
 if [ "$LOCAL_TOKEN" != "$SHARED_TOKEN" ]; then
@@ -190,6 +193,12 @@ LOCAL_TOKEN=$LOCAL_TOKEN
 DOCKER_NET=$DOCKER_NET
 
 DEVICE=$DEVICE
+
+# Central viewer, for the Sync log's "source" column. The viewer attributes a push to a
+# device by the SOURCE IP of this ping — a commit records no client address, and actor_id
+# comes from the shared bearer token (so it reads \`default\` for every device). Optional:
+# empty = no attribution, sync unaffected. e.g. http://coding.vm:8090
+VIEWER_URL=$VIEWER_URL
 # GRAPHS unset => sync every graph central exposes (per-project isolation means all of them).
 EOF
 mv -f "$tmp" "$envfile"
