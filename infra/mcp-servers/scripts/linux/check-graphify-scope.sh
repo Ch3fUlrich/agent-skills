@@ -18,6 +18,9 @@
 #         omnigraph is genuinely per-repo (project scope); graphify-docker is retired
 #   PER repo  (any repo with a graphify-out/ graph)
 #     - NO graphify entry in <repo>/.mcp.json — graphify is user-scope, not per repo
+#     - NO stale graphify approval in <repo>/.claude/settings.local.json. Checked
+#       independently of the entry: an approval outlives the server it approved, so
+#       once the entry is gone nothing would ever look at it again.
 #     - a built graph at <repo>/graphify-out/graph.json
 #     - no root-owned graphify-out (a Docker rebuild without --user leaves files you
 #       cannot overwrite) — only reachable on the server/Docker path
@@ -130,9 +133,25 @@ PY
         echo "    ${D}graphify is a single user-scope entry; remove '$STRAY' from${N}"
         echo "    ${D}$name/.mcp.json (tracked — edit by hand) and its approval below.${N}"
         PROBLEMS=$((PROBLEMS + 1))
+    fi
+
+    # -- stray approval: checked INDEPENDENTLY of gate 1 -------------------
+    # An approval outlives the server it approved. Once graphify-docker is gone from
+    # .mcp.json, gate 1 passes and a leftover `graphify-docker` in enabledMcpjsonServers
+    # would never be looked at again — silent drift that reads as "still per-repo".
+    SETTINGS="$repo/.claude/settings.local.json"
+    APPROVED=""
+    [ -f "$SETTINGS" ] && APPROVED=$(python3 - "$SETTINGS" <<'PY'
+import json, pathlib, sys
+try: d = json.loads(pathlib.Path(sys.argv[1]).read_text())
+except Exception: raise SystemExit
+lst = d.get('enabledMcpjsonServers')
+print(' '.join(s for s in lst if 'graphify' in s) if isinstance(lst, list) else '')
+PY
+)
+    if [ -n "${APPROVED:-}" ]; then
         # --fix only touches the UNTRACKED approval, never the tracked .mcp.json
-        SETTINGS="$repo/.claude/settings.local.json"
-        if [ "$FIX" -eq 1 ] && [ -f "$SETTINGS" ]; then
+        if [ "$FIX" -eq 1 ]; then
             python3 - "$SETTINGS" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
@@ -143,7 +162,11 @@ if isinstance(lst, list):
     d['enabledMcpjsonServers'] = [s for s in lst if 'graphify' not in s]
     p.write_text(json.dumps(d, indent=2) + '\n')
 PY
-            echo "  ${Y}~ gate 1  --fix removed the stray graphify approval from local settings${N}"
+            echo "  ${Y}~ approval  FIXED — removed stale '$APPROVED' from settings.local.json${N}"
+        else
+            echo "  ${R}X approval  stale graphify approval '$APPROVED' in settings.local.json${N}"
+            echo "    ${D}It approves a server that no longer exists. Re-run with --fix.${N}"
+            PROBLEMS=$((PROBLEMS + 1))
         fi
     fi
 

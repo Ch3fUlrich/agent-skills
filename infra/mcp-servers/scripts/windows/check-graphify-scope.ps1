@@ -19,6 +19,9 @@
             omnigraph is per-repo (project scope); graphify-docker is retired
       PER repo  (any repo with a graphify-out\ graph)
         - NO graphify entry in <repo>\.mcp.json (graphify is user-scope, not per repo)
+        - NO stale graphify approval in <repo>\.claude\settings.local.json. Checked
+          independently of the entry: an approval outlives the server it approved,
+          so once the entry is gone nothing would ever look at it again.
         - a built graph at <repo>\graphify-out\graph.json
 
     NOT CHECKED HERE — file ownership. On Docker Desktop bind mounts, container-
@@ -161,15 +164,36 @@ foreach ($repoDir in Get-ChildItem -Path $CodeRoot -Directory) {
         Write-Gate hint "graphify is a single user-scope entry; remove it from"
         Write-Gate hint "$name\.mcp.json (tracked - edit by hand) and its approval below."
         $problems++
-        if ($Fix -and (Test-Path $settingsPath)) {
+    }
+
+    # -- stray approval: checked INDEPENDENTLY of gate 1 ---------------------
+    # An approval outlives the server it approved. Once graphify-docker is gone from
+    # .mcp.json, gate 1 passes and a leftover 'graphify-docker' in enabledMcpjsonServers
+    # would never be looked at again - silent drift that reads as "still per-repo".
+    $approved = @()
+    if (Test-Path $settingsPath) {
+        try {
+            $st = Get-Content $settingsPath -Raw | ConvertFrom-Json
+            if ($st.PSObject.Properties.Name -contains 'enabledMcpjsonServers') {
+                $approved = @($st.enabledMcpjsonServers | Where-Object { $_ -like '*graphify*' })
+            }
+        } catch { }
+    }
+    if ($approved.Count -gt 0) {
+        if ($Fix) {
             try {
                 $st = Get-Content $settingsPath -Raw | ConvertFrom-Json
-                if ($st.PSObject.Properties.Name -contains 'enabledMcpjsonServers') {
-                    $st.enabledMcpjsonServers = @($st.enabledMcpjsonServers | Where-Object { $_ -notlike '*graphify*' })
-                    ($st | ConvertTo-Json -Depth 20) + "`n" | Set-Content -Path $settingsPath -Encoding UTF8 -NoNewline
-                    Write-Gate warn 'gate 1  --fix removed the stray graphify approval from local settings'
-                }
-            } catch { }
+                $st.enabledMcpjsonServers = @($st.enabledMcpjsonServers | Where-Object { $_ -notlike '*graphify*' })
+                ($st | ConvertTo-Json -Depth 20) + "`n" | Set-Content -Path $settingsPath -Encoding UTF8 -NoNewline
+                Write-Gate warn "approval  FIXED - removed stale '$($approved -join ', ')' from settings.local.json"
+            } catch {
+                Write-Gate bad "approval  stale '$($approved -join ', ')' but the repair failed: $($_.Exception.Message)"
+                $problems++
+            }
+        } else {
+            Write-Gate bad "approval  stale graphify approval '$($approved -join ', ')' in settings.local.json"
+            Write-Gate hint 'It approves a server that no longer exists. Re-run with -Fix.'
+            $problems++
         }
     }
 
