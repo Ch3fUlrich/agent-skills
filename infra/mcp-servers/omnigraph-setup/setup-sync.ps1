@@ -274,8 +274,13 @@ if ($NoSchedule) { Ok 'done (-NoSchedule: nothing was scheduled)'; exit 0 }
 # The obvious spelling for forever, [TimeSpan]::MaxValue, is a trap: it serialises to
 # P99999999DT23H59M59S and Task Scheduler rejects the XML outright
 # ("value which is incorrectly formatted or out of range").
-$action  = New-ScheduledTaskAction -Execute $pwshExe `
-             -Argument "-NoProfile -WindowStyle Hidden -File `"$sync`"" -WorkingDirectory $here
+# Launch via wscript.exe + a VBScript stub so NO console window appears. A task that
+# runs "only when logged on" flashes a conhost window every run even with
+# -WindowStyle Hidden (the host is created before pwsh can hide it); wscript is
+# windowless and starts pwsh with window style 0, so the 5-minute run is invisible.
+$hiddenVbs = Join-Path $here 'omnigraph-sync-hidden.vbs'
+$action  = New-ScheduledTaskAction -Execute 'wscript.exe' `
+             -Argument "`"$hiddenVbs`" `"$pwshExe`"" -WorkingDirectory $here
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
              -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)
 # IgnoreNew: if a run overruns the interval, skip the next rather than pile up concurrent
