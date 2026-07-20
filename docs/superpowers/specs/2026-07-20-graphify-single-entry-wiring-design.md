@@ -134,10 +134,10 @@ Graphify is defined **once, in user scope** (`~/.claude.json`), cwd-relative:
 - **Reversing a 3-day-old convention:** stale references cause confusion. Mitigated by doing
   docs + scripts in the same change (full refactor) so nothing enforces the old model.
 
-## Open questions
+## Resolved decisions (2026-07-20)
 
-1. **coding.vm runner:** does the server have uv/Python? If yes, the uniform uv entry works
-   with no Docker wrapper (simplest). If no, use the `graphify-mcp` Docker wrapper. Confirm
-   before wiring the server.
-2. **Wrapper install location** on the server (`/usr/local/bin/graphify-mcp` vs a repo-tracked
-   `infra/mcp-servers/bin/`). Decide in the plan.
+1. **coding.vm runner:** Docker (it is a server). It uses the `graphify-mcp` cwd wrapper, not
+   the uv entry.
+2. **Wrapper location:** tracked at `infra/mcp-servers/bin/graphify-mcp` (symlinked onto the
+   server's `PATH`, e.g. `/usr/local/bin/`).
+3. **Post-refactor:** rebuild the `agent-skills` graph (`graphify update .`).

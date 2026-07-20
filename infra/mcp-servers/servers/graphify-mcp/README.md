@@ -53,22 +53,27 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 A working server replies with a `serverInfo` block on stdout. Ctrl-D (EOF on
 stdin) ends the container.
 
-## Register with Claude Code
+## Register with Claude Code (SERVER path)
 
-Add to `config/mcp-claude-code.json` (or `claude mcp add`) in place of the
-`uv run --with graphifyy[mcp] ...` command:
+This image is the **server** transport for the single, cwd-relative user-scope
+`graphify` entry (workstations use `uv` instead — see
+`../../../../skills/mcp-servers-setup/SKILL.md` → Graphify). Do **not** register a
+per-repo, hardcoded-mount entry: that is the retired `graphify-docker`, which served
+one repo's graph to every repo.
 
+Because MCP args are not shell-expanded, a raw `docker run` entry can't inject `$PWD`,
+so the mount would be fixed to one repo. Use the tracked wrapper
+[`../../bin/graphify-mcp`](../../bin/graphify-mcp) instead — it adds
+`-v "$PWD:/repo"` at runtime:
+
+```sh
+# on the server: build the image, put the wrapper on PATH, register ONE user-scope entry
+docker build -t graphify-mcp:latest servers/graphify-mcp
+ln -s "$PWD/infra/mcp-servers/bin/graphify-mcp" /usr/local/bin/graphify-mcp
+```
 ```json
-"graphify": {
-  "command": "docker",
-  "args": [
-    "run", "-i", "--rm",
-    "-v", "${AGENT_SKILLS_DIR}:/repo",
-    "graphify-mcp:latest"
-  ]
-}
+"graphify": { "command": "graphify-mcp" }
 ```
 
-`${AGENT_SKILLS_DIR}` should point at whichever repo's `graphify-out/` you
-want served — the graph path (`graphify-out/graph.json`) is resolved
-relative to `/repo` inside the container.
+The container resolves `graphify-out/graph.json` relative to `/repo`, which the wrapper
+mounts from the launch directory — so the one entry serves whichever repo you started in.

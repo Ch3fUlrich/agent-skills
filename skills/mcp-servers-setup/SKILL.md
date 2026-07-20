@@ -84,66 +84,64 @@ graphify path "apply-cluster.sh" "cluster.yaml"
 
 **Rule**: Graphify does not replace Serena. Use Serena for symbol-level navigation and Graphify for broader relationship questions when a graph exists.
 
-#### Per-repo setup — THREE gates, and every one fails silently
+#### Wiring — ONE definition per machine, cwd-relative
 
-Graphify is **repo-bound**: the server resolves `graphify-out/graph.json` relative to
-its mount, so one server serves exactly one repo. All three gates must be open, and
-none of them errors when shut — you get wrong answers or a missing tool, never a
-message. Miss gate 1 and another repo's graph answers for yours (this is what happened
-to `Invest`/`Server` until 2026-07-19: a user-scope entry pinned to `agent-skills`
-answered for every repo).
+Graphify is **stdio-only** (no shared daemon) and reads a static `graphify-out/graph.json`.
+A stdio server inherits its launch directory, so **one entry with the *relative* path
+`graphify-out/graph.json` serves whichever repo you started Claude Code in.** Define it
+**once, in user scope** — never per repo.
 
-| # | Gate | Where | Symptom if missed |
-|---|------|-------|-------------------|
-| 1 | Server declared **project-scoped**, mounting *this* repo | `<repo>/.mcp.json` | another repo's graph answers, silently |
-| 2 | Server **approved** | `<repo>/.claude/settings.local.json` → `enabledMcpjsonServers` | tool absent; no prompt, no error |
-| 3 | Graph **built** | `<repo>/graphify-out/graph.json` | server starts, serves nothing |
+There is **no npx graphify**: the npm package by that name is an unrelated jQuery toy. The
+tool is Python-only (`graphifyy[mcp]`, upstream `github.com/safishamsi/graphify`), served as
+`python -m graphify.serve <graph.json>`.
 
-Gate 2 is the one that bites: adding a server to `.mcp.json` is **not** enough — an
-unapproved project server is skipped without a word. `.mcp.json` is tracked and cannot
-approve itself (deliberate: a repo must not auto-run servers on clone). Approve in the
-untracked local settings, or set `enableAllProjectMcpServers: true` there.
+- **Workstation / client — this is the way.** A single user-scope entry in `~/.claude.json`:
+  ```jsonc
+  "graphify": {
+    "command": "uv",
+    "args": ["run","--with","graphifyy[mcp]","python","-m","graphify.serve","graphify-out/graph.json"]
+  }
+  ```
+  No Docker, no per-repo `.mcp.json` entry, no approval step. `uv` resolves from cache
+  (~sub-second warm); a global `pipx install graphifyy[mcp]` + `"command": "python"` is an
+  option if you want to shave cold-start.
 
-```jsonc
-// <repo>/.mcp.json — gate 1. Mount THIS repo; the image's WORKDIR is already /repo.
-"graphify-docker": {
-  "command": "docker",
-  "args": ["run","-i","--rm","-v","${CODE_ROOT:-/home/s/code}/<REPO>:/repo","graphify-mcp:latest"]
-}
-```
-```jsonc
-// <repo>/.claude/settings.local.json — gate 2 (untracked)
-{ "enabledMcpjsonServers": ["omnigraph", "graphify-docker"] }
-```
+- **Server** (e.g. `coding.vm` — runs graphify via Docker). MCP args aren't shell-expanded, so
+  a raw entry can't inject `$PWD`; the tracked cwd wrapper
+  [`infra/mcp-servers/bin/graphify-mcp`](../../infra/mcp-servers/bin/graphify-mcp) does it:
+  ```sh
+  exec docker run -i --rm -v "$PWD:/repo" graphify-mcp:latest "$@"
+  ```
+  Setup: build the image (`docker build -t graphify-mcp:latest servers/graphify-mcp`), put the
+  wrapper on `PATH` (`ln -s "$PWD/infra/mcp-servers/bin/graphify-mcp" /usr/local/bin/`), then
+  register the one user-scope entry `"graphify": { "command": "graphify-mcp" }`.
+
+**Never give graphify a per-repo project-scope entry.** A cwd-relative single definition
+already serves each repo its own graph; a **hardcoded** per-repo mount is exactly what made
+one repo's graph answer for every repo (the retired `graphify-docker`, 2026-07-20). With
+graphify defined in only one place, the user-vs-project same-name precedence trap cannot
+arise for it at all.
+
+**Contrast with omnigraph — do not apply one's rule to the other.** Omnigraph *is*
+per-repo/project-scoped (pinned by `OMNIGRAPH_GRAPH_ID`) because each repo is a distinct graph
+on a shared server. Graphify is a local static file selected by cwd, so it needs no per-repo
+pin and belongs in user scope.
+
+Only the graph **file** is per-repo. Build it (no LLM/API key needed) and keep it fresh:
 ```bash
-# gate 3 — deterministic AST graph, no LLM/API key. --user is REQUIRED: the container
-# runs as root and bind-mount writes land root-owned, so the next rebuild (and any
-# host-side `graphify`/git clean) fails with permission denied on your own files.
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo \
-  --entrypoint python graphify-mcp:latest -m graphify update .
+uv run --with graphifyy[mcp] graphify update .   # workstation; or init-graphify-projects.*
+# server without uv:
+docker run --rm -v "$PWD:/repo" -w /repo --entrypoint python graphify-mcp:latest -m graphify update .
 ```
 
-**Never put `graphify-docker` (or `omnigraph`) in user scope** (`~/.claude.json` →
-`mcpServers`). Both are repo-bound; one global entry serves one repo's data to all of
-them. Keeping user scope empty of them also means no same-named entry can ever compete
-with the project one, which sidesteps the precedence question entirely.
-
-Verify all three gates for every repo at once (`--fix`/`-Fix` applies the safe
-repairs; both exit non-zero so they work in hooks/CI):
+Verify wiring — single user-scope entry present, **no** project graphify entries, graph built
+(`--fix`/`-Fix` applies the safe repairs; both exit non-zero so they work in hooks/CI):
 ```bash
 bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh --fix          # Linux/WSL
 ```
 ```powershell
 .\infra\mcp-servers\scripts\windows\check-graphify-scope.ps1 -Fix           # Windows
 ```
-
-**On Windows, set `CODE_ROOT`.** The committed mounts read
-`${CODE_ROOT:-/home/s/code}/<repo>:/repo` — that POSIX default is right on Linux
-and cannot exist on Windows, so docker mounts nothing and the server answers from
-an empty graph. `setx CODE_ROOT "C:/Users/<you>/code"`, then restart Claude Code.
-The PowerShell checker flags this case by name. Ownership differs too: Docker
-Desktop surfaces container-created files as the host user, so `--user` matters
-only on Linux/WSL — the `.ps1` deliberately omits that gate.
 
 ### Superpowers — Workflow Skills (14 skills)
 

@@ -17,5 +17,9 @@
 Dockerfile      text eol=lf
 .env.example    text eol=lf
 
+# Extensionless shell wrappers meant for PATH (e.g. the graphify-mcp server wrapper) —
+# same CRLF-shebang hazard as *.sh, but no extension to match on.
+infra/mcp-servers/bin/* text eol=lf
+
 # PowerShell is Windows-native; CRLF is correct there.
 *.ps1           text eol=crlf

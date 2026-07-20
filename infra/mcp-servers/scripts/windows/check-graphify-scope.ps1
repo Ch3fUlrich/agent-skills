@@ -1,43 +1,39 @@
 <#
 .SYNOPSIS
-    Verify that every repo serves its OWN graphify graph (Windows mirror of
-    linux/check-graphify-scope.sh — keep the two in sync).
+    Verify graphify is wired as ONE cwd-relative user-scope entry, not per repo
+    (Windows mirror of linux/check-graphify-scope.sh — keep the two in sync).
 
 .DESCRIPTION
-    Graphify is REPO-BOUND: the server resolves graphify-out/graph.json
-    relative to its bind mount, so one server serves exactly one repo. Three
-    gates must all be open, and NONE of them errors when shut:
+    Graphify is wired as a SINGLE `graphify` entry in USER scope (~/.claude.json),
+    never per repo. graphify.serve is stdio and inherits its launch directory, so
+    one entry with the RELATIVE path graphify-out/graph.json serves whichever repo
+    you started Claude Code in. On a Windows workstation that entry is `uv`
+    (no bind mount, no CODE_ROOT). The Docker + wrapper path is for Linux servers.
 
-      1. project-scoped server in <repo>\.mcp.json mounting THAT repo
-           missed -> another repo's graph answers for yours, silently
-      2. approval in <repo>\.claude\settings.local.json enabledMcpjsonServers
-           missed -> tool simply absent; no prompt, no error
-      3. a built graph at <repo>\graphify-out\graph.json
-           missed -> server starts and serves nothing
+    What this checks:
+      USER scope  ~/.claude.json
+        - exactly one `graphify` entry, cwd-relative (uv, or the graphify-mcp wrapper)
+            missing         -> repos with a graph won't be served
+            hardcoded mount -> serves ONE repo to EVERY repo (the retired bug)
+        - NO `omnigraph` or `graphify-docker` in user scope
+            omnigraph is per-repo (project scope); graphify-docker is retired
+      PER repo  (any repo with a graphify-out\ graph)
+        - NO graphify entry in <repo>\.mcp.json (graphify is user-scope, not per repo)
+        - a built graph at <repo>\graphify-out\graph.json
 
-    Also catches graphify-docker/omnigraph in USER scope (~/.claude.json):
-    one global entry serves one repo's data to every repo (the 2026-07-19 bug).
-
-    WINDOWS-SPECIFIC GATE — the mount path. The committed .mcp.json files use
-    "${CODE_ROOT:-/home/s/code}/<repo>:/repo". That POSIX default is correct on
-    Linux and WRONG here, so CODE_ROOT must be set to your Windows code root
-    (e.g. C:/Users/you/code) or docker mounts a path that does not exist and
-    the server serves an empty graph. This script flags that explicitly.
-
-    NOT CHECKED HERE — file ownership. On Docker Desktop bind mounts, files
-    the container creates surface as the host user, so the root-owned
-    graphify-out problem the Linux checker repairs does not arise. If your
-    repos live on a WSL filesystem (\\wsl$\... or /home/... inside WSL), run
-    the .sh version from inside WSL instead — there it does apply.
+    NOT CHECKED HERE — file ownership. On Docker Desktop bind mounts, container-
+    created files surface as the host user, so the root-owned graphify-out problem
+    the Linux checker repairs does not arise. If your repos live on a WSL filesystem,
+    run the .sh version from inside WSL, where it does apply.
 
 .PARAMETER CodeRoot
     Directory whose immediate subdirectories are the repos to check.
     Defaults to $env:CODE_ROOT, else $HOME\code.
 
 .PARAMETER Fix
-    Apply the one safe repair: approve graphify-docker in the repo's untracked
-    .claude\settings.local.json. Never edits tracked files and never builds a
-    graph (that is a real extraction run).
+    Apply the safe, UNTRACKED-only repair: drop a stray graphify approval from a
+    repo's .claude\settings.local.json. Never edits tracked files, never registers
+    user-scope entries (that is `claude mcp add`, printed for you), never builds a graph.
 
 .EXAMPLE
     .\check-graphify-scope.ps1
@@ -63,54 +59,61 @@ function Write-Gate {
     }
 }
 
-# Expand ${VAR} / ${VAR:-default} the way Claude Code does, so the mount we
-# test is the mount docker will actually receive.
-function Expand-McpVars {
-    param([string]$Value)
-    $re = [regex]'\$\{([A-Za-z_]\w*)(?::-([^}]*))?\}'
-    return $re.Replace($Value, {
-        param($m)
-        $envVal = [Environment]::GetEnvironmentVariable($m.Groups[1].Value)
-        if ($envVal) { return $envVal }
-        return $m.Groups[2].Value
-    })
-}
-
-function Normalize-Path {
-    param([string]$P)
-    if (-not $P) { return '' }
-    return ($P -replace '\\', '/').TrimEnd('/').ToLowerInvariant()
-}
-
 Write-Host '======================================================================' -ForegroundColor Cyan
 Write-Host "  Graphify - scope check   (code root: $CodeRoot)" -ForegroundColor Cyan
 Write-Host '======================================================================' -ForegroundColor Cyan
 
 # ---------------------------------------------------------------- user scope
-# Repo-bound servers must never live here: a single global entry answers for
-# every repo, which is exactly the failure this check exists to prevent.
+# Graphify BELONGS here as one cwd-relative entry; omnigraph/graphify-docker do not.
 Write-Host ''
 Write-Host 'USER SCOPE  ~/.claude.json'
 $userCfgPath = Join-Path $HOME '.claude.json'
-$leaked = @()
+$gStatus = 'MISSING'
+$bad = @()
 if (Test-Path $userCfgPath) {
     try {
-        $userCfg = Get-Content $userCfgPath -Raw | ConvertFrom-Json
-        if ($userCfg.PSObject.Properties.Name -contains 'mcpServers' -and $userCfg.mcpServers) {
-            $names = @($userCfg.mcpServers.PSObject.Properties.Name)
-            $leaked = @($names | Where-Object { $_ -in @('graphify-docker', 'graphify', 'omnigraph') })
+        # -AsHashTable: ~/.claude.json can contain project keys differing only by case
+        # (Windows path casing), which the default (pscustomobject) parser rejects.
+        $userCfg = Get-Content $userCfgPath -Raw | ConvertFrom-Json -AsHashTable
+        $ms = $userCfg['mcpServers']
+        if ($ms) {
+            $names = @($ms.Keys)
+            $bad = @($names | Where-Object { $_ -in @('omnigraph', 'graphify-docker') })
+            if ($names -contains 'graphify') {
+                $g = $ms['graphify']
+                $gArgs = @($g['args'])
+                $cmd = [string]$g['command']
+                $hard = @($gArgs | Where-Object { $_ -like '*:/repo' -and -not ($_.TrimStart().StartsWith('$')) }).Count -gt 0
+                $rel = ($gArgs -contains 'graphify-out/graph.json') -or ($cmd -eq 'graphify-mcp')
+                if ($hard -and -not $rel) { $gStatus = 'HARDCODED' }
+                elseif ($rel -or @('uv', 'uvx', 'python', 'graphify-mcp') -contains $cmd) { $gStatus = 'OK' }
+                else { $gStatus = 'UNKNOWN' }
+            }
         }
     } catch {
         Write-Gate warn "could not parse $userCfgPath : $($_.Exception.Message)"
     }
 }
-if ($leaked.Count -gt 0) {
-    Write-Gate bad "repo-bound server(s) in user scope: $($leaked -join ', ')"
-    Write-Gate hint "Serves ONE repo's data to EVERY repo. Remove with:"
-    foreach ($s in $leaked) { Write-Gate hint "claude mcp remove -s user $s" }
+switch ($gStatus) {
+    'OK'       { Write-Gate ok 'graphify present and cwd-relative' }
+    'MISSING'  {
+        Write-Gate bad "graphify MISSING - repos with a graph won't be served"
+        Write-Gate hint 'Workstation: claude mcp add -s user graphify -- `'
+        Write-Gate hint "  uv run --with 'graphifyy[mcp]' python -m graphify.serve graphify-out/graph.json"
+        $problems++
+    }
+    'HARDCODED' {
+        Write-Gate bad 'graphify hardcodes a repo mount - serves ONE repo to EVERY repo'
+        Write-Gate hint 'Replace with the cwd-relative uv entry (or the graphify-mcp wrapper on a server).'
+        $problems++
+    }
+    default    { Write-Gate warn 'graphify present but command/args unrecognised - verify by hand' }
+}
+if ($bad.Count -gt 0) {
+    Write-Gate bad "must NOT be in user scope: $($bad -join ', ')"
+    Write-Gate hint 'omnigraph is per-repo (project scope); graphify-docker is retired. Remove:'
+    foreach ($s in $bad) { Write-Gate hint "claude mcp remove -s user $s" }
     $problems++
-} else {
-    Write-Gate ok 'clean - no repo-bound servers in user scope'
 }
 
 # ------------------------------------------------------------------ per repo
@@ -130,110 +133,57 @@ foreach ($repoDir in Get-ChildItem -Path $CodeRoot -Directory) {
     $graphOutDir  = Join-Path $repo 'graphify-out'
     $settingsPath = Join-Path $repo '.claude\settings.local.json'
 
-    # "Participating" = declares a graphify server or has a graph. A repo with
-    # neither simply does not use graphify; silence is correct there.
-    $declares = (Test-Path $mcpPath) -and ((Get-Content $mcpPath -Raw) -match 'graphify')
-    if (-not $declares -and -not (Test-Path $graphOutDir)) { continue }
+    # "Participating" = has a built graph. graphify is no longer declared per repo,
+    # so the graphify-out\ dir — not a project .mcp.json entry — opts a repo in.
+    if (-not (Test-Path $graphOutDir)) { continue }
 
     Write-Host ''
     Write-Host $name -ForegroundColor Cyan -NoNewline
     Write-Host "  $repo" -ForegroundColor DarkGray
 
-    # -- gate 1: project-scoped server mounting THIS repo --------------------
-    $srv = $null
+    # -- gate 1: NO graphify entry in the project .mcp.json -----------------
+    $stray = @()
     if (Test-Path $mcpPath) {
         try {
             $mcp = Get-Content $mcpPath -Raw | ConvertFrom-Json
-            if ($mcp.mcpServers -and ($mcp.mcpServers.PSObject.Properties.Name -contains 'graphify-docker')) {
-                $srv = $mcp.mcpServers.'graphify-docker'
+            if ($mcp.mcpServers) {
+                $stray = @($mcp.mcpServers.PSObject.Properties.Name | Where-Object { $_ -like '*graphify*' })
             }
         } catch {
             Write-Gate bad "gate 1  .mcp.json is not valid JSON: $($_.Exception.Message)"
             $problems++
         }
     }
-    if (-not $srv) {
-        Write-Gate bad "gate 1  no graphify-docker in $name\.mcp.json"
-        Write-Gate hint "Another repo's graph may answer for this one. See"
-        Write-Gate hint 'skills/mcp-servers-setup/SKILL.md -> Graphify -> Per-repo setup'
-        $problems++
+    if ($stray.Count -eq 0) {
+        Write-Gate ok "gate 1  no project-scope graphify entry (correct - it's user scope)"
     } else {
-        $rawMount = @($srv.args | Where-Object { $_ -like '*:/repo' }) | Select-Object -First 1
-        $rawHost  = ''
-        if ($rawMount) { $rawHost = ($rawMount -replace ':/repo$', '') }
-        $expanded = Expand-McpVars $rawHost
-
-        if ((Normalize-Path $expanded) -eq (Normalize-Path $repo)) {
-            Write-Gate ok 'gate 1  project-scoped server mounts this repo'
-        } elseif ($expanded -match '^/' ) {
-            # A POSIX path on Windows: the committed default, with CODE_ROOT unset.
-            Write-Gate bad "gate 1  mount is a POSIX path and cannot exist here: $expanded"
-            Write-Gate hint 'The .mcp.json default targets Linux. Set CODE_ROOT to your'
-            Write-Gate hint "Windows code root, e.g.  setx CODE_ROOT `"$($CodeRoot -replace '\\','/')`""
-            Write-Gate hint 'then restart Claude Code so the new value is picked up.'
-            $problems++
-        } else {
-            Write-Gate bad "gate 1  mounts the WRONG path: $expanded"
-            Write-Gate hint "It will serve that repo's graph, not this one."
-            $problems++
-        }
-    }
-
-    # -- gate 2: approved in untracked local settings ------------------------
-    $approved = 'NO'
-    if (Test-Path $settingsPath) {
-        try {
-            $st = Get-Content $settingsPath -Raw | ConvertFrom-Json
-            if ($st.PSObject.Properties.Name -contains 'enableAllProjectMcpServers' -and $st.enableAllProjectMcpServers -eq $true) {
-                $approved = 'ALL'
-            } elseif ($st.PSObject.Properties.Name -contains 'enabledMcpjsonServers' -and
-                      (@($st.enabledMcpjsonServers) -contains 'graphify-docker')) {
-                $approved = 'YES'
-            }
-        } catch { $approved = 'NO' }
-    }
-
-    if ($approved -eq 'YES' -or $approved -eq 'ALL') {
-        Write-Gate ok 'gate 2  approved in local settings'
-    } elseif ($Fix) {
-        $claudeDir = Join-Path $repo '.claude'
-        if (-not (Test-Path $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir | Out-Null }
-        $obj = $null
-        if (Test-Path $settingsPath) {
-            try { $obj = Get-Content $settingsPath -Raw | ConvertFrom-Json } catch { $obj = $null }
-        }
-        if (-not $obj) { $obj = [pscustomobject]@{} }
-        $list = @()
-        if ($obj.PSObject.Properties.Name -contains 'enabledMcpjsonServers') {
-            $list = @($obj.enabledMcpjsonServers)
-        }
-        if ($list -notcontains 'graphify-docker') { $list += 'graphify-docker' }
-        if ($obj.PSObject.Properties.Name -contains 'enabledMcpjsonServers') {
-            $obj.enabledMcpjsonServers = $list
-        } else {
-            $obj | Add-Member -NotePropertyName enabledMcpjsonServers -NotePropertyValue $list
-        }
-        ($obj | ConvertTo-Json -Depth 20) + "`n" | Set-Content -Path $settingsPath -Encoding UTF8 -NoNewline
-        Write-Gate warn 'gate 2  FIXED - approved graphify-docker in local settings'
-    } else {
-        Write-Gate bad 'gate 2  not approved -> the tool will be silently ABSENT'
-        Write-Gate hint "Add to $name\.claude\settings.local.json (untracked):"
-        Write-Gate hint '  { "enabledMcpjsonServers": ["graphify-docker"] }   (or -Fix)'
+        Write-Gate bad "gate 1  stray project graphify entry: $($stray -join ', ')"
+        Write-Gate hint "graphify is a single user-scope entry; remove it from"
+        Write-Gate hint "$name\.mcp.json (tracked - edit by hand) and its approval below."
         $problems++
+        if ($Fix -and (Test-Path $settingsPath)) {
+            try {
+                $st = Get-Content $settingsPath -Raw | ConvertFrom-Json
+                if ($st.PSObject.Properties.Name -contains 'enabledMcpjsonServers') {
+                    $st.enabledMcpjsonServers = @($st.enabledMcpjsonServers | Where-Object { $_ -notlike '*graphify*' })
+                    ($st | ConvertTo-Json -Depth 20) + "`n" | Set-Content -Path $settingsPath -Encoding UTF8 -NoNewline
+                    Write-Gate warn 'gate 1  --fix removed the stray graphify approval from local settings'
+                }
+            } catch { }
+        }
     }
 
-    # -- gate 3: a graph exists ---------------------------------------------
+    # -- gate 2: a graph exists ---------------------------------------------
     if (Test-Path $graphPath) {
         $age = [int]((Get-Date) - (Get-Item $graphPath).LastWriteTime).TotalDays
         if ($age -gt 14) {
-            Write-Gate warn "gate 3  graph exists but is ${age}d old - consider rebuilding"
+            Write-Gate warn "gate 2  graph exists but is ${age}d old - consider rebuilding"
         } else {
-            Write-Gate ok "gate 3  graph present (${age}d old)"
+            Write-Gate ok "gate 2  graph present (${age}d old)"
         }
     } else {
-        Write-Gate bad 'gate 3  no graphify-out\graph.json - server would serve nothing'
-        Write-Gate hint "cd $repo; docker run --rm -v `"`$(`$PWD.Path):/repo`" -w /repo ``"
-        Write-Gate hint '  --entrypoint python graphify-mcp:latest -m graphify update .'
+        Write-Gate bad 'gate 2  no graphify-out\graph.json - server would serve nothing'
+        Write-Gate hint "cd $repo; uv run --with 'graphifyy[mcp]' graphify update ."
         $problems++
     }
 }
@@ -241,7 +191,7 @@ foreach ($repoDir in Get-ChildItem -Path $CodeRoot -Directory) {
 Write-Host ''
 Write-Host '----------------------------------------------------------------------' -ForegroundColor Cyan
 if ($problems -eq 0) {
-    Write-Host '  All gates open - every participating repo serves its own graph.' -ForegroundColor Green
+    Write-Host '  Graphify wiring correct - one user-scope entry serves every repo''s own graph.' -ForegroundColor Green
 } else {
     Write-Host "  $problems problem(s) found - see the fixes above (or re-run with -Fix)." -ForegroundColor Red
 }
