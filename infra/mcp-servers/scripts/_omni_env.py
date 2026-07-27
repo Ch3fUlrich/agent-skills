@@ -13,7 +13,6 @@ containers aren't on this host. Explicit flags/env always win over detection.
 
 Nothing here mutates anything — `docker inspect` only.
 """
-from __future__ import annotations
 
 import subprocess
 
