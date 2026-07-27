@@ -100,9 +100,12 @@ def main():
         sys.exit("no OMNIGRAPH_TOKEN (set env or pass --env-shared pointing at .env.shared)")
     cmd = [
         "docker", "run", "--rm", "-i", "--network", a.network,
-        "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "--entrypoint", "sh", a.image, "-c",
-        f"cat > /tmp/e.jsonl; omnigraph load --server {a.server} --graph {a.graph} "
-        f"--data /tmp/e.jsonl --mode overwrite --yes --json",
+        "-e", f"OMNIGRAPH_BEARER_TOKEN={token}",
+        "-e", f"TARGET_SERVER={a.server}",
+        "-e", f"TARGET_GRAPH={a.graph}",
+        "--entrypoint", "sh", a.image, "-c",
+        "cat > /tmp/e.jsonl; omnigraph load --server \"$TARGET_SERVER\" --graph \"$TARGET_GRAPH\" "
+        "--data /tmp/e.jsonl --mode overwrite --yes --json",
     ]
     print("[populate-embeddings] overwrite-loading embedded graph via docker CLI...", file=sys.stderr)
     with open(out, "rb") as f:
