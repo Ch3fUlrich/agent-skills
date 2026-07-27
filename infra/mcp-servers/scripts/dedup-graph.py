@@ -59,8 +59,9 @@ def list_graphs(server, network, image, token):
     """Discover every graph the server exposes (GET /graphs) from a throwaway container."""
     r = subprocess.run(
         ["docker", "run", "--rm", "--network", network, "-e", f"OG={server}",
+         "-e", f"TOKEN={token}",
          "--entrypoint", "sh", image, "-c",
-         'curl -s "$OG/graphs" -H "Authorization: Bearer ' + token + '"'],
+         'curl -s "$OG/graphs" -H "Authorization: Bearer $TOKEN"'],
         capture_output=True, text=True)
     import re
     return re.findall(r'"graph_id":"([^"]+)"', r.stdout)
