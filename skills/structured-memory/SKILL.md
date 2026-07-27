@@ -181,7 +181,7 @@ project data.
 
 - **Point your agent at its project graph**: set `OMNIGRAPH_GRAPH_ID=<repo>` for
   the omnigraph MCP bridge (a project-scoped `.mcp.json` env, or export it before
-  launching). **Never write project-specific nodes to the shared `memory` graph.**
+  launching). **Always write and push project memory to the Omnigraph graph/branch matching the repository folder name (`<repo>`), and never to the shared `memory` graph.**
   If you are reading `memory` when `.mcp.json` says otherwise, a same-named `omnigraph`
   in `~/.claude.json` (user scope) is silently overriding it — `0 rows except 2
   Preferences` **is** `memory`, not a wipe. Diagnose:

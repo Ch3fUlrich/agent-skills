@@ -22,10 +22,11 @@ loads it. Read it first; it tells you which of these to open.
 
 ## Memory
 
-- **One graph per repo**, named after the folder. This repo → `agent-skills`.
+- **One graph per repo**, named after the folder (e.g., `agent-skills`, `basic-analysis`). This repo → `agent-skills`.
+- **Always write and push project memory to the Omnigraph graph/branch matching the repository name (`OMNIGRAPH_GRAPH_ID=<repo-folder-name>`)**, never to `memory`.
 - Pinned by `OMNIGRAPH_GRAPH_ID` in `.mcp.json`; **no tool takes a graph argument**.
 - `memory` graph = 2 global `Preference`s only (already Principles 2 & 6 of
-  `coding-principles`). **Never write project data there.**
+  `coding-principles`). **Never write or push project data to `memory`.**
 - Omnigraph is the only memory layer — no fallback (ADR 0003).
 - **`.gq` is GraphQuery, not GraphQL** — `query() { match {…} return {…} }`; **no** top-level
   `mutation {}` wrapper; writes are `query` blocks (`insert`/`update`/`delete`) sent via `mutate`.
