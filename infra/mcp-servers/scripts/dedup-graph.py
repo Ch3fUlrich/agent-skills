@@ -25,19 +25,34 @@ Examples:
   python scripts/dedup-graph.py                    # dedup + rebuild if needed
   python scripts/dedup-graph.py --map Invest=invest # force a specific merge
 """
+
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _omni_env import LOCAL_MINIO_VOLUME, LOCAL_NET, describe, detect_minio_store, detect_network  # noqa: E402
+from _omni_env import (
+    LOCAL_MINIO_VOLUME,
+    LOCAL_NET,
+    describe,
+    detect_minio_store,
+    detect_network,
+)  # noqa: E402
 
-LABEL = {"Project": "name", "Decision": "title", "Rule": "statement",
-         "Preference": "statement", "Convention": "name", "Component": "name", "Task": "title"}
+LABEL = {
+    "Project": "name",
+    "Decision": "title",
+    "Rule": "statement",
+    "Preference": "statement",
+    "Convention": "name",
+    "Component": "name",
+    "Task": "title",
+}
 
 
 def sh(cmd, **kw):
@@ -46,34 +61,84 @@ def sh(cmd, **kw):
 
 def cli(args, network, image, token, stdin=None, capture=True):
     """Run the omnigraph CLI in a throwaway container against the server."""
-    base = ["docker", "run", "--rm", "-i", "--network", network,
-            "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", "HOME=/tmp", "-w", "/tmp",
-            "--entrypoint", "sh", image, "-c",
-            'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG" >/tmp/.omnigraph/config.yaml; ' + args]
+    base = [
+        "docker",
+        "run",
+        "--rm",
+        "-i",
+        "--network",
+        network,
+        "-e",
+        f"OMNIGRAPH_BEARER_TOKEN={token}",
+        "-e",
+        "HOME=/tmp",
+        "-w",
+        "/tmp",
+        "--entrypoint",
+        "sh",
+        image,
+        "-c",
+        'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG" >/tmp/.omnigraph/config.yaml; '
+        + args,
+    ]
     env = dict(os.environ)
-    return subprocess.run(base, input=stdin, capture_output=capture, text=True,
-                          env={**env})
+    return subprocess.run(
+        base, input=stdin, capture_output=capture, text=True, env={**env}
+    )
 
 
 def list_graphs(server, network, image, token):
     """Discover every graph the server exposes (GET /graphs) from a throwaway container."""
     r = subprocess.run(
-        ["docker", "run", "--rm", "--network", network, "-e", f"OG={server}",
-         "--entrypoint", "sh", image, "-c",
-         'curl -s "$OG/graphs" -H "Authorization: Bearer ' + token + '"'],
-        capture_output=True, text=True)
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            network,
+            "-e",
+            f"OG={server}",
+            "--entrypoint",
+            "sh",
+            image,
+            "-c",
+            'curl -s "$OG/graphs" -H "Authorization: Bearer ' + token + '"',
+        ],
+        capture_output=True,
+        text=True,
+    )
     import re
+
     return re.findall(r'"graph_id":"([^"]+)"', r.stdout)
 
 
 def export_graph(server, network, image, token, graph="memory"):
     r = subprocess.run(
-        ["docker", "run", "--rm", "-i", "--network", network,
-         "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={server}", "-e", "HOME=/tmp", "-w", "/tmp",
-         "--entrypoint", "sh", image, "-c",
-         'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-         f'omnigraph export --server local --graph {graph} 2>/dev/null'],
-        capture_output=True, text=True)
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--network",
+            network,
+            "-e",
+            f"OMNIGRAPH_BEARER_TOKEN={token}",
+            "-e",
+            f"OG={server}",
+            "-e",
+            "HOME=/tmp",
+            "-w",
+            "/tmp",
+            "--entrypoint",
+            "sh",
+            image,
+            "-c",
+            'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
+            f"omnigraph export --server local --graph {shlex.quote(graph)} 2>/dev/null",
+        ],
+        capture_output=True,
+        text=True,
+    )
     recs = []
     for line in r.stdout.splitlines():
         line = line.strip()
@@ -159,15 +224,38 @@ def node_count(a, token, graph="memory", retries=6):
     just-restarted server (HTTP not ready yet) doesn't spuriously report -1."""
     for attempt in range(retries):
         r = subprocess.run(
-            ["docker", "run", "--rm", "-i", "--network", a.network,
-             "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
-             "--entrypoint", "sh", a.image, "-c",
-             'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-             f'omnigraph snapshot --server local --graph {graph} 2>/dev/null'],
-            capture_output=True, text=True)
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-i",
+                "--network",
+                a.network,
+                "-e",
+                f"OMNIGRAPH_BEARER_TOKEN={token}",
+                "-e",
+                f"OG={a.server}",
+                "-e",
+                "HOME=/tmp",
+                "-w",
+                "/tmp",
+                "--entrypoint",
+                "sh",
+                a.image,
+                "-c",
+                'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
+                f"omnigraph snapshot --server local --graph {shlex.quote(graph)} 2>/dev/null",
+            ],
+            capture_output=True,
+            text=True,
+        )
         try:
-            d = json.loads(r.stdout[r.stdout.index("{"):])
-            return sum(t["rowCount"] for t in d.get("tables", []) if t["tableKey"].startswith("node"))
+            d = json.loads(r.stdout[r.stdout.index("{") :])
+            return sum(
+                t["rowCount"]
+                for t in d.get("tables", [])
+                if t["tableKey"].startswith("node")
+            )
         except Exception:  # noqa: BLE001
             if attempt < retries - 1:
                 time.sleep(3)
@@ -177,23 +265,52 @@ def node_count(a, token, graph="memory", retries=6):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="http://omnigraph-server:8080")
-    ap.add_argument("--network", default=os.environ.get("OMNI_NET"),
-                    help=f"docker network of the CLI container (default: auto-detected from the "
-                         f"running omnigraph-server, else {LOCAL_NET})")
+    ap.add_argument(
+        "--network",
+        default=os.environ.get("OMNI_NET"),
+        help=f"docker network of the CLI container (default: auto-detected from the "
+        f"running omnigraph-server, else {LOCAL_NET})",
+    )
     ap.add_argument("--image", default="modernrelay/omnigraph-server:v0.8.1")
-    ap.add_argument("--token-file", default="/home/s/code/Server/server/coding/mcp-servers/.env")
-    ap.add_argument("--compose-file", default="/home/s/code/Server/server/coding/mcp-servers/docker-compose.yml")
-    ap.add_argument("--minio-volume", default=None,
-                    help="named volume to remove on reset (default: auto-detected)")
-    ap.add_argument("--minio-path", default=os.environ.get("MINIO_PATH") or None,
-                    help="bind-mount data dir to clear on reset (e.g. /home/s/apps/omnigraph/minio); "
-                         "overrides --minio-volume when the store is a bind mount, not a named volume. "
-                         "Default: auto-detected from the running omnigraph-minio")
-    ap.add_argument("--backup-dir", default=os.path.join(os.path.dirname(__file__), "..", ".graph-backup"))
-    ap.add_argument("--by-name", action="store_true", help="also treat same-type same-label nodes as duplicates")
-    ap.add_argument("--map", action="append", default=[], help="force a merge, e.g. --map Invest=invest")
-    ap.add_argument("--graphs", default=os.environ.get("GRAPHS", ""),
-                    help="comma-separated graphs to dedup (default: all graphs the server exposes)")
+    ap.add_argument(
+        "--token-file", default="/home/s/code/Server/server/coding/mcp-servers/.env"
+    )
+    ap.add_argument(
+        "--compose-file",
+        default="/home/s/code/Server/server/coding/mcp-servers/docker-compose.yml",
+    )
+    ap.add_argument(
+        "--minio-volume",
+        default=None,
+        help="named volume to remove on reset (default: auto-detected)",
+    )
+    ap.add_argument(
+        "--minio-path",
+        default=os.environ.get("MINIO_PATH") or None,
+        help="bind-mount data dir to clear on reset (e.g. /home/s/apps/omnigraph/minio); "
+        "overrides --minio-volume when the store is a bind mount, not a named volume. "
+        "Default: auto-detected from the running omnigraph-minio",
+    )
+    ap.add_argument(
+        "--backup-dir",
+        default=os.path.join(os.path.dirname(__file__), "..", ".graph-backup"),
+    )
+    ap.add_argument(
+        "--by-name",
+        action="store_true",
+        help="also treat same-type same-label nodes as duplicates",
+    )
+    ap.add_argument(
+        "--map",
+        action="append",
+        default=[],
+        help="force a merge, e.g. --map Invest=invest",
+    )
+    ap.add_argument(
+        "--graphs",
+        default=os.environ.get("GRAPHS", ""),
+        help="comma-separated graphs to dedup (default: all graphs the server exposes)",
+    )
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     a.graphs = [g.strip() for g in a.graphs.split(",") if g.strip()]
@@ -210,9 +327,14 @@ def main():
             a.minio_volume = val
         else:
             a.minio_volume = LOCAL_MINIO_VOLUME  # omnigraph-minio not on this host
-    print("[dedup] stack: " + describe(a.network,
-                                       "bind" if a.minio_path else "volume",
-                                       a.minio_path or a.minio_volume))
+    print(
+        "[dedup] stack: "
+        + describe(
+            a.network,
+            "bind" if a.minio_path else "volume",
+            a.minio_path or a.minio_volume,
+        )
+    )
 
     # --token-file defaults to CENTRAL's .env, which does not exist on a dev box, so also
     # fall back to this repo's own .env.shared — otherwise a local run dies here.
@@ -227,7 +349,9 @@ def main():
             if line.startswith("OMNIGRAPH_TOKEN="):
                 token = line.split("=", 1)[1].strip().strip('"').strip("'")
     if not token:
-        sys.exit(f"no OMNIGRAPH_TOKEN (env, --token-file {a.token_file}, or ../.env.shared)")
+        sys.exit(
+            f"no OMNIGRAPH_TOKEN (env, --token-file {a.token_file}, or ../.env.shared)"
+        )
     forced = dict(kv.split("=", 1) for kv in a.map)
 
     all_graphs = list_graphs(a.server, a.network, a.image, token)
@@ -236,7 +360,9 @@ def main():
     target = set(a.graphs) if a.graphs else set(all_graphs)
     unknown = target - set(all_graphs)
     if unknown:
-        sys.exit(f"[dedup] unknown graph(s) in --graphs/GRAPHS: {sorted(unknown)}; server has {all_graphs}")
+        sys.exit(
+            f"[dedup] unknown graph(s) in --graphs/GRAPHS: {sorted(unknown)}; server has {all_graphs}"
+        )
     print(f"[dedup] graphs: {all_graphs}  (dedup targets: {sorted(target)})")
 
     # 1. Export EVERY graph up front. The rebuild resets the whole MinIO volume
@@ -255,16 +381,38 @@ def main():
             merged, out_edges, edge_dupes = clean_records(nodes, edges, dupes, forced)
         else:  # pass-through: still must be reloaded after the global reset
             dupes = []
-            merged = {n["data"]["slug"]: {"type": n["type"],
-                      "data": {k: v for k, v in n["data"].items() if k not in ("id", "embedding")}} for n in nodes}
-            out_edges = [{"edge": e["edge"], "from": e["from"], "to": e["to"]} for e in edges]
+            merged = {
+                n["data"]["slug"]: {
+                    "type": n["type"],
+                    "data": {
+                        k: v
+                        for k, v in n["data"].items()
+                        if k not in ("id", "embedding")
+                    },
+                }
+                for n in nodes
+            }
+            out_edges = [
+                {"edge": e["edge"], "from": e["from"], "to": e["to"]} for e in edges
+            ]
             edge_dupes = 0
         dirty = bool(dupes or edge_dupes)
-        plan[g] = dict(recs=recs, merged=merged, out_edges=out_edges,
-                       dupes=dupes, edge_dupes=edge_dupes, dirty=dirty)
-        print(f"[dedup]   {g}: {len(nodes)} nodes, {len(edges)} edges — "
-              + (f"{len(dupes)} node-dup group(s), {edge_dupes} dup edge(s)" if dirty
-                 else ("clean" if g in target else "pass-through")))
+        plan[g] = dict(
+            recs=recs,
+            merged=merged,
+            out_edges=out_edges,
+            dupes=dupes,
+            edge_dupes=edge_dupes,
+            dirty=dirty,
+        )
+        print(
+            f"[dedup]   {g}: {len(nodes)} nodes, {len(edges)} edges — "
+            + (
+                f"{len(dupes)} node-dup group(s), {edge_dupes} dup edge(s)"
+                if dirty
+                else ("clean" if g in target else "pass-through")
+            )
+        )
 
     if not any(p["dirty"] for p in plan.values()):
         print("[dedup] no duplicates in any graph — nothing to do.")
@@ -272,7 +420,9 @@ def main():
     if a.dry_run:
         for g, p in plan.items():
             if p["dirty"]:
-                print(f"[dedup] --dry-run {g}: collapse {len(p['dupes'])} node group(s) + drop {p['edge_dupes']} edge(s)")
+                print(
+                    f"[dedup] --dry-run {g}: collapse {len(p['dupes'])} node group(s) + drop {p['edge_dupes']} edge(s)"
+                )
         return
 
     # 2. Back up every graph + write its cleaned jsonl (so the reset is recoverable).
@@ -294,10 +444,17 @@ def main():
     # 3. Reset the store ONCE (wipes ALL graphs; every graph is reloaded in step 4).
     print("[dedup] resetting store (wipes ALL graphs; each is reloaded below)...")
     dc = ["docker", "compose", "-f", a.compose_file]
-    svcs = ["omnigraph-server", "omnigraph-viewer", "omnigraph-minio",
-            "omnigraph-init", "omnigraph-minio-init"]
+    svcs = [
+        "omnigraph-server",
+        "omnigraph-viewer",
+        "omnigraph-minio",
+        "omnigraph-init",
+        "omnigraph-minio-init",
+    ]
+
     def bring_up():  # never leave the stack down on any exit after we've stopped it
         sh(dc + ["up", "-d"] + list(reversed(svcs)), capture_output=True)
+
     sh(dc + ["stop"] + svcs, capture_output=True)
     sh(dc + ["rm", "-f"] + svcs, capture_output=True)
     # Wait for MinIO to be TRULY gone before touching the store. A still-shutting-down
@@ -305,8 +462,11 @@ def main():
     # clear removed the graph data but minio recreated empty shells, an `ls -A` check then
     # read those shells as "clear failed", and the run aborted WITHOUT reloading -> loss.
     for _ in range(20):
-        if not sh(["docker", "ps", "-aq", "--filter", "name=omnigraph-minio"],
-                  capture_output=True, text=True).stdout.strip():
+        if not sh(
+            ["docker", "ps", "-aq", "--filter", "name=omnigraph-minio"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip():
             break
         time.sleep(1)
     if a.minio_path:
@@ -314,27 +474,57 @@ def main():
         # Do NOT abort on leftover shells here — whatever the clear did, we ALWAYS restart
         # and reload below, and the per-graph empty-guard in step 4 is the real safety, so
         # a partial clear self-heals (reload) instead of losing data.
-        sh(["docker", "run", "--rm", "-v", f"{a.minio_path}:/data", "alpine",
-            "sh", "-c", "rm -rf /data/* /data/.minio.sys 2>/dev/null; true"], capture_output=True)
+        sh(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{a.minio_path}:/data",
+                "alpine",
+                "sh",
+                "-c",
+                "rm -rf /data/* /data/.minio.sys 2>/dev/null; true",
+            ],
+            capture_output=True,
+        )
     else:
-        vols_before = sh(["docker", "volume", "ls", "--format", "{{.Name}}"],
-                         capture_output=True, text=True).stdout.split()
+        vols_before = sh(
+            ["docker", "volume", "ls", "--format", "{{.Name}}"],
+            capture_output=True,
+            text=True,
+        ).stdout.split()
         if a.minio_volume not in vols_before:
             bring_up()
-            sys.exit(f"[dedup] ABORT: named volume {a.minio_volume} does not exist — is MinIO a "
-                     f"bind mount? pass --minio-path <dir>. Stack restarted, graphs intact.")
-        for c in sh(["docker", "ps", "-aq", "--filter", f"volume={a.minio_volume}"],
-                    capture_output=True, text=True).stdout.split():
+            sys.exit(
+                f"[dedup] ABORT: named volume {a.minio_volume} does not exist — is MinIO a "
+                f"bind mount? pass --minio-path <dir>. Stack restarted, graphs intact."
+            )
+        for c in sh(
+            ["docker", "ps", "-aq", "--filter", f"volume={a.minio_volume}"],
+            capture_output=True,
+            text=True,
+        ).stdout.split():
             sh(["docker", "rm", "-f", c], capture_output=True)
         sh(["docker", "volume", "rm", a.minio_volume], capture_output=True)
-        vols = sh(["docker", "volume", "ls", "--format", "{{.Name}}"], capture_output=True, text=True).stdout.split()
+        vols = sh(
+            ["docker", "volume", "ls", "--format", "{{.Name}}"],
+            capture_output=True,
+            text=True,
+        ).stdout.split()
         if a.minio_volume in vols:
             bring_up()
-            sys.exit(f"[dedup] ABORT: could not remove volume {a.minio_volume}. Stack restarted, graphs intact.")
+            sys.exit(
+                f"[dedup] ABORT: could not remove volume {a.minio_volume}. Stack restarted, graphs intact."
+            )
 
     bring_up()
     for _ in range(45):
-        h = sh(dc + ["ps", "omnigraph-server", "--format", "{{.Status}}"], capture_output=True, text=True)
+        h = sh(
+            dc + ["ps", "omnigraph-server", "--format", "{{.Status}}"],
+            capture_output=True,
+            text=True,
+        )
         if "healthy" in h.stdout:
             break
         time.sleep(2)
@@ -350,29 +540,57 @@ def main():
         # that made a dead server verify "clean" on 2026-07-17.)
         empty = node_count(a, token, g)
         if empty != 0:
-            sys.exit(f"[dedup] ABORT: {g} is not verifiably empty (node_count={empty}; -1 means the "
-                     f"probe FAILED, not that it is empty) — not loading, to avoid duplicating onto "
-                     f"existing data. Stack is up; backups under {a.backup_dir}")
+            sys.exit(
+                f"[dedup] ABORT: {g} is not verifiably empty (node_count={empty}; -1 means the "
+                f"probe FAILED, not that it is empty) — not loading, to avoid duplicating onto "
+                f"existing data. Stack is up; backups under {a.backup_dir}"
+            )
         data = open(cleans[g], "rb").read()
         r = subprocess.run(
-            ["docker", "run", "--rm", "-i", "--network", a.network,
-             "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
-             "--entrypoint", "sh", a.image, "-c",
-             'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-             f'cat > /tmp/c.jsonl; omnigraph load --server local --graph {g} --data /tmp/c.jsonl --mode overwrite --yes --json'],
-            input=data, capture_output=True)
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-i",
+                "--network",
+                a.network,
+                "-e",
+                f"OMNIGRAPH_BEARER_TOKEN={token}",
+                "-e",
+                f"OG={a.server}",
+                "-e",
+                "HOME=/tmp",
+                "-w",
+                "/tmp",
+                "--entrypoint",
+                "sh",
+                a.image,
+                "-c",
+                'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
+                f"cat > /tmp/c.jsonl; omnigraph load --server local --graph {shlex.quote(g)} --data /tmp/c.jsonl --mode overwrite --yes --json",
+            ],
+            input=data,
+            capture_output=True,
+        )
         if r.returncode != 0:
-            sys.exit(f"[dedup] {g} overwrite failed; restore from {a.backup_dir}. stderr:\n{r.stderr.decode()[-400:]}")
+            sys.exit(
+                f"[dedup] {g} overwrite failed; restore from {a.backup_dir}. stderr:\n{r.stderr.decode()[-400:]}"
+            )
         got, want = node_count(a, token, g), len(p["merged"])
-        print(f"[dedup]   {g}: {got} nodes" + ("" if got == want else f"  !! expected {want}"))
+        print(
+            f"[dedup]   {g}: {got} nodes"
+            + ("" if got == want else f"  !! expected {want}")
+        )
         if got != want:
             short.append(f"{g} (got {got}, expected {want})")
     # NEVER print "done" over a restore that did not land. Reporting success while the
     # graphs are short/empty is precisely how the 2026-07-17 wipe went unnoticed.
     if short:
-        sys.exit(f"[dedup] FAILED: these graphs did not come back at their expected counts: "
-                 f"{', '.join(short)}. The stack is up; restore them from {a.backup_dir} "
-                 f"(pre-dedup-<graph>-{ts}.jsonl) before trusting this store.")
+        sys.exit(
+            f"[dedup] FAILED: these graphs did not come back at their expected counts: "
+            f"{', '.join(short)}. The stack is up; restore them from {a.backup_dir} "
+            f"(pre-dedup-<graph>-{ts}.jsonl) before trusting this store."
+        )
     print("[dedup] done — all graphs deduped + reloaded (counts verified).")
 
 
