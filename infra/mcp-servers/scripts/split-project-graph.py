@@ -153,9 +153,10 @@ def merge_load(graph: str, payload: str, token: str, net: str) -> None:
     cmd = [
         "docker", "run", "--rm", "-i", "--network", net,
         "-e", f"OMNIGRAPH_BEARER_TOKEN={token}",
+        "-e", f"TARGET_GRAPH={graph}",
         "--entrypoint", "sh", IMAGE, "-c",
         "cat > /tmp/d.jsonl; omnigraph load --server http://omnigraph-server:8080 "
-        f"--graph {graph} --data /tmp/d.jsonl --mode merge --yes --json",
+        "--graph \"$TARGET_GRAPH\" --data /tmp/d.jsonl --mode merge --yes --json",
     ]
     env = {**os.environ, "MSYS2_ARG_CONV_EXCL": "*"}
     proc = subprocess.run(cmd, input=payload, text=True, capture_output=True, env=env)
