@@ -77,6 +77,35 @@ describe("intelligence", () => {
         expect(inferIntent("Implement feature with tests first")).toBe("implementation");
     });
 
+    it("inferIntent should classify all intents correctly", () => {
+        expect(inferIntent("we need to debug this")).toBe("debugging");
+        expect(inferIntent("can I get a review on this")).toBe("review");
+        expect(inferIntent("time to ship the product")).toBe("completion");
+        expect(inferIntent("brainstorm new ideas")).toBe("creative");
+        expect(inferIntent("create a roadmap")).toBe("planning");
+        expect(inferIntent("build a new feature")).toBe("implementation");
+        expect(inferIntent("what is the weather")).toBe("general");
+    });
+
+    it("inferIntent should handle edge cases correctly", () => {
+        // Empty strings
+        expect(inferIntent("")).toBe("general");
+
+        // No matching keywords
+        expect(inferIntent("just some random text without keywords")).toBe("general");
+
+        // Mixed case (should be case-insensitive)
+        expect(inferIntent("BUG in the system")).toBe("debugging");
+        expect(inferIntent("please Review my PR ")).toBe("review");
+        expect(inferIntent("SHIP IT")).toBe("completion");
+
+        // Order of precedence (first matching intent wins based on order in code)
+        // debugging > review > completion > creative > planning > implementation
+        expect(inferIntent("debug the code")).toBe("debugging"); // 'debug' vs 'code'
+        expect(inferIntent("review the design")).toBe("review"); // 'review' vs 'design'
+        expect(inferIntent("finish the feature")).toBe("completion"); // 'finish' vs 'feature'
+    });
+
     it("recommendSkills should rank the most relevant skills", async () => {
         const index = await buildSkillIntelligenceIndex(skills, testDir);
         const recommendations = recommendSkills(
