@@ -51,8 +51,11 @@ def mutate(url, token, graph, query):
 
 def load_merge(url, token, graph, payload, net):
     cmd = ["docker", "run", "--rm", "-i", "--network", net,
-           "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "--entrypoint", "sh", IMAGE, "-c",
-           f"cat > /tmp/d.jsonl; omnigraph load --server {url} --graph {graph} "
+           "-e", f"OMNIGRAPH_BEARER_TOKEN={token}",
+           "-e", f"TARGET_URL={url}",
+           "-e", f"TARGET_GRAPH={graph}",
+           "--entrypoint", "sh", IMAGE, "-c",
+           "cat > /tmp/d.jsonl; omnigraph load --server \"$TARGET_URL\" --graph \"$TARGET_GRAPH\" "
            "--data /tmp/d.jsonl --mode merge --yes --json"]
     p = subprocess.run(cmd, input=payload, text=True, capture_output=True,
                        env={**os.environ, "MSYS2_ARG_CONV_EXCL": "*"})
