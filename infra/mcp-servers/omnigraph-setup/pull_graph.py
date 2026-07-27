@@ -19,7 +19,6 @@ Usage:
                                --target-url URL --target-token T \
                                --backup <file.jsonl> [--net mcp-server_mcp-net]
 """
-from __future__ import annotations
 
 import argparse
 import json
@@ -37,7 +36,7 @@ def export(url, token, graph):
         headers={"Authorization": f"Bearer {token}", "content-type": "application/json"},
         method="POST")
     body = urllib.request.urlopen(req, timeout=300).read().decode()
-    return [json.loads(l) for l in body.splitlines() if l.strip()]
+    return [json.loads(line) for line in body.splitlines() if line.strip()]
 
 
 def mutate(url, token, graph, query):
@@ -91,7 +90,8 @@ def purge(url, token, graph, recs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("graph")
-    ap.add_argument("--source-url", required=True); ap.add_argument("--source-token", required=True)
+    ap.add_argument("--source-url", required=True)
+    ap.add_argument("--source-token", required=True)
     ap.add_argument("--target-url", required=True,
                     help="target API URL reachable FROM THIS HOST (export/mutate via urllib), "
                          "e.g. http://127.0.0.1:8080")
