@@ -28,6 +28,7 @@ Examples:
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -59,8 +60,9 @@ def list_graphs(server, network, image, token):
     """Discover every graph the server exposes (GET /graphs) from a throwaway container."""
     r = subprocess.run(
         ["docker", "run", "--rm", "--network", network, "-e", f"OG={server}",
+         "-e", f"OMNIGRAPH_BEARER_TOKEN={token}",
          "--entrypoint", "sh", image, "-c",
-         'curl -s "$OG/graphs" -H "Authorization: Bearer ' + token + '"'],
+         'curl -s "$OG/graphs" -H "Authorization: Bearer $OMNIGRAPH_BEARER_TOKEN"'],
         capture_output=True, text=True)
     import re
     return re.findall(r'"graph_id":"([^"]+)"', r.stdout)
@@ -72,7 +74,7 @@ def export_graph(server, network, image, token, graph="memory"):
          "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={server}", "-e", "HOME=/tmp", "-w", "/tmp",
          "--entrypoint", "sh", image, "-c",
          'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-         f'omnigraph export --server local --graph {graph} 2>/dev/null'],
+         f'omnigraph export --server local --graph {shlex.quote(graph)} 2>/dev/null'],
         capture_output=True, text=True)
     recs = []
     for line in r.stdout.splitlines():
@@ -163,7 +165,7 @@ def node_count(a, token, graph="memory", retries=6):
              "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
              "--entrypoint", "sh", a.image, "-c",
              'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-             f'omnigraph snapshot --server local --graph {graph} 2>/dev/null'],
+             f'omnigraph snapshot --server local --graph {shlex.quote(graph)} 2>/dev/null'],
             capture_output=True, text=True)
         try:
             d = json.loads(r.stdout[r.stdout.index("{"):])
@@ -359,7 +361,7 @@ def main():
              "-e", f"OMNIGRAPH_BEARER_TOKEN={token}", "-e", f"OG={a.server}", "-e", "HOME=/tmp", "-w", "/tmp",
              "--entrypoint", "sh", a.image, "-c",
              'mkdir -p /tmp/.omnigraph; printf "servers:\\n  local:\\n    url: %s\\n" "$OG">/tmp/.omnigraph/config.yaml; '
-             f'cat > /tmp/c.jsonl; omnigraph load --server local --graph {g} --data /tmp/c.jsonl --mode overwrite --yes --json'],
+             f'cat > /tmp/c.jsonl; omnigraph load --server local --graph {shlex.quote(g)} --data /tmp/c.jsonl --mode overwrite --yes --json'],
             input=data, capture_output=True)
         if r.returncode != 0:
             sys.exit(f"[dedup] {g} overwrite failed; restore from {a.backup_dir}. stderr:\n{r.stderr.decode()[-400:]}")
