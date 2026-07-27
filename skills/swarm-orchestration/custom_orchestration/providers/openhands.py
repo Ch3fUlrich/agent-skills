@@ -116,11 +116,13 @@ class OpenHandsAdapter:
             )
 
         # 2. Poll for completion
-        max_polls = 120  # 10 minutes (5s intervals)
-        polls = 0
+        timeout_seconds = 600  # 10 minutes
+        start_time = time.time()
+        poll_interval = 1.0  # Start with 1 second
+        max_interval = 5.0
         final_status = "unknown"
         
-        while polls < max_polls:
+        while time.time() - start_time < timeout_seconds:
             try:
                 status_req = urllib.request.Request(
                     f"{base_url}/api/v1/app-conversations/{conv_id}",
@@ -135,8 +137,8 @@ class OpenHandsAdapter:
             except Exception:
                 pass  # Ignore transient polling errors
                 
-            time.sleep(5)
-            polls += 1
+            time.sleep(poll_interval)
+            poll_interval = min(poll_interval * 1.5, max_interval)
 
         if final_status != "STOPPED":
             return AgentResponse(
