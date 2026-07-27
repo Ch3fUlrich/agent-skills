@@ -13,8 +13,9 @@ agents. Four servers are active:
 > **IMPORTANT: Per-project graph isolation — scope by graph, never a per-call `user_id`**
 > Each project has its **own Omnigraph graph, named after the repo**. Point the
 > bridge at it with `OMNIGRAPH_GRAPH_ID=<repo-folder-name>` (project-scoped
-> `.mcp.json` env). The shared **`memory`** graph holds ONLY global-scope
-> `Preference`s — **never write project data there**. Inside your project graph,
+> `.mcp.json` env). Always write and push project memory directly to the repository-specific
+> graph/branch (`<repo-folder-name>`). The shared **`memory`** graph holds ONLY global-scope
+> `Preference`s — **never write or push project data to `memory`**. Inside your project graph,
 > still edge every node to its `Project` node (slug = repo folder name) and link
 > richly; a node with no `Project` edge shows as "global" — a bug for
 > project-specific info. Omnigraph is the only memory layer — there is no fallback.
