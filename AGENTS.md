@@ -67,3 +67,8 @@ Memory path needs no Postgres, pgvector, or LLM API key.
   re-saving as CRLF.
 - **Compatibility.** Give each agent its native instruction file; keep adapters short.
   See `docs/agent-compatibility.md`.
+- **Scratch script isolation (MANDATORY).** Agents (Gemini, Claude, Antigravity, etc.) must NEVER
+  create scratch scripts or throwaway query files in random locations or the repository root. All
+  scratch scripts MUST strictly be placed within connected scratch folders (e.g., Claude's
+  `.claude/scratch/`, Antigravity's session scratch directory `<appDataDir>/brain/<conversation-id>/scratch/`,
+  or the repository's dedicated `scratch/` directory).

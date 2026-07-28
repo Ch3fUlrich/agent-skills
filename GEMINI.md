@@ -13,3 +13,11 @@ This file is *only* the Gemini/Antigravity delta. Start at the router:
 - `.agents/AGENTS.md` in a target repo may define swarm roles (`@architect` / `@engineer` /
   `@reviewer`). `skills/swarm-orchestration/SKILL.md` is the source of truth; keep that file
   a pointer.
+
+## Scratch Scripts & Filesystem Hygiene
+
+- **NEVER create scratch scripts or query files in random repository locations or the root folder** (e.g., `scratch_query.py`).
+- Always write temporary scratch scripts inside connected/designated scratch folders:
+  - Antigravity session scratch: `<appDataDir>/brain/<conversation-id>/scratch/`
+  - Repository scratch folder: `scratch/` or `.gemini/scratch/`
+- Delete throwaway scripts when finished or keep them inside the designated scratch folder.
