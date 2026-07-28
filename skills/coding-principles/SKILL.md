@@ -114,6 +114,21 @@ Omnigraph (structured cross-project memory). See
 | "Let me read the whole file to find this function" | Use `find_symbol`. Cheaper and exact. |
 | "I'll re-derive how this project works" | Query memory first — it's the ground truth. |
 
+## Principle 7 — Scratch Script & Filesystem Hygiene
+
+Never leave temporary scripts, throwaway code, or query files in random
+repository locations or the root directory.
+
+- Place all scratch work strictly inside connected scratch directories
+  (`<appDataDir>/brain/<conversation-id>/scratch/`, `.claude/scratch/`, or `scratch/`).
+- Clean up or delete throwaway scripts when work is complete unless intentionally
+  persisted in a designated `scratch/` folder.
+
+| Red flag | Reality |
+|---|---|
+| "I'll just drop `scratch_test.py` in the repo root" | Pollutes root/source tree. Use connected scratch dir. |
+| "It's temporary, I'll delete it later" | It gets left behind. Create it in `scratch/` from the start. |
+
 ## Checklist
 
 At the start of any implementation, refactor, or bugfix:
@@ -124,3 +139,4 @@ At the start of any implementation, refactor, or bugfix:
 - [ ] Each new unit has a single responsibility (Principle 3).
 - [ ] Documented the *why* in the same change (Principle 4).
 - [ ] Committed small; logged the change / ADR for backtracking (Principle 5).
+- [ ] Kept repository clean; created scratch files only in connected `scratch/` folders (Principle 7).

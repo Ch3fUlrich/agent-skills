@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — Scratch script isolation rules across agent instructions (2026-07-28)
+
+- Updated `AGENTS.md`, `GEMINI.md`, and `skills/coding-principles/SKILL.md` (Principle 7) requiring all agents (Gemini, Claude, Antigravity, etc.) to place scratch scripts exclusively inside connected scratch folders (`<appDataDir>/brain/<conversation-id>/scratch/`, `.claude/scratch/`, or `scratch/`).
+
 ### Added — `herdr-orchestration` skill: what Herdr is *for*, and what it is not (2026-07-19)
 
 [ADR 0002](docs/decisions/0002-herdr-multiplexer.md) adopted Herdr and
