@@ -1,4 +1,11 @@
-# Custom Orchestration vs OpenHands: Deep Analysis
+# 0005. OpenHands as a provider adapter, not a replacement orchestrator
+
+- **Status:** Accepted (2026-07-20)
+- **Note:** moved here 2026-07-30 from `skills/swarm-orchestration/CUSTOM_ORCHESTRATION_VS_OPENHANDS.md`.
+  It is a decision record, not a skill; keeping it under `skills/` implied the swarm skill owned a
+  build-vs-buy decision that belongs to the repository.
+- **Supersedes nothing.** The "Concrete Next Steps" table below is a backlog, not shipped work —
+  `providers/openhands.py` is still a stub.
 
 ## Executive Summary
 

@@ -106,3 +106,7 @@ skills/swarm-orchestration/mock_test_dir
 
 # secrets
 agent_keys.yaml
+
+# Claude Code: local per-machine settings (MCP approvals) never get committed.
+# Tracked .claude/ artifacts (agents, workflows, hooks) are added when ADR 0004 lands.
+.claude/settings.local.json

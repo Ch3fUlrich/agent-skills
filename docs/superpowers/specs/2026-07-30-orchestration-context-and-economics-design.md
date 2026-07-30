@@ -45,10 +45,10 @@ Each was confirmed by reading the code, not inferred.
 | **D4** | The verdict matrix exists in **three** places: `qa-swarm/SKILL.md` §2 (prose), `agent_orchestration.config.yaml` → `triage_policy.verdict_matrix` (**read by no code**), and `TriagePipeline.calculate_verdict` (hardcoded Python — the only executable copy). | grep: only `swarm_review` and `triage_policy.human_participation_gate` are consumed |
 | **D4a** | The declared matrix has **overlapping rules with no defined precedence**. At 1 HIGH + 2 MEDIUM both `request_changes` (`1 HIGH + 2 MEDIUM`) and `approve_with_nits` (`1 HIGH`) match. Markdown resolves by reading order; a YAML *mapping* has no order at all. | `agent_orchestration.config.yaml:210-222` |
 | **D4b** | The declared matrix has a **hole**. With 0 CRITICAL, 0 HIGH, 1–2 MEDIUM: `>= 3 MEDIUM` fails and `only_low_or_nit` is false. No rule fires. Only the Python copy fills it, with `APPROVE`. | same |
-| **D5** | Risk thresholds disagree **three ways**. `SKILL.md:124` says "sum of the weighted trigger signals", bands `<0.60 / 0.60–0.85 / >=0.85`. The YAML says `low: 0.30, medium: 0.60, high: 0.85`. `RiskEngine.score()` returns `total / weight_sum` (Σweights = 1.50) — a *mean*, not a sum. At score 0.70 the docs say "1 engineer + strict review" and the code says Best-of-3: a 3× cost swing. Under normalization, `very_high` needs ~10 of 11 signals, so Best-of-5 is unreachable. | `SKILL.md:124-145`, `config.yaml:66-82`, `orchestrator_scaffold.py:241` |
+| **D5** | Risk thresholds disagree **three ways**. `SKILL.md` (pre-2026-07-30) said "sum of the weighted trigger signals", bands `<0.60 / 0.60–0.85 / >=0.85`. The YAML says `low: 0.30, medium: 0.60, high: 0.85`. `RiskEngine.score()` returns `total / weight_sum` (Σweights = 1.50) — a *mean*, not a sum. At score 0.70 the docs say "1 engineer + strict review" and the code says Best-of-3: a 3× cost swing. Under normalization, `very_high` needs ~10 of 11 signals, so Best-of-5 is unreachable. | `SKILL.md` §7, `config.yaml:66-82`, `orchestrator_scaffold.py:241` |
 | **D6** | `RiskSignals` fields are bare floats with no documented encoding, and the only example sets them all to `0.0`. `value * weight` silently squares the weight if a caller passes the weight instead of an indicator. | `orchestrator_scaffold.py:19-30`, `examples/run_orchestrator.py:53` |
 | **D7** | `finalize_task_state()` calls `git.prune_worktrees(dry_run=False)` — repo-wide — and runs **per agent**. Exactly the operation Fowler banned after his incident. | `orchestrator_scaffold.py:576` |
-| **D8** | Best-of-N is computed by `RiskEngine.execution_mode()` but never executed. (Swarm review *is* genuinely parallel via `ThreadPoolExecutor`; Best-of-N is the branch with no runtime.) | `orchestrator_scaffold.py:262`, `CUSTOM_ORCHESTRATION_VS_OPENHANDS.md:71` |
+| **D8** | Best-of-N is computed by `RiskEngine.execution_mode()` but never executed. (Swarm review *is* genuinely parallel via `ThreadPoolExecutor`; Best-of-N is the branch with no runtime.) | `orchestrator_scaffold.py:262`, [ADR 0005](../../decisions/0005-openhands-as-provider-adapter.md) §1 |
 
 D2 and D4 share one root cause and it is the thing to fix structurally: **a fact with more than one
 home, and a parameter with more than one domain.**
@@ -113,8 +113,8 @@ list to keep in step.
 
 Tier **aliases**, not pinned model ids, so this cannot rot the way `sonnet-3.5` / `haiku-3` did.
 
-**Honest limitation, documented rather than papered over.** `SKILL.md:372` specifies
-`reviewer: preferred_tier: different_family_from_engineer`. Claude Code's `Agent` tool spawns only
+**Honest limitation, documented rather than papered over.** `config.yaml` → `model_routing.reviewer`
+specifies `preferred_tier: different_family_from_engineer`. Claude Code's `Agent` tool spawns only
 Claude, so native orchestration *cannot* deliver family diversity — `fable` is a different model but
 the same family, sharing training-derived blind spots. The requirement splits in two:
 
@@ -135,9 +135,9 @@ which matters, because his incident was a disciplined engineer forgetting once.
   while the performance lens is still reading.
 - Findings schema: `{severity, file, line, summary, failure_scenario}` with `severity` drawn from
   `triage_policy.severities`.
-- Stage 2 adversarially verifies **only CRITICAL and HIGH**. Not scope creep: `SKILL.md:80` already
-  forbids the reviewer from approving on agent claims alone, and gating to the top two severities
-  bounds the cost while honouring "review is cheaper than the work it audits."
+- Stage 2 adversarially verifies **only CRITICAL and HIGH**. Not scope creep: `SKILL.md` §1
+  (@reviewer, "Must not") already forbids approving on agent claims alone, and gating to the top two
+  severities bounds the cost while honouring "review is cheaper than the work it audits."
 - Verdict computed in generated JS from the ordered matrix — zero tokens, cannot drift.
 - One `log()` line per wave: `budget.spent()` delta plus the model each lens ran on. This is the
   whole telemetry slice — no omnigraph schema change, no hook, no cluster work.
@@ -188,7 +188,7 @@ Python, not shell, for Windows/Linux parity. `.gitattributes` already pins `*.py
 | D5 | The **YAML becomes canonical** — thresholds `0.30 / 0.60 / 0.85` — and `/ weight_sum` is deleted from `RiskEngine.score()`, making it the raw weighted sum the docs already describe. On a raw sum those bands map to intuitive signal counts: ~2 signals → medium, ~4 → high/Best-of-3, ~6 → very_high. `SKILL.md` drops its threshold table and links to the config. Documented consequence: a raw sum means **adding a 12th signal shifts every band**, so "re-tune thresholds when adding a signal" becomes an explicit note beside the weights. |
 | D6 | Document `RiskSignals` fields as 0.0/1.0 indicators, and assert it in `score()` so passing a weight fails loudly instead of squaring silently. |
 | D7 | Move `prune_worktrees` out of the per-agent `finalize_task_state` into an architect-only teardown that first asserts no other agent holds a lock or worktree. |
-| D8 | `RiskEngine.execution_mode()` keeps computing the mode; execution moves to `.claude/workflows/best-of-n.js`. `SKILL.md`'s manual "Best-of-N Execution" steps are replaced by a pointer to the workflow. |
+| D8 | `RiskEngine.execution_mode()` keeps computing the mode; execution moves to `.claude/workflows/best-of-n.js`. `SKILL.md` §16 currently documents hand-execution as the interim path — that paragraph is replaced by a pointer to the workflow once it lands. |
 
 ### 4.8 Repository plumbing
 

@@ -1,6 +1,10 @@
 # AGENT_ORCHESTRATION_RATIONALE.md
 
-Purpose: explain the design decisions behind `AGENT_ORCHESTRATION_FRAMEWORK.md`, `SKILL.md`, and `ARCHITECTURE_CONTRACT.md`.
+Purpose: explain the design decisions behind `SKILL.md`, `agent_orchestration.config.yaml`, and `ARCHITECTURE_CONTRACT.md`.
+
+> This file answers **why**. `SKILL.md` states **what** the policy is and owns nothing numeric;
+> `agent_orchestration.config.yaml` owns every threshold, weight, tier, and matrix. If a number
+> appears here, it is illustrative — the config is authoritative.
 
 ## 1. Why a Three-Role Model
 
@@ -369,12 +373,12 @@ This keeps the architecture reusable.
 
 The full stack is now:
 
-- `SKILL.md`: role behavior and workflow rules
+- `SKILL.md`: normative role behaviour and workflow rules (no numbers)
 - `ARCHITECTURE_CONTRACT.md`: scoped task contract
-- `AGENT_ORCHESTRATION_FRAMEWORK.md`: compact operating framework
 - `AGENT_ORCHESTRATION_RATIONALE.md`: explanation of decisions
-- `agent_orchestration.config.yaml`: policy and thresholds
+- `agent_orchestration.config.yaml`: **all** policy, thresholds, tiers, and matrices
 - `orchestrator_scaffold.py`: runtime scaffold
+- `README.md`: how to run the scaffold and add a provider adapter
 
 Together these files separate:
 - intent
@@ -500,7 +504,7 @@ The full architecture is now split into six layers:
    - `ARCHITECTURE_CONTRACT.md`
 
 3. compact orchestration rules
-   - `AGENT_ORCHESTRATION_FRAMEWORK.md`
+   - `SKILL.md` (normative) + `agent_orchestration.config.yaml` (numeric)
 
 4. design explanation
    - `AGENT_ORCHESTRATION_RATIONALE.md`
@@ -538,7 +542,6 @@ Instead, it supports two optional use cases:
 So the canonical rule system remains in Markdown:
 - `SKILL.md`
 - `ARCHITECTURE_CONTRACT.md`
-- `AGENT_ORCHESTRATION_FRAMEWORK.md`
 
 The Python layer exists only to operationalize those rules when a custom orchestrator is desired.
 
