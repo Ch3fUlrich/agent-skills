@@ -5,9 +5,9 @@ Reusable agent skills + per-repo starters + a self-hosted MCP runtime.
 
 ## Start at the router
 
-**`skills/repository-index/SKILL.md`** — maps every MCP server and skill to the trigger that
-loads it. Read it first; it tells you which of these to open.
-(`skills/SYNC.md` is the vendoring ledger, not a router.)
+**`skills/repository-index/SKILL.md`** — the repository map: every directory, MCP server, skill, and
+instruction file, each with the trigger that loads it. Read it first; it tells you which of these to
+open. (`skills/SYNC.md` is the vendoring ledger, not a router.)
 
 | Skill | Load when |
 |---|---|
@@ -19,6 +19,13 @@ loads it. Read it first; it tells you which of these to open.
 | `homelab-access` | **before** any SSH / `DOCKER_HOST=ssh://` / firewall / NAS command |
 | `swarm-orchestration` | multi-file work (drives `pr-approval-agent`, `qa-swarm`, `review-triage`, `no-mistakes`, `babysit-prs`) |
 | `herdr-orchestration` | agent work that must **outlive the session**, be human-supervised, use a non-Claude agent, or wait on a long-running process |
+
+Two more places to look before you write anything:
+
+| Path | Go here when |
+|---|---|
+| `docs/decisions/` | You are about to change or question a design choice — the ADR says **why** it is that way |
+| `docs/superpowers/specs/` | You are about to build something — it may already be designed and approved |
 
 ## Memory
 
@@ -62,6 +69,11 @@ Memory path needs no Postgres, pgvector, or LLM API key.
 
 ## Hard rules
 
+- **One home per fact.** A skill's `SKILL.md` owns its workflow; a config file owns its numbers; an
+  ADR owns its reasoning; instruction files and starters are **pointers**. Specifically:
+  `swarm-orchestration/SKILL.md` holds no thresholds — they live in
+  `custom_orchestration/agent_orchestration.config.yaml`. When the same rule appears twice, collapse
+  it; do not sync it by hand.
 - **Line endings.** `.gitattributes` pins `*.sh`/`*.py`/units/configs to `eol=lf`; `*.ps1` to
   `crlf`. A CRLF shebang → kernel seeks `bash\r` → script cannot run. Never "fix" a script by
   re-saving as CRLF.

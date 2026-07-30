@@ -5,6 +5,47 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed — Orchestration docs collapsed to one home per fact; README made accurate (2026-07-30)
+
+Prompted by two articles — Cursor's *Agent Swarms and Model Economics* (identical completion varied
+~8× in cost purely by planner/worker model split; workers are 69–90% of tokens but a minority of
+cost) and Rahul Garg's *The Orchestrator's Tax* (the cost of subagents is context pollution, not
+tokens: "tokens are spent once; context shapes every decision that follows").
+
+The audit's finding was **not** that the policy was wrong. Contract-first handoff, a different-family
+reviewer, frontier-planner plus mid-tier-worker routing, and worktree isolation were already right.
+What was wrong was that facts had multiple homes and had already drifted, and that nothing enforced
+the policy on the surface actually driven.
+
+- **Deleted `AGENT_ORCHESTRATION_FRAMEWORK.md`.** It restated `SKILL.md` and the YAML almost in
+  full — risk signals, checkpoint fields, and cache rules each had three homes. Its unique content
+  (decomposition criteria, the contract's minimum sections) folded into `SKILL.md`.
+- **`swarm-orchestration/SKILL.md` rewritten to hold no numbers.** Every threshold, weight, tier,
+  and matrix now points at `agent_orchestration.config.yaml`. A §0 ownership table states where each
+  fact lives; a number in the skill is now a bug. This is the root-cause fix for a three-way
+  disagreement on risk thresholds between the skill, the YAML, and `RiskEngine.score()`.
+- **`CUSTOM_ORCHESTRATION_VS_OPENHANDS.md` → [ADR 0005](docs/decisions/0005-openhands-as-provider-adapter.md).**
+  A build-vs-buy decision belongs to the repository, not to a skill.
+- **`swarm-orchestration/README.md` is operational only** — how to run the scaffold, how to add a
+  provider adapter. Its "Architectural Principles" duplicated policy and is gone.
+- **[ADR 0004](docs/decisions/0004-executable-orchestration-policy.md) + a design spec** record the
+  decision that policy must be *executable*: a generated `.claude/` adapter (role subagents with
+  model tiers, workflows carrying return schemas, a hook blocking repo-wide git in subagent
+  prompts), two-tier wave caps, and the `different_family_from_engineer` split by surface. Approved,
+  **not yet implemented**.
+- **Router rewritten** (`skills/repository-index/SKILL.md`) with a repository map — every directory,
+  instruction file, and doc location with the trigger that sends you there — so an unfamiliar agent
+  can find what it needs without browsing.
+- **README corrected.** It claimed the repository "incorporates Harbor" (it contains no Harbor
+  files), listed 5 of 13 skills, omitted `webpage/`, implied Sentry/Datadog run by default when they
+  sit behind an `observability` profile, and cited only ADR 0001 for a memory model ADR 0003 had
+  since changed.
+- **Housekeeping:** stray `prompt/` merged into `prompts/`; the mock engineer checkpoint untracked.
+
+Recorded during the audit and **not yet fixed** — see the spec's defect table: the Python scaffold's
+swarm review fails **open**, returning `APPROVE` unconditionally and silently, because a model tier
+is passed where a provider id is expected and `adapter_for()` sits outside its retry block.
+
 ### Added — Scratch script isolation rules across agent instructions (2026-07-28)
 
 - Updated `AGENTS.md`, `GEMINI.md`, and `skills/coding-principles/SKILL.md` (Principle 7) requiring all agents (Gemini, Claude, Antigravity, etc.) to place scratch scripts exclusively inside connected scratch folders (`<appDataDir>/brain/<conversation-id>/scratch/`, `.claude/scratch/`, or `scratch/`).
