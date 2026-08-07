@@ -129,6 +129,44 @@ repository locations or the root directory.
 | "I'll just drop `scratch_test.py` in the repo root" | Pollutes root/source tree. Use connected scratch dir. |
 | "It's temporary, I'll delete it later" | It gets left behind. Create it in `scratch/` from the start. |
 
+## Principle 8 — Change the coupled state in the same act (rigid)
+
+A datum is almost never in one place. Before changing anything, name what
+**derives from** it and what **points at** it, and move those in the same change
+or do not make the change.
+
+The failures this exists to prevent all look identical afterwards and are
+invisible beforehand:
+
+- files were merged and renumbered, but the job database still named the old
+  paths — and for one case that old path *existed* and held the pre-merge file,
+  so staging silently re-fetched it over the new one;
+- a record's ids were corrected in one store while two upstream sources kept the
+  old ones, so the next sync restored them;
+- work was re-queued to re-run while its previous results stayed in place, and
+  the integrity guard refused every item;
+- a hand-edited input left its *derived* fields frozen, and gigabytes were
+  written under a placeholder name.
+
+**Fix the condition, not the instances.** Selecting the records that have already
+failed leaves the ones that merely have not run yet, and they fail identically on
+the next pass. Select by the property that makes them wrong, not by the symptom
+that has surfaced so far.
+
+## Principle 9 — Verify through the path production takes (rigid)
+
+A check that exercises the fallback proves nothing about the real system. If a
+resolver tries A then B, and your test passes `None` so it uses B, then B is what
+you verified — however many cases pass.
+
+Before believing a verification, ask: **which branch does production take, and
+did I take it?** Prefer asserting on the caller's real entry point over a
+convenient inner function.
+
+Corollary for output: never pipe a long-running command through `grep`/`tail`.
+The output buffers, so a traceback is lost and a broken run reads as a silent
+one. Redirect to a file and read the file.
+
 ## Checklist
 
 At the start of any implementation, refactor, or bugfix:
@@ -140,3 +178,6 @@ At the start of any implementation, refactor, or bugfix:
 - [ ] Documented the *why* in the same change (Principle 4).
 - [ ] Committed small; logged the change / ADR for backtracking (Principle 5).
 - [ ] Kept repository clean; created scratch files only in connected `scratch/` folders (Principle 7).
+- [ ] Named what derives from / points at the thing being changed, and moved it in the same change (Principle 8).
+- [ ] Selected by the condition that makes records wrong, not by the symptom already seen (Principle 8).
+- [ ] Verified through the branch production actually takes, not a convenient fallback (Principle 9).
