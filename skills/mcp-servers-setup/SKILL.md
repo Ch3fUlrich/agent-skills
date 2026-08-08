@@ -129,6 +129,11 @@ tool is Python-only (`graphifyy[mcp]`, upstream `github.com/safishamsi/graphify`
   Setup: build the image (`docker build -t graphify-mcp:latest servers/graphify-mcp`), put the
   wrapper on `PATH` (`ln -s "$PWD/infra/mcp-servers/bin/graphify-mcp" /usr/local/bin/`), then
   register the one user-scope entry `"graphify": { "command": "graphify-mcp" }`.
+  If graphify reports **"Failed to connect — Connection closed"**, either the image
+  isn't built or its `mcp` SDK resolved to 2.x (which dropped `mcp.types.AnyUrl`, an
+  import graphify 0.9.20 makes at startup). The Dockerfile pins `mcp<2` to prevent the
+  latter — rebuild the image (`docker build -t graphify-mcp:latest servers/graphify-mcp`)
+  to pick up the pin.
 
 **Never give graphify a per-repo project-scope entry.** A cwd-relative single definition
 already serves each repo its own graph; a **hardcoded** per-repo mount is exactly what made
@@ -174,6 +179,44 @@ bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh --fix          # Li
 mcp_superpowers_use_skill(name="systematic-debugging")
 mcp_superpowers_recommend_skills(task="debug a timeout issue")
 ```
+
+### Playwright — Browser Automation (UI validation, E2E)
+
+Strictly for UI validation, screenshot testing, and E2E browser tasks against sites
+you build — **not** a web-search tool. Exposes 24 tools (`browser_navigate`,
+`browser_snapshot`, `browser_click`, `browser_take_screenshot`,
+`browser_console_messages`, `browser_network_requests`, `browser_fill_form`, …);
+screenshots return inline in the tool response, so no output volume is needed.
+
+#### Wiring — ONE user-scope Docker entry, serves every repo
+
+There is **no node/npx on the server** (`coding.vm`), so the usual
+`npx @playwright/mcp` transport can't run. Use Microsoft's official image over
+Docker instead, defined **once in user scope** (like graphify) so it works from any
+repo Claude Code launches in — no per-repo `.mcp.json` entry, no approval step:
+
+```bash
+docker pull mcr.microsoft.com/playwright/mcp:latest
+claude mcp add -s user playwright -- \
+  docker run -i --rm --init --network host mcr.microsoft.com/playwright/mcp:latest
+```
+
+- **`--network host`** (Linux) lets the containerized browser reach dev servers on
+  the host's `localhost:PORT`, so an agent tests the site it just built with the URL
+  it would naturally type. Trade-off: less network isolation; fine on a single-user
+  dev host. Portable alternative: `--add-host=host.docker.internal:host-gateway` and
+  browse `http://host.docker.internal:PORT`.
+- **`--rm`** → ephemeral browser profile per run; **`--init`** reaps zombie browser
+  processes.
+
+Verify — authoritative client health check, then a real browser drive:
+```bash
+claude mcp list                       # → playwright … ✔ Connected
+# functional: initialize → tools/call browser_navigate https://example.com → snapshot
+```
+
+> **Restart to load it.** MCP servers initialize only at session start, so a running
+> session won't see a newly-added `playwright` until it restarts.
 
 ## Infrastructure
 

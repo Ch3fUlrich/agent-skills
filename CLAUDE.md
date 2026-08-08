@@ -35,6 +35,7 @@ don't "fix" it out of user scope. See `skills/mcp-servers-setup/SKILL.md` → Gr
 | wrong/empty graph, `0 rows except 2 Preferences` | user-scope override | remove it (above) |
 | MCP tool **absent entirely** — no prompt, no error | project server in `.mcp.json` never **approved** | add it to `.claude/settings.local.json` → `enabledMcpjsonServers` (a tracked `.mcp.json` cannot approve itself) |
 | graph answers describe **another repo** | launched from the wrong cwd, or a stray project/hardcoded `graphify` entry shadows the single user-scope one | `bash infra/mcp-servers/scripts/linux/check-graphify-scope.sh --fix` |
+| graphify `Failed to connect — Connection closed` | `graphify-mcp:latest` not built, or its `mcp` dep resolved to 2.x (dropped `mcp.types.AnyUrl`) | `docker build -t graphify-mcp:latest infra/mcp-servers/servers/graphify-mcp` (Dockerfile pins `mcp<2`) |
 | `missing bearer token` | `OMNIGRAPH_TOKEN` unset | export it |
 | `fetch failed` | wrong `OMNIGRAPH_NET` (a network can **exist but be empty**) | probe `scripts/_omni_env.py` |
 | `pull access denied for omnigraph-mcp` | image not built (on no registry) | `docker build -t omnigraph-mcp:latest infra/mcp-servers/servers/omnigraph-mcp` |
