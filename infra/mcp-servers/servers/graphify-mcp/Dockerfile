@@ -19,7 +19,15 @@ FROM python:3.12-slim
 #   OPENAI_API_KEY=$LITELLM_MASTER_KEY
 # which also satisfies the standing rule that LLM calls go through LiteLLM
 # rather than a provider SDK.
-RUN pip install --no-cache-dir "graphifyy[mcp,openai]==0.9.20"
+# `mcp` (the MCP Python SDK) is an UNpinned transitive of graphifyy[mcp]. mcp 2.0.0
+# split its type exports into a separate `mcp-types` package and dropped `AnyUrl`
+# from `mcp.types`, which graphify 0.9.20 imports at server-build time
+# (serve.py: `from mcp.types import AnyUrl`). An unconstrained install therefore
+# pulls mcp 2.x and the server crashes on startup with
+#   ImportError: cannot import name 'AnyUrl' from 'mcp.types'
+# which reaches Claude Code as graphify "Failed to connect — Connection closed".
+# Cap below 2.0 (1.29.0 is the tested-good 1.x). Revisit when bumping graphifyy.
+RUN pip install --no-cache-dir "graphifyy[mcp,openai]==0.9.20" "mcp<2"
 
 WORKDIR /repo
 
