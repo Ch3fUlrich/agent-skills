@@ -33,9 +33,28 @@ reachable on every Linux VM with the same `claude-ops` key, and they are not a h
 
 ```bash
 DOCKER_HOST=ssh://cloud-vm docker compose ps          # as s
+ssh cloud-ops 'sudo docker ps'                        # as claude-ops — the `sudo` is REQUIRED
 ssh cloud-ops 'sudo -n systemctl restart docker'      # as claude-ops
 ssh media-svc 'sudo -n sed -i ... /etc/fstab'         # as svc-ops (full root)
 ```
+
+### Three failure messages and what they actually mean
+
+| What you see | What it means | Fix |
+|---|---|---|
+| `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock` | you ran a bare `docker …` as `claude-ops`, which is **not in the `docker` group** | prefix `sudo`, or use `<host>-vm` |
+| `sudo: a terminal is required to read the password` | you ran something **outside** `claude-ops`'s three-binary sudo scope. It is *not* a TTY problem — no `-t`/`-S` will help | use `<host>-svc` |
+| `/proc/<pid>/fdinfo/N: Permission denied`, or `wchan` reading `0` | you are inspecting a **container** process's `/proc` through `docker exec -u 0`; the container has no `CAP_SYS_PTRACE` | read `/proc` from the **host** as `<host>-svc` |
+
+**Debugging a hung process in a container: go in through the host, not through `docker exec`.**
+`docker exec -u 0 <ctr> cat /proc/<pid>/fdinfo/3` is refused even as uid 0, so the most
+diagnostic fields are exactly the ones you cannot see from inside. From `<host>-svc`,
+`sudo -n ps -eo pid,etime,pcpu,stat,wchan:24,args` finds the host-side PID and its kernel wait
+channel in one shot, and `/proc/<pid>/task/*/wchan`, `/proc/<pid>/task/*/stat` and
+`/proc/<pid>/fdinfo/*` then tell you whether it is blocked on I/O (`D` state, `rpc_wait_*` on
+NFS) or deadlocked in userspace (`S` state, `futex_do_wait`), and how far its input/output fds
+actually got. This is what separates "stuck on the NAS" from "stuck on itself" — worth knowing
+here, because this homelab has a real NFS-wedge failure mode that looks identical from outside.
 
 **"Claude cannot sudo" is false.** It is true only for `s`. `svc-ops` has unrestricted
 passwordless root on all four Linux VMs (verified 2026-07-20), and it is what Ansible
