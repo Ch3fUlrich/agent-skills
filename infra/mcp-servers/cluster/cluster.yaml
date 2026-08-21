@@ -54,6 +54,11 @@ graphs:
     embedding_provider: default
     queries: queries/
 
+  autoos:
+    schema: memory.pg
+    embedding_provider: default
+    queries: queries/
+
 policies:
   cluster-admin:
     file: cluster.policy.yaml
@@ -65,7 +70,7 @@ policies:
   # when you add a project graph above.
   project-graphs-access:
     file: project-graphs.policy.yaml
-    applies_to: [agent-skills, invest, basic-analysis, homelab-server]
+    applies_to: [agent-skills, invest, basic-analysis, homelab-server, autoos]
   # MULTI-USER (template, off by default — enabling needs per-user bearer tokens,
   # which are an admin/cluster-apply step). See users.policy.yaml.example.
   # users-access:
