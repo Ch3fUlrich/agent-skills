@@ -46,6 +46,17 @@ query decided($s: String) { match { $d: Decision { slug: $s } $d decidedIn $p } 
   **lowerCamelCase** in traversal (`$d decidedIn $p`).
 - `nearest` / `bm25` / `rrf` **order**, they don't filter — always a trailing `limit N`.
 - A mutation is insert/update-only **or** delete-only, never both.
+- **Verifying a write by reading the data back is NOT enough.** `affectedNodes` and a
+  successful read-back can both look right and still not last: measured 2026-08-21, four
+  `update`s were confirmed by immediate read-back and had reverted ~an hour later, while
+  `insert`s from the same window survived (cause unproven). So check `commits_list` head
+  before/after, **re-read anything important at the END of the session**, and prefer
+  *inserting* a new node over *updating* one when the content must not be lost.
+- **Never document a mechanism you have not falsified.** Those reverts produced a confident,
+  wrong rule — "mixing `update` and `insert` drops the updates" — which a throwaway-branch
+  test disproved in minutes, and which contradicted the verified rule directly above it.
+  A new rule that contradicts an existing verified one is a signal to test, not to write.
+  `branches_create` → probe → `branches_delete` makes that free.
 
 Depth + every debugged failure mode: [references/operations.md](references/operations.md) rules 2–6.
 
