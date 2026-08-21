@@ -82,8 +82,33 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
 
 6. **Verify every write.** `commits_list` head before/after, or re-export and
    diff. A 504 is **not** failure — the server may commit after the proxy drops
-   the response; check the head before retrying. What a blind retry costs depends
-   on *what* you wrote:
+   the response; check the head before retrying.
+
+   **`affectedNodes` is not proof, and neither is reading the data back.**
+   Measured 2026-08-21 on the `homelab-server` graph: four `update` mutations each
+   returned `affectedNodes: 1` **and** each was confirmed by an immediate read-back
+   showing the new value — and ~an hour later all four had reverted to their
+   previous values, while `insert`s from the same window survived. A commit exists
+   in between that the session did not issue; `actorId` is `default` on every
+   commit and `commits_get` returns metadata only, not a diff, so it could not be
+   attributed. **The cause is unproven — treat it as able to recur.** Practical
+   consequences: **re-read anything important at the END of a session**, not only
+   after writing it, and where content must not be lost prefer **inserting a new
+   node over updating an existing one**.
+
+   **Do not promote a mechanism from correlated failures without falsifying it.**
+   Those four reverts produced a confident, wrong conclusion — *"never mix `update`
+   and `insert` in one mutation, the updates are silently dropped"* — which was one
+   step from being committed to two repositories as permanent guidance. A short
+   controlled test on a throwaway branch disproved it outright: mixing works with
+   literal **and** parameterised `where` clauses, and with same-type **and**
+   different-type inserts; `update` does create a commit. Note this also would have
+   contradicted rule 4 above, which explicitly permits update+insert together — a
+   new "rule" that contradicts an existing verified one is a signal to test, not to
+   write. `branches_create` → probe → `branches_delete` makes that test free and
+   safe; run it before documenting any mechanism.
+
+   What a blind retry costs depends on *what* you wrote:
    - **Nodes are safe to retry.** Every type in `memory.pg` is `@key(slug)`, so a
      repeated `insert` of the same slug upserts rather than duplicating (verified
      2026-07-16: two identical `insert Preference` calls → one node). Omnigraph's
