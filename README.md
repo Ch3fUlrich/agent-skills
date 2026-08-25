@@ -231,10 +231,11 @@ Setup: [`infra/local-ai/README.md`](infra/local-ai/README.md).
   over SSH or phone, agent-to-agent socket API. Supersedes raw tmux
   ([ADR 0002](docs/decisions/0002-herdr-multiplexer.md)). Use it only for the four things native
   tooling cannot do — see [`herdr-orchestration`](skills/herdr-orchestration/SKILL.md) §1.
-- **[antigravity-remote-ui](infra/remote-access/antigravity-remote-ui/)** — stream the Antigravity
-  IDE chat to a phone browser (a distinct GUI use case).
 
-See [`infra/remote-access/README.md`](infra/remote-access/README.md) for when to use which.
+Antigravity's chat is reachable from a phone through the **app's own remote connection**; the former
+`antigravity-remote-ui` scrape-and-tunnel workaround was removed on 2026-08-25.
+
+See [`infra/remote-access/README.md`](infra/remote-access/README.md).
 
 ### Container registry
 

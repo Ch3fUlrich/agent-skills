@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Removed — `antigravity-remote-ui`; Antigravity handles remote connections natively (2026-08-25)
+
+Antigravity now supports remote connections **in the app**, so this repository no longer needs to
+solve that problem. `infra/remote-access/antigravity-remote-ui/` — a Docker image plus tunnel that
+captured the IDE's chat DOM over CDP and re-served it as a mobile web UI — is deleted rather than
+left to rot. It was fragile by construction: any change to the IDE's DOM broke it silently, and it
+carried its own image and tunnel to maintain for a single GUI use case.
+
+- **Removed** the directory and its six files (guide, Dockerfile, compose, both start scripts,
+  manual TODO), plus the now-dead `antigravity-remote-ui/node_modules/` rules in `.gitignore` and
+  `.graphifyignore`.
+- **`infra/remote-access/README.md` rewritten** around Herdr alone, with a short note recording why
+  the scrape-and-tunnel approach existed and why it went — so the next reader does not rebuild it.
+- **Cross-references updated**: `README.md`, `AGENTS.md`, `docs/architecture.md`,
+  `skills/repository-index/SKILL.md`, `infra/remote-access/herdr/README.md`.
+- **Deliberately untouched.** Antigravity is still a supported agent here: its MCP wiring
+  (`infra/mcp-servers/config/mcp_antigravity.json`, `GEMINI.md`), the scratch-isolation rule naming
+  its session directory, and the `antigravity` orchestration provider adapter all stay. Only the
+  *remote-access workaround* is obsolete, not the app.
+- Historical records (ADR 0002, the 2026-07-09 restructure spec and plan, and earlier changelog
+  entries) keep their original wording — they document decisions that were correct when made.
+
+
 ### Changed — Orchestration docs collapsed to one home per fact; README made accurate (2026-07-30)
 
 Prompted by two articles — Cursor's *Agent Swarms and Model Economics* (identical completion varied

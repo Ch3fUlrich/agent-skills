@@ -25,7 +25,7 @@ Two different things make agents fast here, and conflating them is the common mi
 | `starters/` | Thin adapters to drop a skill into another repo | Onboarding a different repository |
 | `infra/mcp-servers/` | The MCP stack, `cluster/` config, `scripts/`, `omnigraph-setup/` | A server misbehaves, or you are on a new machine |
 | `infra/local-ai/` | Ollama, LiteLLM, Open WebUI, OpenHands | Embeddings, local models, model routing |
-| `infra/remote-access/` | Herdr multiplexer, Antigravity remote UI | Work must outlive the session, or a human must watch it |
+| `infra/remote-access/` | Herdr multiplexer | Work must outlive the session, or a human must watch it |
 | `docs/architecture.md` | How the three pillars fit together | Orienting on the whole system |
 | `docs/agent-compatibility.md` | Which instruction file each agent reads natively | Adding support for another agent |
 | `docs/decisions/` | **ADRs — why something is the way it is** | You are about to change or question a design choice |

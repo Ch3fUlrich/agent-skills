@@ -9,7 +9,7 @@ starters/   ── thin per-repo adapters that point at skills
 infra/      ── self-hosted runtime
               ├── mcp-servers/    MCP stack (navigation, graph, memory, workflows)
               ├── local-ai/       optional: Ollama + LiteLLM + Open WebUI + OpenHands
-              └── remote-access/  run/persist/reach agents (Herdr, Antigravity UI)
+              └── remote-access/  run/persist/reach agents (Herdr)
 ```
 
 `local-ai` is optional but not disconnected: its **Ollama** is the `nomic-embed-text`
@@ -137,8 +137,6 @@ graph) vs `OMNIGRAPH_GRAPH` (the **viewer**'s). Detail:
 - **Herdr** — agent multiplexer: run/persist multiple agents, reattach over SSH
   or phone, agent-to-agent socket API. Recommended over raw tmux
   (`docs/decisions/0002-herdr-multiplexer.md`).
-- **Antigravity remote UI** — streams the Antigravity IDE chat to a phone browser
-  (a distinct, GUI-specific use case).
 
 ## Data & secrets
 

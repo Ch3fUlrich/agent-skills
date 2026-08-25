@@ -8,10 +8,8 @@ Agents themselves can drive it through a socket API (spawn panes, read output,
 wait on each other).
 
 This is the **recommended** way to run and persist multiple agents in this stack,
-superseding raw tmux. It does **not** replace
-[`../antigravity-remote-ui/`](../antigravity-remote-ui/), which streams the
-Antigravity IDE's chat DOM to a phone browser — a different job. See
-[`../README.md`](../README.md) for the comparison.
+superseding raw tmux. See [`../README.md`](../README.md) for how it compares to
+plain tmux.
 
 > License note: Herdr is AGPL-3.0 (plus a commercial option). Fine for local/self
 > hosted developer use; review the license before redistributing a modified build.

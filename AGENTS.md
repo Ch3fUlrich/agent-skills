@@ -61,7 +61,7 @@ never a config file — an unapplied cluster rejects edge types *silently*.
 |---|---|---|
 | `mcp-servers/` | the stack + `cluster/` config + `scripts/` + `omnigraph-setup/` | manual: `omnigraph-setup/SYNC-MANUAL.md` |
 | `local-ai/` | Ollama, LiteLLM, Open WebUI, OpenHands | **optional except Ollama**: serves `nomic-embed-text` (`:11434`) = Omnigraph's `Vector(768)` recall. Without it recall degrades to traversal + full-text. LiteLLM (`:4000`) = one OpenAI-compatible endpoint → `swarm-orchestration` model routing |
-| `remote-access/` | Herdr multiplexer, Antigravity remote UI | |
+| `remote-access/` | Herdr multiplexer | |
 
 Memory path needs no Postgres, pgvector, or LLM API key.
 
