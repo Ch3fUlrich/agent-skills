@@ -103,10 +103,23 @@ $ExtToLang = @{
 }
 
 # Compiled languages whose language server needs an external toolchain on PATH.
-# (csharp also needs a specific .NET runtime version; we can only check that
-#  `dotnet` exists — a version mismatch is reported by Serena at startup.)
+# csharp is handled separately below: `dotnet` merely existing is not enough,
+# Serena's C# LSP needs .NET runtime 10.x specifically.
 $ToolchainFor = @{
-    'go' = 'go'; 'csharp' = 'dotnet'; 'rust' = 'rustc'; 'cpp' = 'clangd'; 'java' = 'java'
+    'go' = 'go'; 'rust' = 'rustc'; 'cpp' = 'clangd'; 'java' = 'java'
+}
+
+function Test-DotnetRuntime10 {
+    <#
+        Serena's C# language server fails to start on a 6.x/8.x-only .NET
+        install (it needs runtime 10.x specifically). Because the
+        LanguageServerManager fails all-or-nothing, that single startup
+        failure disables every symbolic tool for the whole project, not
+        just C#'s -- so `dotnet` being on PATH is not a sufficient guard.
+    #>
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { return $false }
+    $runtimes = & dotnet --list-runtimes 2>$null
+    return [bool]($runtimes | Select-String -Pattern '^Microsoft\.NETCore\.App 10\.')
 }
 
 # Directories never worth scanning (vendored deps, build output, caches, VCS).
@@ -159,9 +172,16 @@ function Initialize-SerenaProject {
     $name = Split-Path $RepoPath -Leaf
     $ymlPath = Join-Path $RepoPath ".serena\project.yml"
 
-    if ((Test-Path $ymlPath) -and (-not $Force)) {
-        Write-Host "  - $name : already configured (use -Force to regenerate)" -ForegroundColor DarkGray
-        return [pscustomobject]@{ Repo = $name; Status = 'skipped'; Languages = $null }
+    if (Test-Path $ymlPath) {
+        if (-not $Force) {
+            Write-Host "  - $name : already configured (use -Force to regenerate)" -ForegroundColor DarkGray
+            return [pscustomobject]@{ Repo = $name; Status = 'skipped'; Languages = $null }
+        }
+        if (-not $DryRun) {
+            # `serena project create` hard-refuses when project.yml already exists
+            # (no overwrite flag on its own CLI) -- -Force must remove it first.
+            Remove-Item $ymlPath -Force
+        }
     }
 
     $counts = Get-RepoLanguageCounts -RepoPath $RepoPath
@@ -172,6 +192,18 @@ function Initialize-SerenaProject {
     if (-not $SkipToolchainCheck -and $langs.Count -gt 0) {
         $kept = @()
         foreach ($l in $langs) {
+            if ($l -eq 'csharp') {
+                if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+                    Write-Host "      (skipping 'csharp': 'dotnet' not on PATH)" -ForegroundColor DarkYellow
+                    continue
+                }
+                if (-not (Test-DotnetRuntime10)) {
+                    Write-Host "      (skipping 'csharp': dotnet found but no .NET 10.x runtime installed)" -ForegroundColor DarkYellow
+                    continue
+                }
+                $kept += $l
+                continue
+            }
             if ($ToolchainFor.ContainsKey($l) -and -not (Get-Command $ToolchainFor[$l] -ErrorAction SilentlyContinue)) {
                 Write-Host "      (skipping '$l': '$($ToolchainFor[$l])' not on PATH)" -ForegroundColor DarkYellow
                 continue
