@@ -212,6 +212,52 @@ if [ "$DRY_RUN" != "1" ] && ! command -v serena >/dev/null 2>&1; then
     exit 1
 fi
 
+# Version guard. `serena project create` writes project.yml in the schema of the
+# serena that RUNS IT, and that key is version-coupled: <=1.6.1 read `languages:`,
+# 1.7.0+ read `language_servers:`, and nothing maps the new key backward. Generate
+# with a different version than the one serving MCP and every symbolic tool dies in
+# every repo, with nothing visibly wrong in the file (as-rule-serena-project-yml-key-
+# version-coupled). PATH serena and the MCP server are routinely different builds --
+# the MCP entry pins a uvx version while PATH holds a `uv tool install`.
+mcp_serena_version() {
+    # The server's own startup log is the only authority on what is actually running;
+    # a pin in ~/.claude.json is what will run NEXT restart, not what runs now.
+    # Every step tolerates absence: under `set -e` a bare failure here would abort
+    # the script instead of degrading to the "could not determine" warning below.
+    local log
+    log=$(ls -t "$HOME"/.serena/logs/*/mcp_*.txt 2>/dev/null | head -1 || true)
+    [ -n "$log" ] || return 0
+    sed -n 's/.*Starting Serena server (version=\([0-9][0-9.]*\).*/\1/p' "$log" 2>/dev/null | head -1 || true
+}
+
+if [ "$DRY_RUN" != "1" ] && [ "${SKIP_VERSION_CHECK:-0}" != "1" ]; then
+    cli_v=$(serena --version 2>/dev/null | sed -n 's/.*[Ss]erena \([0-9][0-9.]*\).*/\1/p' | head -1 || true)
+    mcp_v=$(mcp_serena_version || true)
+    if [ -n "$mcp_v" ] && [ -n "$cli_v" ] && [ "$cli_v" != "$mcp_v" ]; then
+        cat >&2 <<MSG
+X REFUSING TO WRITE -- serena version mismatch.
+    PATH 'serena' (would generate project.yml) : $cli_v
+    serena actually serving MCP (its own log)  : $mcp_v
+
+  project.yml's language key is version-coupled: <=1.6.1 use 'languages:',
+  1.7.0+ use 'language_servers:', and there is no backward mapping. Generating
+  with $cli_v while MCP runs $mcp_v breaks activate_project in EVERY repo.
+
+  Fix one of:
+    - run via the version serving MCP:
+        uvx --from serena-agent==$mcp_v serena project create ...
+      (or re-run this script with that on PATH first)
+    - align the install:  uv tool install --force serena-agent==$mcp_v
+    - override deliberately:  SKIP_VERSION_CHECK=1 $0 ...
+MSG
+        exit 1
+    fi
+    if [ -z "$mcp_v" ]; then
+        echo "! Could not read the MCP serena version from ~/.serena/logs/*/mcp_*.txt;" >&2
+        echo "  proceeding with PATH serena ${cli_v:-unknown}. Verify activate_project after." >&2
+    fi
+fi
+
 ERRORS=0
 
 if [ -n "$CODE_ROOT" ]; then
