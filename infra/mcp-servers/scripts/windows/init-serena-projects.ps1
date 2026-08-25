@@ -246,6 +246,49 @@ if (-not $DryRun -and -not (Get-Command serena -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# Version guard -- mirrors init-serena-projects.sh; keep the two in sync.
+# `serena project create` writes project.yml in the schema of the serena that RUNS
+# IT, and that key is version-coupled: <=1.6.1 read `languages:`, 1.7.0+ read
+# `language_servers:`, with no backward mapping. Generating with a different build
+# than the one serving MCP kills every symbolic tool in every repo, with nothing
+# visibly wrong in the file (as-rule-serena-project-yml-key-version-coupled).
+function Get-McpSerenaVersion {
+    # The server's own startup log is the only authority on what is RUNNING; a pin
+    # in ~/.claude.json is what will run after the next restart, not what runs now.
+    $log = Get-ChildItem "$HOME\.serena\logs\*\mcp_*.txt" -ErrorAction SilentlyContinue |
+           Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $log) { return $null }
+    $m = Select-String -Path $log.FullName -Pattern 'Starting Serena server \(version=([0-9][0-9.]*)' |
+         Select-Object -First 1
+    if ($m) { return $m.Matches[0].Groups[1].Value }
+    return $null
+}
+
+if (-not $DryRun -and $env:SKIP_VERSION_CHECK -ne '1') {
+    $cliRaw = (& serena --version 2>$null | Out-String)
+    $cliV = if ($cliRaw -match '[Ss]erena\s+([0-9][0-9.]*)') { $Matches[1] } else { $null }
+    $mcpV = Get-McpSerenaVersion
+    if ($mcpV -and $cliV -and ($cliV -ne $mcpV)) {
+        Write-Host "X REFUSING TO WRITE -- serena version mismatch." -ForegroundColor Red
+        Write-Host "    PATH 'serena' (would generate project.yml) : $cliV"
+        Write-Host "    serena actually serving MCP (its own log)  : $mcpV"
+        Write-Host ""
+        Write-Host "  project.yml's language key is version-coupled: <=1.6.1 use 'languages:',"
+        Write-Host "  1.7.0+ use 'language_servers:', and there is no backward mapping."
+        Write-Host "  Generating with $cliV while MCP runs $mcpV breaks activate_project in EVERY repo."
+        Write-Host ""
+        Write-Host "  Fix one of:"
+        Write-Host "    - run via the version serving MCP:  uvx --from serena-agent==$mcpV serena project create ..."
+        Write-Host "    - align the install:                uv tool install --force serena-agent==$mcpV"
+        Write-Host "    - override deliberately:            `$env:SKIP_VERSION_CHECK='1'"
+        exit 1
+    }
+    if (-not $mcpV) {
+        Write-Host "! Could not read the MCP serena version from ~/.serena/logs/*/mcp_*.txt;" -ForegroundColor Yellow
+        Write-Host "  proceeding with PATH serena $cliV. Verify activate_project afterwards." -ForegroundColor Yellow
+    }
+}
+
 $targets = @()
 if ($CodeRoot) {
     if (-not (Test-Path $CodeRoot)) { Write-Host "X CodeRoot not found: $CodeRoot" -ForegroundColor Red; exit 1 }
