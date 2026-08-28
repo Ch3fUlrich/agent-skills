@@ -97,22 +97,29 @@ it safely. See [references/changelog-backtracking.md](references/changelog-backt
 
 ## Principle 6 — MCP-first navigation
 
-Use semantic tools before brute-force file reads. In this repo the stack is
-Serena (LSP symbols/refs/refactor), Graphify (code-structure graph), and
-Omnigraph (structured cross-project memory). See
-[skills/structured-memory/SKILL.md](../structured-memory/SKILL.md).
+Use semantic tools before brute-force file reads, and verify through the tool that
+observes the real thing. Four servers are **mandatory**, not optional: Serena (LSP
+symbols/refs/refactor), Graphify (code-structure graph), Omnigraph (structured
+cross-project memory), and Playwright (browser verification of anything rendered).
+See [skills/structured-memory/SKILL.md](../structured-memory/SKILL.md).
 
-- Session start: load project structure and prior decisions from memory/graph
-  before editing.
+- Session start: activate Serena, and load project structure and prior decisions
+  from memory/graph before editing.
 - Find a symbol/reference with Serena, not by reading whole files (typically
   80–95% fewer tokens).
 - Ask the graph broad-structure questions; ask memory "what did we decide".
+- Changed something a browser renders? Drive it with Playwright before claiming it
+  works — this is Principle 9 (verify through the path that actually runs) applied
+  to a UI.
 - Write durable decisions back to structured memory at session end.
+- If a server is genuinely down, fall back **and say which one**. An unreported
+  fallback turns a config bug into an apparent fact about the repo.
 
 | Red flag | Reality |
 |---|---|
 | "Let me read the whole file to find this function" | Use `find_symbol`. Cheaper and exact. |
 | "I'll re-derive how this project works" | Query memory first — it's the ground truth. |
+| "The diff looks right, the page must render" | You changed the UI and never opened it. Drive it with Playwright. |
 
 ## Principle 7 — Scratch Script & Filesystem Hygiene
 

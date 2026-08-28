@@ -131,6 +131,9 @@ discipline, and the semantic tools. Only *orchestration* scales with size.
        +--> Questioning an existing choice? -> `docs/decisions/` before proposing a change
        +--> Long-form plan, research, report, diagram?
        |                                    -> `html-working-documents`
+       +--> Changed something a browser renders?
+       |                                    -> `playwright` — drive the page before
+       |                                       claiming it works. The diff is not evidence.
        |
        +--> Is it a simple single-file tweak?
        |      +-- YES: Fix it directly — still TDD, still document the why.
