@@ -27,6 +27,27 @@ Two more places to look before you write anything:
 | `docs/decisions/` | You are about to change or question a design choice — the ADR says **why** it is that way |
 | `docs/superpowers/specs/` | You are about to build something — it may already be designed and approved |
 
+## MCP servers — mandatory, not optional
+
+These four are the **default** way to work here, not an optimisation you reach for on
+big tasks. Reading whole files to find a symbol, or re-deriving what this repo already
+decided, is the slow path.
+
+| Server | Mandatory when | Instead of |
+|---|---|---|
+| **`serena`** | **every session** — `activate_project(<absolute path>)` before the first code question, then `find_symbol` / `find_referencing_symbols` / `replace_symbol_body` | `Read`/`Grep` over whole files |
+| **`omnigraph`** | **every session, both ends** — recall before changing code, persist the durable *why* before finishing (see Memory, below) | re-deriving decisions; a scratch note that dies with the session |
+| **`graphify`** | any question spanning **more than one file** — blast radius, "what connects X to Y" | fanning reads out across modules |
+| **`playwright`** | **any change to something a browser renders** — drive the page and verify before calling it done | asserting from the diff that the UI works |
+
+One escape hatch, and it is not silent: if a server is genuinely unavailable, fall back
+and **say which one and why** in your answer. A dead `OMNIGRAPH_TOKEN` looks exactly
+like a repo that has no memory — the difference is only visible if you report it.
+
+Wiring, ports, and failure signatures: `skills/mcp-servers-setup/SKILL.md`.
+Full routing table (incl. `context7`, `superpowers`, observability):
+`skills/repository-index/SKILL.md` §2.
+
 ## Memory
 
 - **One graph per repo**, named after the folder (e.g., `agent-skills`, `basic-analysis`). This repo → `agent-skills`.

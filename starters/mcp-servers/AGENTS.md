@@ -1,14 +1,25 @@
 # MCP Server Stack — AGENTS.md
 
 This repository is configured with a self-hosted MCP server stack for AI coding
-agents. Four servers are active:
+agents.
 
-| Server | Purpose |
-|---|---|
-| **Serena** | LSP-powered semantic code navigation and refactoring (memory/config tools filtered out) |
-| **Graphify** | Queryable project graph for code, docs, and cross-file relationships |
-| **Superpowers** | Disciplined workflow skills (TDD, debugging, planning, brainstorming) |
-| **Omnigraph** | Structured, versioned cross-project memory (typed nodes + graph/vector/full-text recall) |
+## MCP servers — mandatory, not optional
+
+These are the **default** way to work in this repo, not an optimisation for big
+tasks. Reading whole files to find a symbol, or re-deriving what the repo already
+decided, is the slow path.
+
+| Server | Mandatory when | Instead of |
+|---|---|---|
+| **Serena** | **every session** — activate the project first, then `find_symbol` / `find_referencing_symbols` / `replace_symbol_body` | reading or grepping whole files |
+| **Omnigraph** | **every session, both ends** — recall before changing code, persist the durable *why* before finishing | re-deriving decisions; notes that die with the session |
+| **Graphify** | any question spanning **more than one file** — blast radius, "what connects X to Y" | fanning reads out across modules |
+| **Playwright** | **any change to something a browser renders** — drive the page and verify before calling it done | asserting from the diff that the UI works |
+| **Superpowers** | disciplined workflows — TDD, systematic debugging, planning, brainstorming | improvising a multi-step task |
+
+One escape hatch, and it is not silent: if a server is genuinely unavailable, fall
+back and **say which one and why**. A dead `OMNIGRAPH_TOKEN` looks exactly like a
+repo that has no memory — the difference is only visible if you report it.
 
 > **IMPORTANT: Per-project graph isolation — scope by graph, never a per-call `user_id`**
 > Each project has its **own Omnigraph graph, named after the repo**. Point the
