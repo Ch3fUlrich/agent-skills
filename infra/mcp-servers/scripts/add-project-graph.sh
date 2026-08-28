@@ -2,6 +2,10 @@
 # Declare a new isolated per-project graph in cluster/cluster.yaml, then remind
 # you to converge it. Idempotent: re-running for an existing graph is a no-op.
 #
+# cluster/cluster.yaml is GITIGNORED — copy it from cluster.yaml.example on first
+# setup. That is on purpose: a graph is named after the repo it serves, so every
+# name this script appends would otherwise be published by a public repository.
+#
 #   ./scripts/add-project-graph.sh my-new-project
 #   ./scripts/apply-cluster.sh          # converge it into the live cluster
 set -euo pipefail

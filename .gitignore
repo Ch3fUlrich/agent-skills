@@ -108,3 +108,18 @@ agent_keys.yaml
 # Claude Code: local per-machine settings (MCP approvals) never get committed.
 # Tracked .claude/ artifacts (agents, workflows, hooks) are added when ADR 0004 lands.
 .claude/settings.local.json
+
+# Omnigraph cluster: the SHAPE is tracked (cluster.yaml.example), the CONTENTS are not.
+# Graphs are named after the repos they serve, so the live file is a list of every
+# project you work on — and add-project-graph.sh appends to it automatically. This
+# repo is public. Copy the example to cluster.yaml on first setup.
+infra/mcp-servers/cluster/cluster.yaml
+
+# Omnigraph seeds for OTHER repos' graphs. agent-skills.jsonl and memory.jsonl stay
+# tracked (this repo's own graph + global Preferences). A seed is a full export of a
+# project's memory — its module map, decisions and infrastructure — so publishing
+# another repo's seed here publishes that repo. Keep them on disk (the boot seeder
+# and the documented recovery path both read them); just never commit them.
+infra/mcp-servers/cluster/seed/*.jsonl
+!infra/mcp-servers/cluster/seed/agent-skills.jsonl
+!infra/mcp-servers/cluster/seed/memory.jsonl

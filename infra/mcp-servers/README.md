@@ -27,6 +27,7 @@ cd ${AGENT_SKILLS_ROOT}/infra/mcp-servers
 cp .env.shared.example .env.shared    # OMNIGRAPH_TOKEN + S3_BUCKET (both roles)
 cp .env.server.example .env.server    # MinIO creds, embeddings
 cp .env.client.example .env.client    # CODE_ROOT, OMNIGRAPH_URL
+cp cluster/cluster.yaml.example cluster/cluster.yaml   # graph + policy declaration
 
 # SERVER — omnigraph-server + minio + minio-init + omnigraph-init + viewer
 docker compose --env-file .env.shared --env-file .env.server \
@@ -90,7 +91,9 @@ every fix: MCP env vars, `pnpm dlx`, embeddings, compose gotchas),
 > **Note on Observability MCPs**: Sentry and Datadog require specific token scoping and security configurations. See the **[Observability MCP Setup Guide](docs/OBSERVABILITY-MCP-SETUP.md)** before enabling them.
 
 **Vector search** uses a local **Ollama `nomic-embed-text`** embedder (768-dim,
-no cloud key), configured in [`cluster/cluster.yaml`](cluster/cluster.yaml); the
+no cloud key), configured in [`cluster/cluster.yaml.example`](cluster/cluster.yaml.example)
+(copy it to `cluster/cluster.yaml`, which is gitignored — graph names are repo names,
+and this repo is public); the
 `search_decisions($q)` stored query runs `nearest()` over Decision embeddings.
 
 **Clients & offline sync** — online clients point their MCP at the server on

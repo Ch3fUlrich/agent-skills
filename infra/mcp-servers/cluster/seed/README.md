@@ -12,9 +12,14 @@ repo). The `omnigraph-seed` compose service applies this mapping on every boot.
 |---|---|---|
 | `memory.jsonl` | `memory` | **globals only** — cross-project `Preference {scope: global}` |
 | `agent-skills.jsonl` | `agent-skills` | this repo's ADRs / README / docs |
-| `homelab-server.jsonl` | `homelab-server` | the `Server` repo (edge / reverse-proxy / security model) |
-| `basic-analysis.jsonl` | `basic-analysis` | live graph export (the `basic-analysis` repo) |
-| `invest.jsonl` | `invest` | live graph export (originally distilled from the `Invest` repo) |
+| `<other-repo>.jsonl` | `<other-repo>` | live graph export of that repo — **gitignored**, see below |
+
+> **Only this repo's own seeds are tracked.** `agent-skills.jsonl` and `memory.jsonl`
+> are committed; every other `*.jsonl` here is gitignored and stays local. A seed is a
+> full export of a project's memory — module map, decisions, infrastructure — so
+> committing another repo's seed into this public repository publishes that repo.
+> Generate yours with `split-project-graph.py <project> --write-seed`; it lands
+> ignored.
 
 > **Keep seeds in sync with live.** The loader merges by `@key(slug)`, so a seed
 > that has fallen behind will **overwrite newer live values** on the next boot.
