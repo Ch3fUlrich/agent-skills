@@ -16,7 +16,7 @@ structured project memory from Omnigraph, and use Graphify when the repo already
 has a graph:**
 
 ```
-mcp_serena_activate_project → (current project name or path)
+mcp_serena_activate_project(project="<ABSOLUTE path to the repo root>")   # never a bare name
 # Recall typed memory (rules/decisions/preferences) for this project + global scope:
 #   follow skills/structured-memory/SKILL.md (Omnigraph queries)
 
@@ -41,7 +41,7 @@ the ground truth for what exists and how it works. Memory details:
 
 **Usage**: Always activate the project first, then use symbolic tools:
 ```
-mcp_serena_activate_project(project="agent-skills")
+mcp_serena_activate_project(project="C:/Users/<you>/Documents/Code/agent-skills")  # absolute
 mcp_serena_find_symbol(name_path_pattern="function_name")
 ```
 
@@ -60,6 +60,67 @@ e.g. `languages: ["python", "bash", "yaml", "json"]`.
 > Proven working in this image: `bash, json, python, rust, toml, yaml`. After editing
 > `project.yml`, **restart `serena-mcp`** — it holds the activated project in memory and
 > will not re-read the file on its own.
+
+**Worktrees and parallel agents — three rules, all non-negotiable.**
+
+> **1. Activate by absolute path, never by a bare name.** `get_registered_project`
+> (`serena/config/serena_config.py`) compares the argument against every registered
+> `project_name` **before** it looks at paths, and raises `Multiple projects found` when two
+> match. `.serena/project.yml` is tracked, so every linked worktree checks out a copy carrying
+> the *same* `project_name` — the second worktree turns by-name activation into a hard error
+> **for every agent at once**, the one in the main checkout included. An absolute path cannot
+> equal a project name, so it never reaches that branch. Measured 2026-08-31: five
+> `basic-analysis` worktrees, five registrations all named `basic-analysis`.
+>
+> **2. One Serena = one session = one worktree.** Serena is a *single stdio process per Claude
+> Code session* holding exactly one `_active_project`, and `_activate_project` (`serena/agent.py`)
+> **shuts the previous project's language servers down** before switching. In-session subagents
+> share that one process, so N agents in N worktrees means every activation kills the previous
+> agent's LSP mid-flight and whoever activated last silently owns everyone's symbol results.
+> This is process architecture, not policy — no configuration fixes it.
+>
+> Therefore: **a subagent dispatched into another worktree must not call `activate_project`.**
+> It falls back to `Glob`/`Grep`/`Read` and says so. Parallel worktree work that genuinely needs
+> symbolic navigation needs **separate sessions** — one `claude` process per worktree, each with
+> its own Serena (`skills/herdr-orchestration/SKILL.md` panes do this).
+>
+> **3. A worktree holds tracked files only.** `.env`, `.venv/`, build caches and every other
+> gitignored operator file are absent *by construction* — `git worktree add` materialises what
+> git tracks and nothing more. Code that resolves such a file relative to its own location
+> (`Path(__file__).resolve().parents[n]`) therefore finds nothing in a worktree and, if it is
+> written to degrade gracefully, **degrades silently**. Resolve untracked config through the
+> **main checkout**. A linked worktree's `.git` is a *file* reading
+> `gitdir: <main>/.git/worktrees/<name>`, and that directory's `commondir` leads back to the
+> shared `.git` — so the main root is two file reads away, with no subprocess and no
+> `git`-on-PATH dependency on your import path:
+>
+> ```python
+> def main_worktree_root(root: Path) -> Path | None:
+>     """Main checkout behind `root`, or None if `root` is not a linked worktree."""
+>     dot_git = root / ".git"
+>     if not dot_git.is_file():        # a directory is an ordinary checkout; absent is no repo
+>         return None
+>     try:
+>         pointer = dot_git.read_text(encoding="utf-8").strip()
+>         if not pointer.startswith("gitdir:"):
+>             return None
+>         # split on the FIRST colon only: a Windows pointer is `gitdir: C:/...`
+>         gitdir = Path(pointer.split(":", 1)[1].strip())
+>         if not gitdir.is_absolute():
+>             gitdir = root / gitdir
+>         commondir = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+>     except OSError:
+>         return None
+>     return (gitdir / commondir).resolve().parent
+> ```
+>
+> Search the worktree's own locations first, then the main checkout's, so a deliberate
+> per-worktree override still wins. Do **not** copy credentials into each worktree instead:
+> `git worktree prune` orphans those copies and they drift from the one the services read.
+>
+> Housekeeping: keep `.claude/worktrees/` in `.gitignore` (not just `.git/info/exclude`, which
+> no clone inherits) so Serena does not index N copies of the repo, and drop registry entries
+> for worktrees you have removed from `~/.serena/serena_config.yml` → `projects`.
 
 **Note**: Serena memory tools are disabled. Use Omnigraph (structured memory) for all persistent memory instead.
 
@@ -277,7 +338,7 @@ python3 scripts/_omni_env.py                             # what stack docker act
 ## Recommended Workflow
 
 1. Start the server: `docker compose --env-file .env.shared --env-file .env.server -f docker-compose.server.yml up -d`
-2. Activate Serena project: `mcp_serena_activate_project(project="repo-name")`
+2. Activate Serena project: `mcp_serena_activate_project(project="<absolute path to the repo>")`
 3. Recall memory from Omnigraph (see `skills/structured-memory/SKILL.md`)
 4. Build or refresh Graphify graphs when the repo has a graph target
 5. Use Serena for navigation, Omnigraph for memory, Graphify for graph queries, and Superpowers for workflows

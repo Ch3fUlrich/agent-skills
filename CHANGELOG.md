@@ -5,6 +5,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — Serena and git worktrees: the two rules that were missing, and one that was wrong (2026-08-31)
+
+Parallel agents across git worktrees broke Serena in two distinct ways, both traced to source
+rather than guessed at, and one of this repo's own instructions was teaching the failure.
+
+- **`skills/mcp-servers-setup/SKILL.md` taught activation by *name*** —
+  `mcp_serena_activate_project(project="agent-skills")` — while `AGENTS.md` already said absolute
+  path. `serena_config.get_registered_project` matches the argument against every registered
+  `project_name` **before** it looks at paths and raises `Multiple projects found` on a tie, and
+  `.serena/project.yml` is tracked, so every linked worktree registers another project with the
+  *same* name. Measured in `basic-analysis` on 2026-08-31: five worktrees, five registrations all
+  called `basic-analysis`, after which by-name activation failed for every agent at once —
+  including the one in the main checkout. An absolute path cannot equal a name, so it skips that
+  branch entirely. All three by-name examples in the skill corrected.
+- **New *Worktrees and parallel agents* section** in the same skill, with the two mechanisms and
+  the general worktree hazard:
+  1. **Activate by absolute path, never a bare name** (above).
+  2. **One Serena = one session = one worktree.** Serena is a single stdio process per Claude Code
+     session holding exactly one `_active_project`, and `_activate_project` **shuts the previous
+     project's language servers down** before switching. In-session subagents share that process,
+     so N agents in N worktrees means every activation kills the previous agent's LSP mid-flight
+     and the last one silently owns everybody's symbol results. Process architecture, not policy —
+     no configuration fixes it. Subagents in other worktrees must not re-activate; parallel
+     symbolic work needs separate sessions.
+  3. **A worktree holds tracked files only.** `.env`, `.venv/` and caches are absent *by
+     construction*, so code resolving them from `Path(__file__).parents[n]` finds nothing and, if
+     written to degrade gracefully, degrades **silently**. Resolve untracked config through the
+     main checkout via `.git` → `gitdir:` → `commondir`; worked example now lives in
+     `basic_analysis/io/_env.py::_linked_worktree_main_root`. Never copy credentials per worktree.
+- **`.serena/memories/mcp-servers/current-status.md` corrected.** It claimed `activate_project`
+  "switches between any registered repo within one session" — true but dangerously incomplete: it
+  reads as license for concurrent multi-project use, which is exactly what breaks. It now records
+  that switching is serial and destructive to the outgoing project's language servers.
+- **`AGENTS.md`** — the `serena` row now carries "never a bare name" and "one active project per
+  session" inline, since that table is what most sessions actually read.
+
+Downstream: `basic-analysis` got the enforcing half — a PreToolUse fence that refuses a bare-name
+activation, and a worktree-aware `.env` resolver — recorded in its own changelog.
+
 ### Removed — `antigravity-remote-ui`; Antigravity handles remote connections natively (2026-08-25)
 
 Antigravity now supports remote connections **in the app**, so this repository no longer needs to

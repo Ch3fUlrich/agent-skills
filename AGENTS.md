@@ -35,7 +35,7 @@ decided, is the slow path.
 
 | Server | Mandatory when | Instead of |
 |---|---|---|
-| **`serena`** | **every session** — `activate_project(<absolute path>)` before the first code question, then `find_symbol` / `find_referencing_symbols` / `replace_symbol_body` | `Read`/`Grep` over whole files |
+| **`serena`** | **every session** — `activate_project(<absolute path>, never a bare name)` before the first code question, then `find_symbol` / `find_referencing_symbols` / `replace_symbol_body`. **One active project per session**: subagents in other worktrees must not re-activate — see *Worktrees* in `skills/mcp-servers-setup/SKILL.md` | `Read`/`Grep` over whole files |
 | **`omnigraph`** | **every session, both ends** — recall before changing code, persist the durable *why* before finishing (see Memory, below) | re-deriving decisions; a scratch note that dies with the session |
 | **`graphify`** | any question spanning **more than one file** — blast radius, "what connects X to Y" | fanning reads out across modules |
 | **`playwright`** | **any change to something a browser renders** — drive the page and verify before calling it done | asserting from the diff that the UI works |
