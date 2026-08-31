@@ -58,6 +58,13 @@ Full routing table (incl. `context7`, `superpowers`, observability):
   equals your `git remote get-url origin`. Run that check before trusting recall — it is the
   only cheap detector for a bridge pinned to the wrong repo's graph.
   Protocol: `skills/structured-memory/SKILL.md` → *Which graph fits this repository?*
+- **Both are token-only.** No `Authorization` header ⇒ **401**; `/graphs` without the
+  cluster-scoped `graph_list` grant ⇒ **403**, never a misleading empty list. `/healthz` is the
+  one open endpoint and returns liveness, not names. One token = one actor = that actor's
+  graphs, and it is **all-or-nothing** — there is no token that reveals only part of the roster
+  until per-user policies are switched on. Never share it.
+  Auth model + measurements: `skills/mcp-servers-setup/SKILL.md` → *Discovering repository /
+  project names*.
 - `memory` graph = 2 global `Preference`s only (already Principles 2 & 6 of
   `coding-principles`). **Never write or push project data to `memory`.**
 - Omnigraph is the only memory layer — no fallback (ADR 0003).

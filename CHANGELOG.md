@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Documented — how to extract repository / project names, and what gates it (2026-08-31)
+
+The names now live only behind the token — `cluster.yaml` is gitignored and purged — so the
+instruction files have to say how to ask for them, and be honest about the boundary.
+
+- **The recipe, in the wiring skill** (`skills/mcp-servers-setup/SKILL.md` → *Discovering
+  repository / project names*): graph id == repository folder name == `Project.slug` by
+  construction, so `graphs_list` (or `GET /graphs`) is the roster, and `whoami` returns this
+  repo's own `slug` / `name` / `repository`. Both MCP and `curl` forms, because Antigravity's
+  MCP config is global and cannot be relied on per-repo.
+- **The gate, measured rather than asserted** (2026-08-31, live server): no `Authorization`
+  header → **401**; wrong token → **401**; valid `OMNIGRAPH_TOKEN` → 200; `/healthz` → 200 but
+  liveness only, no names and no data. `/graphs` is closed by default and answers only because
+  `cluster.policy.yaml` grants `graph_list` to the `operators` group at cluster scope — without
+  it an authenticated call gets **403 ForbiddenError**, so "not allowed" can never be misread
+  as "nothing here".
+- **The scope, stated plainly.** One token resolves to the single actor `default`; the
+  per-graph bundles grant that actor its graphs, so a holder sees exactly the graphs that are
+  theirs — today all of them, because there is one user. It is **all-or-nothing**: there is no
+  token that reveals part of the roster until the per-user bundle
+  (`cluster/users.policy.yaml.example`, `users-access`, currently commented out) is enabled
+  with one bearer token per user. Recorded so nobody shares the token assuming it is scoped.
+- Pointers added from `AGENTS.md` and `GEMINI.md`; the protocol half stays in
+  `skills/structured-memory/SKILL.md` and the wiring half in the setup skill, one home each.
+
 ### Added — the graph knows which repository it belongs to (2026-08-31)
 
 `cluster.yaml` was the roster of graph names, and it is now gitignored *and* purged from

@@ -203,6 +203,13 @@ satisfies `as-rule-declared-is-not-live`:
 | Which one is *this* repo? | The `graphId` equal to the repository folder name — then confirm with the row below. |
 | Am I actually connected to it? | `Project.repository` in the graph you are pinned to must equal this repo's `git remote get-url origin`. |
 
+Both calls need the bearer token and nothing else: without `Authorization` the server
+answers **401**, and `/graphs` additionally needs the cluster-scoped `graph_list` grant or it
+answers **403** rather than an empty list — so a silent empty roster is not a state you can
+reach. One token maps to one actor, and an actor sees exactly the graphs granted to it. Full
+auth model, the 401/403/200 measurements and the per-user path:
+`skills/mcp-servers-setup/SKILL.md` → *Discovering repository / project names*.
+
 The third row is the whole point. `graphs_list` is cluster-wide, but `query` only ever
 reaches the one graph `OMNIGRAPH_GRAPH_ID` pinned, so you cannot compare URLs *across*
 graphs from a project session. What you can do, in one cheap query, is prove the pin is
