@@ -190,6 +190,44 @@ one project's graph can't touch another's. The shared **`memory`** graph now
 holds **only** global-scope `Preference`s (house style, TDD-default) — never
 project data.
 
+### Which graph fits this repository? — ask the cluster, never guess
+
+`cluster.yaml` used to be the roster of graph names. It is now gitignored (it had grown
+into a list of every private project this machine touches) and purged from history, so it
+is **not** a discovery source. Ask the live cluster — which is also the only answer that
+satisfies `as-rule-declared-is-not-live`:
+
+| Question | Answer it with |
+|---|---|
+| Which repository names exist? | `graphs_list` — every `graphId` the cluster exposes, alphabetically. Needs the cluster-scoped `graph_list` action; without it you get `403 ForbiddenError`. |
+| Which one is *this* repo? | The `graphId` equal to the repository folder name — then confirm with the row below. |
+| Am I actually connected to it? | `Project.repository` in the graph you are pinned to must equal this repo's `git remote get-url origin`. |
+
+The third row is the whole point. `graphs_list` is cluster-wide, but `query` only ever
+reaches the one graph `OMNIGRAPH_GRAPH_ID` pinned, so you cannot compare URLs *across*
+graphs from a project session. What you can do, in one cheap query, is prove the pin is
+right:
+
+```gq
+query whoami() { match { $p: Project } return { $p.slug, $p.repository } }
+```
+
+If `repository` does not match your `origin`, the bridge is serving **another repository's
+graph**, and every recall you are about to act on describes a different codebase. That is
+the `~/.claude.json` user-scope override CLAUDE.md documents at length — and until this
+property existed it had no cheap detector, because a graph that is merely *the wrong one*
+looks exactly like a graph that was wiped.
+
+**Backfill a graph whose `repository` is still null.** Only `agent-skills` is populated so
+far; run this once from each repo, in that repo's own session, since the bridge cannot
+reach another project's graph:
+
+```gq
+query set_project_repository($slug: String, $repository: String) {
+  update Project set { repository: $repository } where slug = $slug
+}
+```
+
 - **Point your agent at its project graph**: set `OMNIGRAPH_GRAPH_ID=<repo>` for
   the omnigraph MCP bridge (a project-scoped `.mcp.json` env, or export it before
   launching). **Always write and push project memory to the Omnigraph graph/branch matching the repository folder name (`<repo>`), and never to the shared `memory` graph.**

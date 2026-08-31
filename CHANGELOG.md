@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — the graph knows which repository it belongs to (2026-08-31)
+
+`cluster.yaml` was the roster of graph names, and it is now gitignored *and* purged from
+history — so agents needed a discovery path that does not depend on a tracked file. The
+cluster already had half of it: `graphs_list` returns every `graphId`, which is the list of
+repository names. The missing half was the inverse — nothing connected a graph back to a
+repository, so an agent could not tell a correctly-pinned bridge from a misrouted one.
+
+- **`Project.repository: String?`** added to `infra/mcp-servers/cluster/memory.pg` and
+  converged onto the live cluster (`cluster plan`: 16 changes, **0 approval gates**, every
+  one a purely additive `add_property`; `cluster apply`: 8 schemas Applied, `memory` intact
+  at 27 nodes). Optional by necessity — a non-nullable property on an existing node is
+  rejected as unsupported.
+- **Backfilled for this repo** and verified live: `agent-skills` →
+  `https://github.com/Ch3fUlrich/agent-skills.git`. The tracked seed carries it too, so a
+  rebuild from `cluster/seed/agent-skills.jsonl` restores the link. The other seven graphs
+  are still null; each must be set from its own repo's session, because a bridge pinned by
+  `OMNIGRAPH_GRAPH_ID` cannot reach another project's graph.
+- **This gives the repo's oldest silent failure a cheap detector.** A same-named `omnigraph`
+  in `~/.claude.json` outranks a project `.mcp.json` with no error, and on 2026-07-17 that
+  led an agent to read `memory`'s two Preferences, conclude a 135-node graph had been wiped,
+  and start rebuilding it. `query whoami() { match { $p: Project } return { $p.slug,
+  $p.repository } }` now separates "wrong graph" from "empty graph" in one call — the
+  existing `~/.claude.json` check only ever proved the *absence* of a shadow.
+- Protocol documented in `skills/structured-memory/SKILL.md` (*Which graph fits this
+  repository?* — a table of the three questions and what answers each, plus the constraint
+  that `graphs_list` is cluster-wide while `query` is not), with pointers from `AGENTS.md`
+  and the `CLAUDE.md` precedence trap.
+
 ### Fixed — Serena and git worktrees: the two rules that were missing, and one that was wrong (2026-08-31)
 
 Parallel agents across git worktrees broke Serena in two distinct ways, both traced to source

@@ -53,6 +53,11 @@ Full routing table (incl. `context7`, `superpowers`, observability):
 - **One graph per repo**, named after the folder (e.g., `agent-skills`, `basic-analysis`). This repo → `agent-skills`.
 - **Always write and push project memory to the Omnigraph graph/branch matching the repository name (`OMNIGRAPH_GRAPH_ID=<repo-folder-name>`)**, never to `memory`.
 - Pinned by `OMNIGRAPH_GRAPH_ID` in `.mcp.json`; **no tool takes a graph argument**.
+- **Which names exist? `graphs_list`.** `cluster.yaml` is gitignored and purged from history —
+  it is not a discovery source. **Which one is yours?** The graph whose `Project.repository`
+  equals your `git remote get-url origin`. Run that check before trusting recall — it is the
+  only cheap detector for a bridge pinned to the wrong repo's graph.
+  Protocol: `skills/structured-memory/SKILL.md` → *Which graph fits this repository?*
 - `memory` graph = 2 global `Preference`s only (already Principles 2 & 6 of
   `coding-principles`). **Never write or push project data to `memory`.**
 - Omnigraph is the only memory layer — no fallback (ADR 0003).
