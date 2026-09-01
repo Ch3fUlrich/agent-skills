@@ -30,8 +30,12 @@
 # cause).
 #     SERENA_HOME=/absolute/path/.serena uvx --from serena-agent==1.7.0 serena project health-check .
 # Require BOTH "Health check completed successfully" AND a "FindReferencingSymbolsTool found N
-# references" line. On Windows it ends in a cosmetic UnicodeEncodeError printing the check mark
-# under cp1252 -- exit code is still 0. Full detail: skills/mcp-servers-setup/SKILL.md -> Serena.
+# references" line -- AND check WHICH symbol it selected. On Windows it ends in a
+# UnicodeEncodeError printing the check mark under cp1252, after the check has finished; the
+# exit code is NOT reliable there (measured 1 on 2026-09-01), so read the log, not $?. And a
+# run that logs "No class or function found, using first available symbol" and then passes on a
+# markdown heading has proved nothing about your call graph -- that is the polluted-namespace
+# symptom above. Full detail: skills/mcp-servers-setup/SKILL.md -> Serena.
 languages: ["python"]
 
 # NOTE: `project_name` is deliberately ABSENT -- do not add it. Serena fills a missing key

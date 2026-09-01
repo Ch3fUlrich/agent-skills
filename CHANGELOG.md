@@ -90,6 +90,16 @@ what the guide previously said rather than adding to it.
   `["python","bash","yaml","json"]` to `["python"]`, with the health-check recipe inline; and
   the absence of `project_name` is now documented as deliberate so nobody adds one.
 
+- **Corrected same day, from a run against `basic-analysis`:** the `UnicodeEncodeError` note
+  said "exit code is still 0" — measured **1** (serena 1.7.0, cp1252). The traceback does
+  propagate, so the log body is the verdict and `$?` is not. Added the criterion that run
+  exposed: **check which symbol the check selected.** With 8 languages incl. `markdown` it
+  logged `No class or function found, using first available symbol`, picked the heading
+  `AGENTS.md — basic-analysis` (kind Namespace), and then satisfied *both* documented
+  criteria — `found 1 references`, `completed successfully` — without touching Python once.
+  Both lines green is necessary, not sufficient; a pass on a heading proves nothing about the
+  call graph. Startup there was 34.4 s.
+
 Unchanged deliberately: the warning that a failed `initialize` kills the language server
 *manager* rather than one language (re-confirmed), and the Serena-memory-tools-disabled
 guidance.

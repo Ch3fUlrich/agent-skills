@@ -138,8 +138,18 @@ It starts every declared language server, picks a symbol, and exercises `find_sy
 `FindReferencingSymbolsTool found N references` line — a `failed for symbol` warning sitting
 above a "successful" completion is the data-format problem above.
 
-- **On Windows it ends in a `UnicodeEncodeError`** printing `✅` under cp1252. Exit code is
-  still `0` and the check passed; it is cosmetic, but it reads as a crash.
+- **On Windows it ends in a `UnicodeEncodeError`** printing `✅` under cp1252 — from
+  `cli.py`'s `click.echo("✅ Health check passed…")`, i.e. *after* the check has finished.
+  **Do not trust the exit code here**: measured `1` on 2026-09-01 (serena 1.7.0, cp1252), so
+  the traceback does propagate. The log body is the verdict, not `$?`.
+- **Check *which symbol* it selected, not just that both lines appeared.** Both criteria can
+  pass on a symbol that proves nothing. Run against `basic-analysis` (8 languages incl.
+  `markdown`), 2026-09-01: `No class or function found, using first available symbol` →
+  `AGENTS.md — basic-analysis`, kind **Namespace** — a markdown heading. It then reported
+  `FindReferencingSymbolsTool found 1 references` and `Health check completed successfully`
+  while never touching Python at all. A pass on a heading is a pass on nothing; if the
+  selected symbol is not a Function or Class, the language list is polluted (§ above) and the
+  check has not exercised your call graph. Startup there: **34.4 s**.
 
 **Worktrees and parallel agents — three rules, all non-negotiable.**
 
