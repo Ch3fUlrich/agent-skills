@@ -185,10 +185,57 @@ above a "successful" completion is the data-format problem above.
 > agent's LSP mid-flight and whoever activated last silently owns everyone's symbol results.
 > This is process architecture, not policy — no configuration fixes it.
 >
-> Therefore: **a subagent dispatched into another worktree must not call `activate_project`.**
-> It falls back to `Glob`/`Grep`/`Read` and says so. Parallel worktree work that genuinely needs
-> symbolic navigation needs **separate sessions** — one `claude` process per worktree, each with
-> its own Serena (`skills/herdr-orchestration/SKILL.md` panes do this).
+> **The consequence is NOT that worktree agents lose Serena.** That conclusion was drawn here
+> once and it was wrong: trading symbolic navigation for `grep` is a large, permanent cost paid
+> to avoid a solvable problem. The real consequence is about *which unit* you put in a worktree.
+>
+> **The unit of worktree parallelism is a SESSION, not a subagent.** One `claude` process per
+> worktree gives each its own Serena process, its own `_active_project`, and — because graphify
+> is cwd-relative — its own graph. Nothing is shared, nothing is torn down, and every agent has
+> full symbolic navigation. In-session subagents then stay in *their own session's* worktree,
+> where they share one correctly-activated Serena and everything works. So: **worktrees get
+> sessions; subagents share the session's worktree.** (`skills/herdr-orchestration/SKILL.md`
+> panes are how you run one session per worktree.)
+>
+> Three things must be true for a worktree session to come up at full capability. All three are
+> the same failure — an artifact that is untracked, so the worktree never receives it:
+>
+> | Requirement | Why it bites | Fix |
+> |---|---|---|
+> | `.serena/project.yml` is **tracked** | absent, Serena *autogenerates* it, and autogeneration picks languages by file count — reintroducing `json`/`markdown`/`yaml` in every worktree, forever | track it: `.serena/*` plus `!.serena/project.yml`, never a bare `.serena/` (a negation cannot re-include a file inside an already-excluded directory) |
+> | `project_name` is **omitted** | otherwise every worktree registers the same name and by-name activation raises for all agents at once (rule 1b) | delete the key |
+> | `graphify-out/` **exists** there | it is gitignored, and both hooks deliberately skip linked worktrees, so it is never created | link it to the main checkout (below) |
+>
+> Link graphify's output rather than building a second copy: the hooks maintain exactly one
+> graph, and a hand-built one in a worktree goes stale with nothing to tell you.
+>
+> ```bash
+> ln -s "$(git rev-parse --show-toplevel)/graphify-out" "<worktree>/graphify-out"
+> ```
+> ```
+> cmd /c mklink /J "<worktree>\graphify-out" "<main>\graphify-out"    :: Windows, no admin needed
+> ```
+>
+> **Verified it cannot eat the real graph** (2026-09-01): with a canary in the link target,
+> `Remove-Item -Recurse -Force <worktree>` deleted the worktree and left the target intact — the
+> junction is not followed. Worth checking because a recursive delete that *did* follow it would
+> destroy the one maintained graph. Not tested against `git worktree remove` itself (the index
+> was locked at the time), so if you want belt and braces, drop the link before removing the
+> worktree.
+>
+> The graphify server only *reads* `graph.json`, so the link is read-only in practice and N
+> sessions cannot race over it. Same pattern as `.env` and `launch.json`: **untracked operator
+> artifacts resolve to the main checkout.** Accept the matching caveat — the graph describes the
+> main checkout's code, which is right for structural questions ("what connects X to Y") and
+> wrong for code the branch has restructured. Rebuild on the branch when that starts to matter,
+> and say which one you are answering from.
+>
+> Only when a worktree genuinely cannot have its own session — an in-session subagent you must
+> dispatch across worktrees — does the fallback apply: `Glob`/`Grep`/`Read` **and `Edit`**, said
+> out loud. Name `Edit` explicitly wherever you write that down: such a subagent cannot use
+> Serena *by rule*, so a fallback list omitting the one tool that changes files reads as "I
+> cannot work", and a repo that also fences shell edits to source turns it into a hard stop —
+> measured 2026-09-01.
 >
 > **Know the price: N sessions = N Serena processes, each holding its own language servers.**
 > Five were alive during the 2026-09-01 measurement, and a duplicate server definition (see

@@ -47,7 +47,13 @@ htmlcov/
 .codewhale/
 
 # Serena per-project data (auto-generated, not tracked)
-.serena/
+# Serena: the CURATED config is durable project knowledge and must be TRACKED -- a linked
+# worktree that does not receive it makes Serena autogenerate one, and autogeneration picks
+# languages by file count, which reintroduces json/markdown/yaml every single time. Note the
+# pattern must be `.serena/*`, not `.serena/`: a negation cannot re-include a file inside a
+# directory git has already excluded. cache/, logs/ and memories/ stay out.
+.serena/*
+!.serena/project.yml
 !starters/mcp-servers/.serena/
 
 # Graphify data (generated — regenerable, never track)

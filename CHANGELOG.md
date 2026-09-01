@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — worktree agents keep Serena and Graphify; the rule that took them away was wrong (2026-09-01)
+
+An earlier entry today concluded that subagents in worktrees must fall back to `grep`. That
+traded symbolic navigation — the whole point of the stack — for a problem that is solvable. The
+constraint behind it is real (one Serena process per *session*, one active project, switching
+tears down the outgoing project's language servers) but the conclusion did not follow from it.
+
+**The unit of worktree parallelism is a SESSION, not a subagent.** One `claude` process per
+worktree gives each its own Serena process, its own `_active_project` and — graphify being
+cwd-relative — its own graph. Nothing shared, nothing torn down, full capability everywhere.
+In-session subagents stay in their own session's worktree and share its activated Serena.
+*Worktrees get sessions; subagents share the session's worktree.* The `grep` fallback survives
+only for the case where a worktree genuinely cannot have its own session.
+
+Three artifacts have to reach the worktree for that to hold, and all three failed the same way —
+untracked, therefore never checked out:
+
+- **`.gitignore` bug, and the recurrence generator for this repo.** Line 50 was a bare
+  `.serena/`, so `.serena/project.yml` was never tracked and **every worktree made Serena
+  autogenerate one** — and autogeneration picks languages by file count, reintroducing
+  `json`/`markdown`/`yaml` every single time. Now `.serena/*` plus `!.serena/project.yml`; a
+  negation cannot re-include a file inside an already-excluded directory, which is why the bare
+  form silently defeated the internal `.serena/.gitignore` that only ever excluded `cache` and
+  `project.local.yml`.
+- **This repo's own list was polluted too** — `json, markdown, python, typescript, yaml, bash,
+  powershell, html`. Trimmed to `python, typescript, bash, powershell` (`.py` 42, `.ts` 24,
+  `.sh` 10, `.ps1` 8), `project_name` removed, and the file is now tracked so worktrees inherit
+  it. The re-save mechanism that keeps undoing such trims is documented inline.
+- **`graphify-out/` is gitignored and both hooks deliberately skip linked worktrees**, so a
+  worktree never has a graph. Link it to the main checkout rather than building a second copy
+  nothing maintains — same pattern as `.env` and `launch.json`: untracked operator artifacts
+  resolve to the main checkout. **Verified it cannot eat the real graph**: with a canary in the
+  target, `Remove-Item -Recurse -Force <worktree>` left it intact — the junction is not
+  followed. Not tested against `git worktree remove` itself, so drop the link first if you want
+  belt and braces.
+
+Also carried the `Edit` correction into the fallback wording: a subagent barred from Serena *by
+rule* that also reads `Edit` as off-limits has no way to change a file at all, and in a repo
+that fences shell edits to source that is a hard stop rather than a slowdown.
+
 ### Added — graphify's approval model and its worktree behaviour, both previously undocumented (2026-09-01)
 
 Prompted by two questions the guide could not answer: why `enabledMcpjsonServers` never lists
