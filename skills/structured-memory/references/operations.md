@@ -14,9 +14,11 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
 
 0a. **An empty-looking graph is a CONFIG bug until proven otherwise — never "rebuild" it.**
    Before concluding data is lost, confirm *which graph you are actually attached to*. A
-   same-named server in `~/.claude.json` (**user scope**) silently overrides a repo's
+   same-named **`omnigraph`** in `~/.claude.json` (**user scope**) silently overrides a repo's
    `.mcp.json`, and nothing reports it: the bridge connects, answers, and is simply pointed
-   somewhere else. On 2026-07-17 a user-scope `omnigraph` pinned to `graph_id: memory` hid
+   somewhere else. (Measured for omnigraph, and true of omnigraph — it is *not* a general law
+   of same-named servers. A duplicate `serena` produces two running processes and no winner;
+   see `skills/mcp-servers-setup/SKILL.md` → Serena → *Wiring*.) On 2026-07-17 a user-scope `omnigraph` pinned to `graph_id: memory` hid
    every repo's own pin. An agent saw `memory`'s contents — *every table rowCount 0 except
    2 `Preference`s* — concluded `basic-analysis` had been wiped, and started rebuilding it.
    `basic-analysis` was intact the whole time (135 nodes / 235 edges on both servers); the

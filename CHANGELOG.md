@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — graphify's approval model and its worktree behaviour, both previously undocumented (2026-09-01)
+
+Prompted by two questions the guide could not answer: why `enabledMcpjsonServers` never lists
+graphify, and whether graphify is safe across worktrees.
+
+- **`enabledMcpjsonServers` never lists graphify by design, not omission.** That array approves
+  *project-scoped* servers from a repo's `.mcp.json`; user-scope servers need no approval
+  because you configured them yourself. Graphify is user-scope only, so it is in no `.mcp.json`
+  and there is nothing to approve — which is why `check-graphify-scope.*` treats a graphify
+  entry in a repo's `settings.local.json` as a **defect** and removes it under `--fix`, checked
+  independently of the server entry because an approval outlives what it approved.
+- **Worktrees: graphify is a main-checkout tool and fails quietly outside one.**
+  `graphify-out/` is gitignored, so — the same shape as `.env` in the Serena worktree rules — a
+  linked worktree never has one. Launched *in* a worktree, the cwd-relative stdio server looks
+  for a `graphify-out/graph.json` that has never existed there. Launched in the main checkout
+  while an agent works in a worktree, it inherits its launch directory once and keeps answering
+  from the main checkout's graph — a different branch's code, answered confidently. Neither
+  case errors.
+- **But there is no rebuild spillover**, which was the other half of the question. Both
+  installed hooks refuse to run in a linked worktree: `post-commit` and `post-checkout` each
+  compare `git rev-parse --git-dir` with `--git-common-dir` and `exit 0` when they differ, so N
+  worktrees never produce N rebuilds or N competing graphs; `post-checkout` also exits when
+  `graphify-out/` is absent, which in a worktree it always is. Read from the installed hooks.
+- Rule recorded to match Serena's: **in a worktree, treat graphify as unavailable and say so.**
+  Explicitly do *not* hand-build a graph there — the hooks will not maintain it, so it goes
+  stale silently.
+
+### Fixed — the last generally-phrased restatement of the omnigraph precedence trap (2026-09-01)
+
+`skills/structured-memory/references/operations.md` stated it of "a same-named server". Scoped
+to `omnigraph` with a pointer to the serena counter-measurement. Audited the other four
+restatements while there: `README.md`, `.mcp.json` and `AGENTS.md` already name omnigraph or
+sit inside omnigraph-only passages, and `SYNC-MANUAL.md` was already explicit — so this was the
+only one left that read as a general law.
+
 ### Changed — Serena guide re-measured against 1.7.0; three claims were wrong (2026-09-01)
 
 Measured on serena-agent 1.7.0, Windows 11, in `gen-analysis`. Three of these **correct**

@@ -349,6 +349,36 @@ per-repo/project-scoped (pinned by `OMNIGRAPH_GRAPH_ID`) because each repo is a 
 on a shared server. Graphify is a local static file selected by cwd, so it needs no per-repo
 pin and belongs in user scope.
 
+**`enabledMcpjsonServers` never lists graphify — by design, not by omission.** That array
+approves *project-scoped* servers declared in a repo's `.mcp.json`; user-scope servers need no
+approval because you configured them yourself. Graphify is user-scope only, so it appears in no
+`.mcp.json` and there is nothing to approve. A graphify entry in a repo's
+`.claude/settings.local.json` is therefore a **defect**, not configuration —
+`scripts/{linux,windows}/check-graphify-scope.*` flags it and `--fix` removes it, deliberately
+checking for it independently of the server entry, because an approval outlives the server it
+approved.
+
+**Worktrees: graphify is a main-checkout tool, and outside one it fails quietly.**
+`graphify-out/` is gitignored, so — exactly like `.env` in the Serena worktree rules — a linked
+worktree never has one. Two ways that bites, neither of which errors:
+
+- **Session launched *in* the worktree.** `graphify.serve` is stdio and cwd-relative, so it
+  looks for `<worktree>/graphify-out/graph.json`, which has never existed there.
+- **Session launched in the main checkout while an agent works in a worktree.** A stdio server
+  inherits its launch directory *once*, at start, so it keeps answering from the main
+  checkout's graph — built from a different branch's code. Confident answers about the wrong
+  tree.
+
+**There is no rebuild spillover, though.** Both installed hooks refuse to run in a linked
+worktree: `post-commit` and `post-checkout` each compare `git rev-parse --git-dir` against
+`--git-common-dir` and `exit 0` when they differ, so N worktrees never produce N rebuilds or N
+competing graphs. `post-checkout` also exits when `graphify-out/` is absent, which is always
+true in a worktree. Confirmed by reading the installed hooks, 2026-09-01.
+
+So the rule matches Serena's: **in a worktree, treat graphify as unavailable and say so** — the
+escape hatch that is not silent. Do **not** hand-build a graph inside a worktree to work around
+it; the hooks will not maintain it, so it goes stale with nothing to tell you.
+
 Only the graph **file** is per-repo. Build it (no LLM/API key needed) and keep it fresh:
 ```bash
 uv run --with graphifyy[mcp] graphify update .   # workstation; or init-graphify-projects.*
