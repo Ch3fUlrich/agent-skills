@@ -39,15 +39,60 @@ the ground truth for what exists and how it works. Memory details:
 | `mcp_serena_get_symbols_overview` | Module structure | 95%+ vs full file read |
 | `mcp_serena_find_declaration` | Find where symbol is defined | 90%+ vs file read |
 
-**Usage**: Always activate the project first, then use symbolic tools:
+#### Wiring — user scope only. Serena is graphify-shaped, not omnigraph-shaped
+
+**Define Serena once, in user scope, and never give it a per-repo project-scope entry.**
+It is selected by **path** at call time (`activate_project(<absolute path>)`), and its
+per-repo configuration is `.serena/project.yml`, which is **tracked in the repo**. A
+project-scope `.mcp.json` entry therefore pins nothing the tracked file does not already
+say — it only adds a second definition.
+
+**Contrast with omnigraph — do not apply one's rule to the other.** Omnigraph *is*
+per-repo/project-scoped (pinned by `OMNIGRAPH_GRAPH_ID`) because each repo is a distinct
+graph on a shared server. Serena, like graphify, is selected at runtime and needs no
+per-repo pin.
+
+**A duplicate definition does not resolve to one winner — both run.** Measured in
+`gen-analysis`, 2026-09-01: **five** Serena servers alive, one carrying `--context
+claude-code` (the user-scope entry) and four without it (the project-scope entry, one per
+open session). The session's `mcp__serena__*` calls landed on a *project-scope* process:
+
+```
+Active context: desktop-app          ← not claude-code
+Available projects: gen-analysis     ← one; the real home registers eleven
+```
+
+Running in `desktop-app` context re-adds the tools the `claude-code` context exists to
+strip, so their schemas are paid for twice — and the project roster is wrong besides.
+
+> **Every path in an MCP `env` block must be absolute.** Claude Code expands `${VAR}` in MCP
+> env values — the same `.mcp.json` relies on that for `${OMNIGRAPH_TOKEN}` — but it does
+> **not** expand a leading `~`. So `"SERENA_HOME": "~/.serena"` is a *relative directory
+> name*, and Serena builds a complete second home at `./~/.serena/` inside the working tree:
+> its own `serena_config.yml` (so the global `excluded_tools` never applies and
+> `execute_shell_command` / `read_file` / `list_dir` / `search_for_pattern` are re-exposed),
+> its own `logs/` — where the real diagnostics go instead of `~/.serena/logs/` — and its own
+> `language_servers/`, **237 MB** of partial re-download beside the 1,023 MB real home. It
+> stayed invisible to `git status` only because that repo's `.gitignore` happened to carry
+> `~*` for editor backups. **There is no error.** Use an absolute path, or omit the variable
+> and let the tool use its own default. (Measured 2026-08-31; it took Serena down completely.)
+
+**Usage**: activate by absolute path, then use symbolic tools:
 ```
 mcp_serena_activate_project(project="C:/Users/<you>/Documents/Code/agent-skills")  # absolute
 mcp_serena_find_symbol(name_path_pattern="function_name")
 ```
 
-**Project isolation & settings**: Automatic via `.serena/project.yml` per repo. If language
-detection fails, list **only the languages the repo actually contains** —
-e.g. `languages: ["python", "bash", "yaml", "json"]`.
+> **"Activation succeeded" is not evidence that Serena works.** `activate_project` returns
+> success and lists every declared language as an active language server **even when seven of
+> them are dead**. You find out at the first symbol call, which errors with `The language
+> server manager is not initialized` — naming neither the language nor the cause. Run the
+> health-check below instead of trusting activation.
+
+#### Languages — declare only what has a call graph
+
+**Project isolation & settings**: automatic via `.serena/project.yml` per repo. When you set
+the language list, the bar is **not** "does the server start" — they all start.
 
 > **Never list a language whose server is not in the image — `markdown` above all.**
 > A missing server does not degrade to "no symbols for that language": its `initialize`
@@ -57,9 +102,44 @@ e.g. `languages: ["python", "bash", "yaml", "json"]`.
 > serena image, and markdown has no call graph worth an LSP anyway — headings are a grep.
 > This took Invest's Serena down completely until 2026-07-20.
 >
-> Proven working in this image: `bash, json, python, rust, toml, yaml`. After editing
-> `project.yml`, **restart `serena-mcp`** — it holds the activated project in memory and
-> will not re-read the file on its own.
+> After editing `project.yml`, **restart Serena** — it holds the activated project in memory
+> and will not re-read the file on its own.
+
+**The rule: declare only programming languages the repo actually contains.** `json`, `yaml`,
+`toml` and `markdown` are never candidates, however many matching files there are. A file
+count tells you a language is worth *testing*; it never tells you it belongs.
+
+All six of `bash, json, python, rust, toml, yaml` start cleanly, which is exactly why
+"proven working" was the wrong bar. Measured with `serena project health-check`, adding one
+set at a time against the real (absolute) home, 2026-09-01:
+
+| Languages declared | Symbol the check selected | `find_referencing_symbols` |
+|---|---|---|
+| `python`, `rust` | `_start_lifecycle_maintenance` — Function, 1 match | **works** — 1 reference |
+| `+ json` | `$comment` — from `.mcp.json` | **fails** |
+| `+ toml` | `build-system` — from `pyproject.toml` | **fails** |
+| `+ yaml` | `name` — String, **13 matches** | **fails** |
+
+Every data-format server floods the symbol namespace with configuration keys, and none
+implements `textDocument/references`, so reference lookups break on whatever they surface.
+Startup went **5 s → 16 s** with all six declared. Serena's own config agrees — from the
+`ls_priorities` comment in `serena_config.yml`: `0` = *"experimental or secondary language
+servers, which are never auto-detected … also applies to non-programming languages like
+`json`"*.
+
+#### Verify with `health-check` — the failure is invisible without it
+
+```bash
+SERENA_HOME=/absolute/path/to/.serena uvx --from serena-agent==1.7.0 serena project health-check .
+```
+
+It starts every declared language server, picks a symbol, and exercises `find_symbol` and
+`find_referencing_symbols`. Require **both** `Health check completed successfully` **and** a
+`FindReferencingSymbolsTool found N references` line — a `failed for symbol` warning sitting
+above a "successful" completion is the data-format problem above.
+
+- **On Windows it ends in a `UnicodeEncodeError`** printing `✅` under cp1252. Exit code is
+  still `0` and the check passed; it is cosmetic, but it reads as a crash.
 
 **Worktrees and parallel agents — three rules, all non-negotiable.**
 
@@ -69,8 +149,24 @@ e.g. `languages: ["python", "bash", "yaml", "json"]`.
 > match. `.serena/project.yml` is tracked, so every linked worktree checks out a copy carrying
 > the *same* `project_name` — the second worktree turns by-name activation into a hard error
 > **for every agent at once**, the one in the main checkout included. An absolute path cannot
-> equal a project name, so it never reaches that branch. Measured 2026-08-31: five
-> `basic-analysis` worktrees, five registrations all named `basic-analysis`.
+> equal a project name, so it never reaches that branch. Confirmed in
+> `serena/config/serena_config.py:928-945`. Measured 2026-08-31: five `basic-analysis`
+> worktrees, five registrations all named `basic-analysis`.
+>
+> **1b. Better still, omit `project_name` from the tracked `.serena/project.yml`.** This is a
+> *configuration-level* fix, and it is stronger than the discipline rule because it holds
+> however an agent activates. `serena_config.py:516-517` fills a missing key from the
+> **folder name**, in memory, at load: `if "project_name" not in yaml_data: yaml_data
+> ["project_name"] = project_folder_name`. The only write-back of `project_name` is
+> `_migrate_out_of_project_config_file` (`serena_config.py:907-912`), which operates on a
+> legacy *out-of-project* config file, not on `.serena/project.yml` — so nothing persists the
+> derived name back into the tracked file. Every linked worktree then self-names by its own
+> directory, and two worktrees can never present the same name.
+>
+> > **Caveat — verified by reading 1.7.0 source, not by running a second worktree.** Treat it
+> > as an addition to the absolute-path rule, never a replacement, until someone tests it
+> > live. `~/.serena/serena_config.yml` on this machine still registers five `basic-analysis`
+> > worktrees all named `basic-analysis`, so that repo is the obvious place to test it.
 >
 > **2. One Serena = one session = one worktree.** Serena is a *single stdio process per Claude
 > Code session* holding exactly one `_active_project`, and `_activate_project` (`serena/agent.py`)
@@ -83,6 +179,12 @@ e.g. `languages: ["python", "bash", "yaml", "json"]`.
 > It falls back to `Glob`/`Grep`/`Read` and says so. Parallel worktree work that genuinely needs
 > symbolic navigation needs **separate sessions** — one `claude` process per worktree, each with
 > its own Serena (`skills/herdr-orchestration/SKILL.md` panes do this).
+>
+> **Know the price: N sessions = N Serena processes, each holding its own language servers.**
+> Five were alive during the 2026-09-01 measurement, and a duplicate server definition (see
+> *Wiring* above) doubles the count for free. This is the real cost of parallel branch work,
+> and it is why the answer to "can my subagents each have their own Serena?" is "only by
+> paying for another process each".
 >
 > **3. A worktree holds tracked files only.** `.env`, `.venv/`, build caches and every other
 > gitignored operator file are absent *by construction* — `git worktree add` materialises what

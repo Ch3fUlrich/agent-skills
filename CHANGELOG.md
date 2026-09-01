@@ -5,6 +5,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed — Serena guide re-measured against 1.7.0; three claims were wrong (2026-09-01)
+
+Measured on serena-agent 1.7.0, Windows 11, in `gen-analysis`. Three of these **correct**
+what the guide previously said rather than adding to it.
+
+- **NEW — an MCP `env` value does not tilde-expand.** Claude Code expands `${VAR}` in MCP env
+  blocks but **not** a leading `~`, so `"SERENA_HOME": "~/.serena"` becomes a *relative
+  directory name* and Serena builds a whole second home at `./~/.serena/` in the working tree:
+  its own `serena_config.yml` (global `excluded_tools` never applies, so
+  `execute_shell_command` / `read_file` / `list_dir` / `search_for_pattern` come back), its own
+  `logs/` where the real diagnostics went, and 237 MB of re-downloaded language servers beside
+  the 1,023 MB real home. No error at any point; it hid from `git status` only because that
+  repo's `.gitignore` carried `~*`. **Rule: every path in an MCP `env` block is absolute, or
+  omitted.**
+- **NEW — Serena is graphify-shaped, not omnigraph-shaped: user scope only.** It is selected by
+  path at call time and its per-repo config is the *tracked* `.serena/project.yml`, so a
+  project-scope entry pins nothing and only adds a second definition. Stated in the same terms
+  as the existing graphify rule.
+- **CORRECTION — "user scope silently wins" is not general.** `CLAUDE.md` stated it of any
+  same-named server; it was only ever measured for omnigraph. For serena a duplicate produced
+  **no winner**: both ran as five processes (one `--context claude-code`, four without), and
+  the session's calls landed on a *project-scope* one reporting `Active context: desktop-app`
+  and a one-project roster against eleven in the real home. The claim is now scoped to
+  omnigraph with the serena counter-measurement recorded, because stating it generally is
+  exactly what made a duplicate serena entry look harmless.
+- **REVISION — "proven working" was the wrong bar for the language list.** All of `bash, json,
+  python, rust, toml, yaml` start; that was never the question. Adding one set at a time,
+  `python`+`rust` gives a working `find_referencing_symbols`, and each of `json` / `toml` /
+  `yaml` breaks it by flooding the symbol namespace with config keys (`$comment`,
+  `build-system`, `name`×13) that no data-format server backs with
+  `textDocument/references`. Startup went 5 s → 16 s with all six. **New rule: only programming
+  languages the repo actually contains** — file count says a language is worth *testing*, never
+  that it belongs. Serena's own `ls_priorities` comment agrees.
+- **NEW — `serena project health-check` is the verification, and nothing else is.**
+  `activate_project` returns success and lists every declared language as active *even when
+  seven are dead*; the first symbol call is where you learn, via a message naming neither
+  language nor cause. Require both `Health check completed successfully` and
+  `FindReferencingSymbolsTool found N references`. The Windows `UnicodeEncodeError` on the
+  final check-mark is cosmetic — exit code is still 0.
+- **ADDED to *Worktrees* — omitting `project_name` prevents the collision structurally.**
+  `serena_config.py:516-517` fills a missing key from the folder name at load, and the only
+  write-back path (`:907-912`) touches a legacy out-of-project file, never
+  `.serena/project.yml` — so each worktree self-names by its directory. Carried with its
+  caveat: read from source, **not** yet tested live, so it is an addition to the absolute-path
+  rule and not a replacement. Also records the real price of parallel work: **N sessions = N
+  Serena processes**, each holding its own language servers, doubled by a duplicate definition.
+- **`starters/mcp-servers/.serena/project.yml`** — `languages` cut from
+  `["python","bash","yaml","json"]` to `["python"]`, with the health-check recipe inline; and
+  the absence of `project_name` is now documented as deliberate so nobody adds one.
+
+Unchanged deliberately: the warning that a failed `initialize` kills the language server
+*manager* rather than one language (re-confirmed), and the Serena-memory-tools-disabled
+guidance.
+
 ### Documented — how to extract repository / project names, and what gates it (2026-08-31)
 
 The names now live only behind the token — `cluster.yaml` is gitignored and purged — so the

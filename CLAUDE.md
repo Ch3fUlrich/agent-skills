@@ -4,7 +4,7 @@
 This file is *only* the Claude-specific delta. Start at the router:
 `skills/repository-index/SKILL.md`.
 
-## MCP config precedence — the trap
+## MCP config precedence — the trap (omnigraph), and what it is *not* (serena)
 
 ```mermaid
 flowchart LR
@@ -13,10 +13,23 @@ flowchart LR
     B --> G[("whichever graph<br/>the winner pinned")]
 ```
 
-A same-named user-scope server **silently overrides** this repo's `.mcp.json`. Nothing
-errors — the bridge answers, just about the wrong graph. On 2026-07-17 one pinned to
-`graph_id: memory` hid every repo's graph; an agent read `memory`'s 2 Preferences, concluded
-`basic-analysis` (135 nodes, intact) was **wiped**, and started rebuilding it.
+**Measured for `omnigraph`, and stated only for `omnigraph`.** A same-named user-scope
+omnigraph server silently overrides this repo's `.mcp.json`. Nothing errors — the bridge
+answers, just about the wrong graph. On 2026-07-17 one pinned to `graph_id: memory` hid every
+repo's graph; an agent read `memory`'s 2 Preferences, concluded `basic-analysis` (135 nodes,
+intact) was **wiped**, and started rebuilding it.
+
+> **Do not generalise this — it does not hold for `serena`.** This claim used to be written as
+> a general rule about any same-named server, and that made a duplicate serena entry look
+> harmless. Measured in `gen-analysis` on 2026-09-01, a duplicate serena definition produced
+> **no winner at all**: both ran, as five separate processes — one carrying `--context
+> claude-code` (user scope) and four without it (project scope, one per open session) — and the
+> session's `mcp__serena__*` calls landed on a **project-scope** one, reporting `Active context:
+> desktop-app` and a one-project roster where the real home registers eleven. For a stdio
+> server a duplicate is a duplicate *process*, not a shadowed definition, and which one answers
+> is not something to rely on. The safe rule is identical either way: **never define the same
+> server in both scopes.** Serena belongs in user scope only, for the same reason graphify does
+> — `skills/mcp-servers-setup/SKILL.md` → Serena → *Wiring*.
 
 ```bash
 python -c "import json,pathlib;print(sorted((json.loads((pathlib.Path.home()/'.claude.json').read_text()).get('mcpServers') or {})))"
