@@ -478,12 +478,31 @@ you build — **not** a web-search tool. Exposes 24 tools (`browser_navigate`,
 `browser_console_messages`, `browser_network_requests`, `browser_fill_form`, …);
 screenshots return inline in the tool response, so no output volume is needed.
 
-#### Wiring — ONE user-scope Docker entry, serves every repo
+#### Wiring — ONE user-scope entry, serves every repo. Transport differs per host.
 
-There is **no node/npx on the server** (`coding.vm`), so the usual
-`npx @playwright/mcp` transport can't run. Use Microsoft's official image over
-Docker instead, defined **once in user scope** (like graphify) so it works from any
-repo Claude Code launches in — no per-repo `.mcp.json` entry, no approval step:
+Defined **once in user scope** (like graphify) so it works from any repo Claude Code
+launches in — no per-repo `.mcp.json` entry, no approval step. Which transport
+depends on whether the host has node:
+
+**Workstation (node present) — a global install, never `npx @latest`.**
+
+```bash
+npm i -g @playwright/mcp
+claude mcp add -s user playwright -- \
+  node "$(npm root -g)/@playwright/mcp/cli.js"
+```
+
+> **Never `npx @playwright/mcp@latest`.** The `@latest` tag forces a registry
+> resolve on **every spawn**, and every Claude Code session spawns its own copy.
+> Measured 2026-09-04: `npx @latest` **3521 ms** to first MCP response vs **392 ms**
+> for the global install — **9× slower**, and npx additionally serializes on the
+> shared npm cache, so the cost compounds with concurrency. That is what pushed
+> `context7` past the 30 s connect deadline; see
+> [`unattended-orchestration`](../unattended-orchestration/SKILL.md) for why spawn
+> concurrency, not CPU, is the variable that matters. Update deliberately with
+> `npm i -g @playwright/mcp@latest`.
+
+**Server (`coding.vm`, no node/npx) — Microsoft's official image over Docker.**
 
 ```bash
 docker pull mcr.microsoft.com/playwright/mcp:latest
@@ -507,6 +526,35 @@ claude mcp list                       # → playwright … ✔ Connected
 
 > **Restart to load it.** MCP servers initialize only at session start, so a running
 > session won't see a newly-added `playwright` until it restarts.
+
+> **The tool prefix follows the wiring, and briefs depend on it.** A user-scope
+> server is `mcp__playwright__*`; the *same* server installed as a plugin is
+> `mcp__plugin_playwright_playwright__*`. Searching the wrong one finds nothing and
+> reads as "the server is down". Anything that pre-allows tools by name — an
+> `--allowedTools` list, an unattended run's config — must match the wiring actually
+> in force. Check with `claude mcp list`, never from memory.
+
+### Context7 — Library Documentation
+
+Up-to-date docs for any library, framework, SDK or CLI. Prefer it over web search,
+and over your own recall — training data goes stale.
+
+#### Wiring — global install, for the same reason as Playwright
+
+```bash
+npm i -g @upstash/context7-mcp
+claude mcp add -s user context7 -- \
+  node "$(npm root -g)/@upstash/context7-mcp/dist/index.js" --api-key "$CONTEXT7_API_KEY"
+```
+
+Measured 2026-09-04, same cached code, two launch paths: `npx -y` **3704 ms** vs
+`node` on the global install **1316 ms**. Under 20 concurrent spawns — an ordinary
+morning with a dozen sessions open — the npx form reached **34.4 s and exceeded the
+30 s connect timeout**, while the global install stayed at **3.7 s**.
+
+> **The API key sits in plain `args`**, visible to `claude mcp list` and any process
+> listing. It is not in a tracked file, but treat it as exposed: rotate it if it has
+> ever been printed, and never paste it into a repo config.
 
 ## Infrastructure
 
