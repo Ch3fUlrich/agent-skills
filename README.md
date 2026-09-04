@@ -72,6 +72,7 @@ licence, sync date) for borrowed skills.
 | [`no-mistakes`](skills/no-mistakes/SKILL.md) | Kun Chen | MIT | Local pre-push validation proxy loop. |
 | [`babysit-prs`](skills/babysit-prs/SKILL.md) | Phil Haack | MIT | Async state tracking for CI runs and retry loops. |
 | [`herdr-orchestration`](skills/herdr-orchestration/SKILL.md) | Internal | — | Driving Herdr's socket API. **Only** when work must outlive the session, a human supervises, a non-Claude agent is needed, or you wait on a long-lived process — see its §1. |
+| [`unattended-orchestration`](skills/unattended-orchestration/SKILL.md) | Internal | — | Overnight and multi-hour runs with **nobody watching**: headless sessions in isolated git worktrees, parallel lanes, automatic recovery from usage limits and API outages, guard-gated auto-merge. Config-driven — copy [`handoff.config.example.json`](skills/unattended-orchestration/handoff.config.example.json) and edit. |
 
 Orchestration policy is Markdown; every threshold, weight, model tier, and matrix lives in
 `skills/swarm-orchestration/custom_orchestration/agent_orchestration.config.yaml`. If a number

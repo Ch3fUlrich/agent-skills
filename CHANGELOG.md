@@ -5,6 +5,66 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — `unattended-orchestration`: overnight runs, generalised out of `basic-analysis` (2026-09-04)
+
+`basic-analysis/scripts/management/run_handoff_sessions.ps1` ran wave-3 overnight — headless
+`claude --bg` sessions, a git worktree each, parallel lanes, automatic recovery across usage
+limits and API outages, guard-tested and auto-merged. The orchestration idea was cheap; what was
+expensive was the several nights of measured failures encoded in it (a variadic `--allowedTools`
+swallowing the prompt so the session started with *no task*; an unapproved fresh worktree that a
+background session can never trust its way out of; an expired OAuth session that must stop the
+run instead of being retried 40 times; a `$script:` assignment inside a mutex scriptblock that
+reported every successful merge as a conflict). All of it was hardcoded to one repo's session
+table, venv, pytest node ids and branch name.
+
+Adopted as [`skills/unattended-orchestration/`](skills/unattended-orchestration/SKILL.md), split
+so the knowledge is testable rather than trapped:
+
+- **`HandoffCore.psm1`** — pure functions only (failure classification, config validation,
+  template expansion, state I/O, guard-command construction). The recovery rules were previously
+  reachable only by actually hitting a usage limit at 03:00; they are now assertions.
+- **`run_handoff_sessions.ps1`** — only what touches git, `claude` or the clock.
+- **`handoff.config.example.json`** — every repo-specific fact, annotated. Guards are opt-in and
+  take *any* command, because the hardcoded pytest invocation was exactly the unreusable part.
+
+**Two suites, and the smoke suite is not optional.** Both bugs found on the first real invocation
+lived in the driver and were invisible to unit tests — and both were the same PowerShell trap:
+the output stream unrolls one array level, so `[["E","A"]]` collapsed to `["E","A"]` and every
+*sequential* lane silently ran in *parallel*, which is the precise contention lanes exist to
+prevent. Once via `ForEach-Object` over nested arrays, once via an `if`/`else` **expression**
+assigned to a variable. A third bug came from PowerShell's case-insensitive variables: a local
+`$followUp` *is* the `[string]$FollowUp` parameter, so assigning a bool to it produced the string
+`"False"`, which then failed to bind. Rationale: [ADR 0006](docs/decisions/0006-unattended-session-orchestration.md).
+
+### Fixed — MCP connect timeouts were spawn concurrency, not CPU; `npx` was the cost (2026-09-04)
+
+`context7` began failing with `CONNECT_TIMEOUT after 30000ms`, on a machine sitting at 99% CPU.
+The CPU was a red herring, and measuring it said so: deliberately saturating 24 of 32 cores moved
+the spawn from 5.0 s to 7.1 s (**+2.1 s**), while going from 1 to 20 concurrent spawns moved it
+from 5.0 s to **34.4 s** (+29.4 s). Concurrency is ~14× more damaging. RAM (68 GB free), disk
+(99.75% idle, queue 0) and network (registry 320–512 ms) were all ruled out by measurement.
+
+The real cause is that **every open Claude Code session holds its own resident copy of every
+stdio MCP server**, each a 3–4 process chain; sessions left open ~23 h had accumulated 784
+processes and 333k handles. `context7` failed first because it was the only server paying a full
+`npx -y` registry resolve on every spawn.
+
+Both npx-launched servers moved to global installs driven by `node` — same code, one launch path
+removed:
+
+| Server | before (`npx`) | after (`node` global) |
+|---|---|---|
+| `context7` | 3704 ms solo · 11.9 s @20 concurrent | **1316 ms** · **3.7 s** |
+| `playwright` | 3521 ms | **392 ms** (9×) |
+
+Playwright additionally moved off the `claude-plugins-official` plugin (whose `.mcp.json` runs
+`npx @playwright/mcp@latest` and is overwritten on every plugin update) to a single user-scope
+entry. **This changes its tool prefix** from `mcp__plugin_playwright_playwright__*` to
+`mcp__playwright__*` — anything pre-allowing tools by name must follow. Docs corrected in
+[`mcp-servers-setup`](skills/mcp-servers-setup/SKILL.md) and
+[`repository-index`](skills/repository-index/SKILL.md), which had described a Docker wiring that
+was not what any host was actually running.
+
 ### Fixed — worktree agents keep Serena and Graphify; the rule that took them away was wrong (2026-09-01)
 
 An earlier entry today concluded that subagents in worktrees must fall back to `grep`. That
