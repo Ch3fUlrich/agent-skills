@@ -214,6 +214,193 @@ try {
         $c = Read-HandoffConfig $goodPath
         Assert-True ($null -eq (Build-HandoffGuardCommand $c @{})) "guards must be opt-in"
     }
+
+    Write-Host "`nSession vars and brief assembly"
+    It "derives worktree, branch and remote-control name from config" {
+        $c = Read-HandoffConfig $goodPath
+        $v = Get-HandoffSessionVars $c "A" $false
+        Assert-Equal "wave/alpha" $v["branch"]
+        Assert-Equal "alpha" $v["sessionName"]
+        Assert-Equal "handoff-A" $v["rcName"] "the remote-control name is what an operator types to join"
+        Assert-True ($v["worktree"] -like "*-alpha") "worktree should end in the session name, got $($v['worktree'])"
+    }
+    It "marks a follow-up run with a distinct key and remote-control name" {
+        $c = Read-HandoffConfig $goodPath
+        $v = Get-HandoffSessionVars $c "A" $true
+        Assert-Equal "A-followup" $v["key"]
+        Assert-Equal "handoff-A-followup" $v["rcName"] "a follow-up must not collide with the night run"
+    }
+    It "wraps the session brief in briefTemplate and resolves every placeholder" {
+        $c = Read-HandoffConfig $goodPath
+        $c.briefTemplate = "PRE {{sessionName}} :: {{brief}} :: POST {{branch}}"
+        $v = Get-HandoffSessionVars $c "A" $false
+        $b = Build-HandoffBrief $c "A" $v
+        Assert-Equal "PRE alpha :: do A :: POST wave/alpha" $b
+    }
+    It "leaves no unexpanded placeholder in an assembled brief" {
+        # An unexpanded {{...}} reaching a session is a brief that reads fine and
+        # silently omits its own task.
+        $c = Read-HandoffConfig $goodPath
+        $c.sessions["A"]["brief"] = "work in {{worktree}} on {{branch}} as {{model}}"
+        $c.briefTemplate = "{{brief}} -- done note: {{doneNote}}"
+        $b = Build-HandoffBrief $c "A" (Get-HandoffSessionVars $c "A" $false)
+        if ($b -match '\{\{\w+\}\}') { throw "unexpanded placeholder in brief: $b" }
+    }
+
+    Write-Host "`nBuild-HandoffSubagentPolicy"
+    It "returns empty when the config declares no subagent policy" {
+        $c = Read-HandoffConfig $goodPath
+        Assert-Equal "" (Build-HandoffSubagentPolicy $c) "subagent policy must be opt-in"
+    }
+    It "states the concurrency cap and both model tiers" {
+        $c = Read-HandoffConfig $goodPath
+        $c.subagents = @{ maxConcurrent = 2; tiers = @{ mechanical = "sonnet"; judgement = "opus" } }
+        $p = Build-HandoffSubagentPolicy $c
+        Assert-True ($p -match "at most 2") "must state the cap, got: $p"
+        Assert-True ($p -match "sonnet") "must name the mechanical tier"
+        Assert-True ($p -match "opus") "must name the judgement tier"
+    }
+    It "is reachable from a brief as {{subagentPolicy}}" {
+        $c = Read-HandoffConfig $goodPath
+        $c.subagents = @{ maxConcurrent = 3; tiers = @{ mechanical = "sonnet"; judgement = "opus" } }
+        $c.briefTemplate = "{{brief}} || {{subagentPolicy}}"
+        $b = Build-HandoffBrief $c "A" (Get-HandoffSessionVars $c "A" $false)
+        Assert-True ($b -match "at most 3") "policy must reach the brief, got: $b"
+    }
+
+    Write-Host "`nExport-HandoffBriefs"
+    It "emits one markdown section per session, in lane order" {
+        $two = $good.Clone()
+        $two.sessions = @{ A = @{ name = "alpha"; model = "opus";   brief = "do A" }
+                           B = @{ name = "beta";  model = "sonnet"; brief = "do B" } }
+        $two.lanes = @(, @("B", "A"))
+        $p = Join-Path $tmp "export.json"; $two | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $md = Export-HandoffBriefs (Read-HandoffConfig $p)
+        $ib = $md.IndexOf("Session B"); $ia = $md.IndexOf("Session A")
+        if ($ib -lt 0 -or $ia -lt 0) { throw "both sessions must appear`n$md" }
+        if ($ib -gt $ia) { throw "lane order must be preserved (B before A)" }
+    }
+    It "carries the model, branch and attach command for each session" {
+        $c = Read-HandoffConfig $goodPath
+        $md = Export-HandoffBriefs $c
+        Assert-True ($md -match "opus") "model must be stated"
+        Assert-True ($md -match "wave/alpha") "branch must be stated"
+        Assert-True ($md -match "handoff-A") "remote-control name must be stated"
+    }
+    It "fences the brief so it can be copy-pasted whole" {
+        $c = Read-HandoffConfig $goodPath
+        $md = Export-HandoffBriefs $c
+        Assert-True ($md -match '(?s)```text\s*.*do A.*?```') "brief must sit in a fenced block`n$md"
+    }
+
+    # ----------------------------------------------------------------------
+    # Portability: everything below exists so the skill can be COPIED into an
+    # unknown repository and work there without editing the script.
+    # ----------------------------------------------------------------------
+    Write-Host "`nPortability — repo auto-detection"
+    It "does not require 'repo': it falls back to the detected root" {
+        $noRepo = $good.Clone(); $noRepo.Remove("repo")
+        $p = Join-Path $tmp "norepo.json"; $noRepo | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $c = Read-HandoffConfig $p -DefaultRepo $tmp
+        Assert-Equal $tmp $c.repo "an absent repo must resolve to the detected root"
+    }
+    It "still honours an explicit 'repo' over the detected root" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo "C:\somewhere\else"
+        Assert-Equal $tmp $c.repo "explicit config must win"
+    }
+    It "fails with an actionable message when neither is available" {
+        $noRepo = $good.Clone(); $noRepo.Remove("repo")
+        $p = Join-Path $tmp "norepo2.json"; $noRepo | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        Assert-Throws { Read-HandoffConfig $p } "repo"
+    }
+    It "detects this checkout's root from a path inside it" {
+        $root = Resolve-HandoffRepoRoot $PSScriptRoot
+        Assert-True ($root) "should find a git root from the test directory"
+        Assert-True (Test-Path (Join-Path $root ".git")) "detected root must contain .git, got $root"
+    }
+
+    Write-Host "`nPortability — launcher adapter"
+    It "defaults to a Claude Code adapter so an unedited config just works" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        Assert-Equal "claude" $c.launcher.command
+    }
+    It "puts the tool list BEFORE the prompt in the default start template" {
+        # The gotcha this encodes: --allowedTools is variadic and swallows a prompt
+        # placed after it, so the session starts with no task at all.
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $tpl = @($c.launcher.start) -join " "
+        $iTools = $tpl.IndexOf("{{tools}}"); $iPrompt = $tpl.IndexOf("{{prompt}}")
+        Assert-True ($iTools -ge 0 -and $iPrompt -ge 0) "template must use both markers: $tpl"
+        Assert-True ($iTools -lt $iPrompt) "{{tools}} must precede {{prompt}}, got: $tpl"
+    }
+    It "expands {{tools}} in place into the flag, the tools, and the permission mode" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $c.allowedTools = @("Read", "Edit"); $c.permissionMode = "auto"
+        $a = Build-HandoffLaunchArgs $c "start" @{ rcName = "rc1"; model = "opus"; prompt = "DO IT" }
+        $s = $a -join " "
+        Assert-True ($s -match "--allowedTools Read Edit") "tools must expand in place, got: $s"
+        Assert-True ($s -match "--permission-mode auto") "permission mode must follow the tools"
+        Assert-Equal "DO IT" $a[-1] "the prompt must be the LAST argument"
+    }
+    It "keeps a multi-word prompt as ONE argument, never split on spaces" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $a = Build-HandoffLaunchArgs $c "start" @{ rcName = "rc1"; model = "opus"; prompt = "a b c" }
+        Assert-Equal "a b c" $a[-1]
+        Assert-Equal 1 (@($a | Where-Object { $_ -eq "a b c" }).Count)
+    }
+    It "renders the resume action with the session id" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $a = Build-HandoffLaunchArgs $c "resume" @{ sessionId = "sid-9"; prompt = "carry on" }
+        Assert-True (($a -join " ") -match "sid-9") "resume must carry the session id"
+    }
+    It "lets a repository swap in a different agent entirely" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $c.launcher = @{ command = "my-agent"; start = @("run", "--name", "{{rcName}}", "{{prompt}}") }
+        $a = Build-HandoffLaunchArgs $c "start" @{ rcName = "z"; prompt = "task" }
+        Assert-Equal "my-agent" $c.launcher.command
+        Assert-Equal "run --name z task" ($a -join " ")
+    }
+    It "throws on an action the launcher does not define, naming it" {
+        $c = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $c.launcher = @{ command = "x"; start = @("go") }
+        Assert-Throws { Build-HandoffLaunchArgs $c "logs" @{} } "logs"
+    }
+
+    Write-Host "`nPortability — cross-platform primitives"
+    It "picks Junction on Windows and SymbolicLink elsewhere" {
+        $expected = if ($IsWindows -or $null -eq $IsWindows) { "Junction" } else { "SymbolicLink" }
+        Assert-Equal $expected (Get-HandoffLinkType)
+    }
+    It "scopes the mutex name per repository so two repos never block each other" {
+        $c1 = Read-HandoffConfig $goodPath -DefaultRepo $tmp
+        $other = $good.Clone(); $other.repo = "C:\other\repo-two"; $other.Remove("mutexName")
+        $p = Join-Path $tmp "other.json"; $other | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $c2 = Read-HandoffConfig $p -DefaultRepo $tmp
+        Assert-True ($c1.mutexName -ne $c2.mutexName) "distinct repos must get distinct mutex names"
+    }
+
+    Write-Host "`nPortability — scaffolding"
+    It "generates a config that Read-HandoffConfig accepts unedited" {
+        $dest = Join-Path $tmp "scaffold.json"
+        New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" | Out-Null
+        Assert-True (Test-Path $dest) "scaffold must write the file"
+        $c = Read-HandoffConfig $dest -DefaultRepo $tmp
+        Assert-True ($c.sessions.Keys.Count -ge 1) "scaffold must include a runnable example session"
+        Assert-Equal "main" $c.baseBranch
+    }
+    It "refuses to overwrite an existing config unless forced" {
+        $dest = Join-Path $tmp "scaffold2.json"
+        New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" | Out-Null
+        Assert-Throws { New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" } "exists"
+        New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" -Force | Out-Null
+    }
+    It "writes no absolute machine-specific path into the scaffold" {
+        # A scaffold carrying the generating machine's paths is not portable.
+        $dest = Join-Path $tmp "scaffold3.json"
+        New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" | Out-Null
+        $text = Get-Content $dest -Raw
+        Assert-True ($text -notmatch [regex]::Escape($tmp)) "scaffold must not hardcode the repo path; it is auto-detected"
+    }
 }
 finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
 

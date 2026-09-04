@@ -1,8 +1,11 @@
 {
   "$comment": [
-    "Annotated example for run_handoff_sessions.ps1. Copy to your repo as",
-    ".claude/handoff.config.json and edit. Validate before trusting it to a night:",
-    "  pwsh -File run_handoff_sessions.ps1 -Config .claude/handoff.config.json -Validate",
+    "Annotated example for run_handoff_sessions.ps1, showing EVERY field.",
+    "You almost certainly do not want to start from this file — run `-Init` in your",
+    "repo instead, which writes a minimal config with your git root and branch",
+    "already detected. Come here to look a field up.",
+    "  pwsh -File run_handoff_sessions.ps1 -Init",
+    "  pwsh -File run_handoff_sessions.ps1 -Validate",
     "",
     "This example is the basic-analysis wave-3 run the script was generalised from,",
     "so every field below has actually been used in anger. Fields marked OPTIONAL",
@@ -12,9 +15,46 @@
     "from `envFrom` at preflight and exported to the child sessions."
   ],
 
-  "repo": "C:\\Users\\you\\Code\\your-repo",
+  "$comment_repo": [
+    "OPTIONAL, and best omitted. The runner detects the git root, so leaving this",
+    "out keeps the committed config free of any machine-specific path. Set it only",
+    "to drive a repository other than the one you are standing in."
+  ],
   "baseBranch": "refactor",
   "branchPrefix": "wave3",
+
+  "$comment_launcher": [
+    "The session tool, as a SWAPPABLE ADAPTER. Defaults describe Claude Code, so an",
+    "unedited config just works; override only the keys you need — the block merges",
+    "key by key, so replacing `command` does not lose list/logs/stop.",
+    "",
+    "  {{tools}}  expands IN PLACE to: <allowedToolsFlag> <allowedTools...> <permissionModeFlag> <permissionMode>",
+    "  {{prompt}} is substituted as exactly ONE argument, never split or re-expanded",
+    "",
+    "ORDER IS LOAD-BEARING in `start`: --allowedTools is variadic and swallows",
+    "everything up to the next flag, so a prompt placed after it becomes another",
+    "'tool name' and the session starts with NO task. Keep {{tools}} before",
+    "{{prompt}}, and {{prompt}} last.",
+    "",
+    "A different agent needs only, e.g.:",
+    "  \"launcher\": { \"command\": \"my-agent\", \"start\": [\"run\",\"--name\",\"{{rcName}}\",\"{{prompt}}\"],",
+    "                 \"list\": [\"ps\",\"--json\"], \"logs\": [\"log\",\"{{id}}\"], \"stop\": [\"kill\",\"{{id}}\"],",
+    "                 \"idPattern\": \"started ([a-z0-9]+)\", \"workingState\": \"running\" }"
+  ],
+  "launcher": {
+    "command": "claude",
+    "start": ["--bg", "--remote-control", "{{rcName}}", "{{tools}}", "--model", "{{model}}", "{{prompt}}"],
+    "resume": ["--bg", "--resume", "{{sessionId}}", "{{tools}}", "{{prompt}}"],
+    "list": ["agents", "--json"],
+    "logs": ["logs", "{{id}}"],
+    "stop": ["stop", "{{id}}"],
+    "probe": ["-p", "{{prompt}}", "--model", "{{probeModel}}", "--output-format", "json"],
+    "allowedToolsFlag": "--allowedTools",
+    "permissionModeFlag": "--permission-mode",
+    "idPattern": "backgrounded[^\\r\\n]*?([0-9a-f]{8})",
+    "workingState": "working",
+    "probeModel": "sonnet"
+  },
 
   "$comment_worktrees": [
     "Worktrees land at <worktreeParent>/<worktreePrefix>-<session name>.",
@@ -49,6 +89,20 @@
   },
 
   "doneNote": "{{planDir}}/session-{{session}}-DONE.md",
+
+  "$comment_subagents": [
+    "OPT-IN. Rendered into every brief as {{subagentPolicy}}, so all sessions delegate",
+    "the same way and the policy is stated exactly once. Omit the block and briefs say",
+    "nothing about subagents — a session told to delegate with no cap and no tier",
+    "assignment delegates badly.",
+    "leafRule (default true) stops subagents spawning subagents; without it a wave fans",
+    "out geometrically and the budget is gone before the work is."
+  ],
+  "subagents": {
+    "maxConcurrent": 2,
+    "tiers": { "mechanical": "sonnet", "judgement": "opus" },
+    "leafRule": true
+  },
 
   "$comment_sessions": [
     "One entry per handoff. `model` is required. `name` defaults to the lowercased",

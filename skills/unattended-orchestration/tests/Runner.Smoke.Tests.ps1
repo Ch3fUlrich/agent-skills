@@ -95,6 +95,24 @@ try {
         Assert-NotMatch $childText "crashed at session" "child lanes must not crash"
         Assert-Match $childText "dry run: would create" "child lanes must reach the lane body"
     }
+    Write-Host "`n-EmitBriefs"
+    It "renders every session as markdown without launching anything" {
+        $p = New-Config @(, @("X", "Y")) "emit"
+        $out = (& pwsh -NoProfile -File $runner -Config $p -EmitBriefs 2>&1 | Out-String)
+        Assert-Match $out "### Session X"
+        Assert-Match $out "### Session Y"
+        Assert-Match $out "claude attach handoff-X" "each section must say how to join the session"
+        Assert-NotMatch $out "dry run: would create" "-EmitBriefs must not enter the run loop"
+        Assert-NotMatch $out "preflight" "-EmitBriefs must not require a live claude login"
+    }
+    It "writes to -OutFile when asked, and the file round-trips" {
+        $p = New-Config @(, @("X")) "emitfile"
+        $f = Join-Path $tmp "briefs.md"
+        (& pwsh -NoProfile -File $runner -Config $p -EmitBriefs -OutFile $f 2>&1) | Out-Null
+        if (-not (Test-Path $f)) { throw "no file written to $f" }
+        Assert-Match (Get-Content $f -Raw) "### Session X"
+    }
+
     It "-Sessions overrides the config into a single inline lane" {
         $p = New-Config @(@("X"), @("Y")) "override"
         $out = (& pwsh -NoProfile -File $runner -Config $p -DryRun -Sessions "X,Y" 2>&1 | Out-String)
