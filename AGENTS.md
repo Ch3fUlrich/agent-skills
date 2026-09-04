@@ -19,6 +19,7 @@ open. (`skills/SYNC.md` is the vendoring ledger, not a router.)
 | `homelab-access` | **before** any SSH / `DOCKER_HOST=ssh://` / firewall / NAS command |
 | `swarm-orchestration` | multi-file work (drives `pr-approval-agent`, `qa-swarm`, `review-triage`, `no-mistakes`, `babysit-prs`) |
 | `herdr-orchestration` | agent work that must **outlive the session**, be human-supervised, use a non-Claude agent, or wait on a long-running process |
+| `unattended-orchestration` | work runs for **hours or overnight with nobody watching** — headless sessions in worktrees, lanes, usage-limit recovery, guard-gated auto-merge |
 
 Two more places to look before you write anything:
 
