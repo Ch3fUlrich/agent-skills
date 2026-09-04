@@ -1,25 +1,32 @@
 <#
 .SYNOPSIS
-Run a set of Claude Code session handoffs unattended and overnight: headless
-background sessions in their own git worktrees, in parallel lanes, surviving the
-usage limit, API outages and early stops.
+Run a set of agent sessions unattended: background sessions in their own git
+worktrees, in parallel lanes, surviving usage limits, API outages and early stops.
 
 .DESCRIPTION
-Generalised from basic-analysis/scripts/management/run_handoff_sessions.ps1
-(2026-09-04). Everything repository-specific now lives in a JSON config; this
-script contains only the orchestration. See SKILL.md for the model and
-handoff.config.example.json for an annotated config.
+A GENERAL, PORTABLE runner. Copy this folder into any git repository, run -Init,
+edit the sessions, and go — nothing here is specific to the repository it came
+from, and the session tool itself is a swappable adapter (see `launcher` in the
+config), so it can drive agents other than Claude Code.
+
+  -Init        scaffold a config for the repo you are standing in
+  -Validate    check the config; report repo, branch, lanes, guards, launcher
+  -EmitBriefs  render every brief as copy-pasteable markdown, launch nothing
+  -DryRun      rehearse: preflight and lane dispatch, but no session is started
+  (no flag)    run it
+
+The repository is DETECTED (`git rev-parse --show-toplevel`), so a committed
+config carries no machine-specific path and works for everyone who clones it.
 
 For each session, in its lane:
   1. a worktree <worktreeParent>/<worktreePrefix>-<name> on branch
      <branchPrefix>/<name> is created from the CURRENT base branch (pruned
-     first, so a deleted directory is recreated), with any `linkDirs` junctioned
-     to the main checkout's copies;
-  2. the session starts as a BACKGROUND session (`claude --bg --remote-control
-     <name>`) with a self-contained brief on the model the config assigns, so it
-     is listed in the agents view and can be followed live — `claude attach <id>`
-     joins it, `claude logs <id>` prints its output. The runner polls
-     `claude agents --json` until the session leaves the "working" state, then
+     first, so a deleted directory is recreated), with any `linkDirs` linked to
+     the main checkout's copies (junction on Windows, symlink elsewhere);
+  2. the session is started through the launcher adapter's `start` action with a
+     self-contained brief on the model the config assigns, under a stable
+     remote-control name so it stays listed and joinable. The runner polls the
+     adapter's `list` action until the session leaves its working state, then
      reads its log: on a usage limit ("usage limit reached|<epoch>") it sleeps
      until that reset (else 30 min) and RESUMES the same session; on an API
      outage it waits 5 min and resumes; when the session stops without writing
@@ -27,8 +34,8 @@ For each session, in its lane:
      single turn running past -MaxSessionHours is stopped and resumed;
   3. the config's guard command runs in the worktree; if it passes and -NoMerge
      is not set, the branch is merged into the base branch (--no-ff, under a
-     global mutex so lanes never merge at once); a red guard or a merge conflict
-     stops THAT lane only.
+     cross-process lock so lanes never merge at once); a red guard or a merge
+     conflict stops THAT lane only.
 
 State lives in <stateDir>/state.json (one entry per session: status, session id,
 attempts, last error); a re-run skips sessions already merged and resumes ones
@@ -41,15 +48,19 @@ and runs -FollowUpSessions fresh, so one invocation covers a night and a morning
 Keep the machine awake (no sleep/hibernate); the runner cannot change power
 settings.
 
-Permissions: headless mode cannot answer prompts, so the config's `allowedTools`
-are pre-allowed. Repository hooks still run on every call — the hook, not the
-prompt, is the guard.
+Permissions: an unattended session cannot answer prompts, so the config's
+`allowedTools` are pre-allowed. Repository hooks still run on every call — the
+hook, not the prompt, is the guard.
+
+See SKILL.md for the model and adoption guide, and handoff.config.example.json
+for every field annotated.
 
 .EXAMPLE
-pwsh -File run_handoff_sessions.ps1 -Config .claude/handoff.config.json -Validate
-pwsh -File run_handoff_sessions.ps1 -Config .claude/handoff.config.json -DryRun
-pwsh -File run_handoff_sessions.ps1 -Config .claude/handoff.config.json -Sessions E
-pwsh -File run_handoff_sessions.ps1 -Config .claude/handoff.config.json -FollowUp "2026-09-05 09:45" -FollowUpSessions E
+pwsh -File run_handoff_sessions.ps1 -Init
+pwsh -File run_handoff_sessions.ps1 -Validate
+pwsh -File run_handoff_sessions.ps1 -EmitBriefs -OutFile briefs.md
+pwsh -File run_handoff_sessions.ps1 -DryRun
+pwsh -File run_handoff_sessions.ps1 -Sessions build
 #>
 param(
     [string]$Config = "",
@@ -59,6 +70,10 @@ param(
     [switch]$DryRun,
     [switch]$Fresh,
     [switch]$Validate,
+    [switch]$EmitBriefs,
+    [switch]$Init,
+    [switch]$Force,
+    [string]$OutFile = "",
     [string]$WaitUntil = "",
     [string]$FollowUp = "",
     [string[]]$FollowUpSessions = @(),
@@ -76,13 +91,38 @@ Import-Module (Join-Path $PSScriptRoot "HandoffCore.psm1") -Force -DisableNameCh
 # able to run with no arguments from a configured repo is what makes this
 # reusable rather than a script every repo re-parameterises by hand.
 # --------------------------------------------------------------------------
+$detectedRoot = Resolve-HandoffRepoRoot "."
+$configCandidates = @(".claude/handoff.config.json", "handoff.config.json", ".handoff.json")
+
+if ($Init) {
+    # Scaffold a runnable config for whatever repository this was copied into.
+    $target = if ($Config) { $Config } else { ".claude/handoff.config.json" }
+    $base = if ($detectedRoot) {
+        $b = (& git -C $detectedRoot rev-parse --abbrev-ref HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $b) { ([string]$b).Trim() } else { "main" }
+    } else { "main" }
+    $written = New-HandoffConfigScaffold -Path $target -RepoRoot $detectedRoot -BaseBranch $base -Force:$Force
+    Write-Host "wrote $written (base branch: $base)"
+    Write-Host "next: edit the sessions, then -Validate, then -EmitBriefs or -DryRun"
+    exit 0
+}
+
 if (-not $Config) {
-    foreach ($c in @(".claude/handoff.config.json", "handoff.config.json", ".handoff.json")) {
-        if (Test-Path $c) { $Config = $c; break }
+    foreach ($c in $configCandidates) { if (Test-Path $c) { $Config = $c; break } }
+    # Also look beside the repo root, so the runner works from a subdirectory.
+    if (-not $Config -and $detectedRoot) {
+        foreach ($c in $configCandidates) {
+            $p = Join-Path $detectedRoot $c
+            if (Test-Path $p) { $Config = $p; break }
+        }
     }
 }
-if (-not $Config) { throw "no config given and none found at .claude/handoff.config.json, handoff.config.json or .handoff.json" }
-$cfg = Read-HandoffConfig $Config
+if (-not $Config) {
+    throw "no config found ($($configCandidates -join ', ')). Create one with:  pwsh -File $PSCommandPath -Init"
+}
+# `repo` may be absent from the config on purpose; the detected root fills it in,
+# which is what lets a committed config be shared between machines.
+$cfg = Read-HandoffConfig $Config -DefaultRepo $detectedRoot
 
 # CLI overrides beat config; config beats the module defaults.
 if ($MaxContinues -gt 0) { $cfg.maxContinues = $MaxContinues }
@@ -101,14 +141,36 @@ function Log([string]$msg) {
     Add-Content -Path $runnerLog -Value $line -Encoding utf8
 }
 
-function With-Mutex([scriptblock]$body) {
-    $m = New-Object System.Threading.Mutex($false, $cfg.mutexName)
-    [void]$m.WaitOne()
-    try { & $body } finally { $m.ReleaseMutex(); $m.Dispose() }
+function Invoke-WithLock([scriptblock]$body) {
+    <#  Cross-process mutual exclusion, portably, RETURNING the body's value.
+
+        Named mutexes are a Windows facility: `System.Threading.Mutex` with a name
+        throws PlatformNotSupportedException on Linux and macOS, so a copied skill
+        would die on its first state write. Elsewhere an exclusive lock file gives
+        the same guarantee — two lanes never merge at once.
+
+        It returns the value rather than letting callers assign inside the
+        scriptblock, because a `$script:` assignment in there writes a DIFFERENT
+        variable from the function-scoped one read afterwards: that bug reported
+        every successful merge as a conflict and stopped its lane.  #>
+    $isWin = (Get-HandoffLinkType) -eq "Junction"
+    if ($isWin) {
+        $m = New-Object System.Threading.Mutex($false, $cfg.mutexName)
+        [void]$m.WaitOne()
+        try { return (& $body) } finally { $m.ReleaseMutex(); $m.Dispose() }
+    }
+    $lockFile = Join-Path $stateDir "runner.lock"
+    $fs = $null
+    for ($i = 0; $i -lt 600 -and -not $fs; $i++) {
+        try { $fs = [System.IO.File]::Open($lockFile, 'OpenOrCreate', 'ReadWrite', 'None') }
+        catch { Start-Sleep -Milliseconds 500 }
+    }
+    if (-not $fs) { throw "could not acquire the runner lock at $lockFile after 5 minutes" }
+    try { return (& $body) } finally { $fs.Dispose() }
 }
 
 function Update-State([string]$key, [hashtable]$fields) {
-    With-Mutex {
+    Invoke-WithLock {
         $state = Read-HandoffState $stateFile
         if (-not $state.ContainsKey($key)) { $state[$key] = @{} }
         foreach ($k in $fields.Keys) { $state[$key][$k] = $fields[$k] }
@@ -144,22 +206,6 @@ function Parse-Result([string]$path) {
 # profile, whose PSReadLine setup errors out on a redirected console.
 $shell = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
 
-function Get-SessionVars([string]$s, [hashtable]$info, [string]$wt, [string]$branch, [string]$key) {
-    $vars = @{
-        session = $s; key = $key; sessionName = $info.name; model = $info.model
-        worktree = $wt; branch = $branch; repo = $repo; baseBranch = $cfg.baseBranch
-        stateDir = $stateDir
-    }
-    # Free-form passthrough so a repo can hand its brief an interpreter path, a
-    # plan directory, anything — without this script knowing what those are.
-    if ($cfg.ContainsKey("vars") -and $cfg.vars) {
-        foreach ($k in $cfg.vars.Keys) { $vars[$k] = Expand-HandoffTemplate ([string]$cfg.vars[$k]) $vars }
-    }
-    $vars["planDir"] = if ($vars.ContainsKey("planDir")) { $vars["planDir"] } else { "" }
-    $vars["doneNote"] = Expand-HandoffTemplate ([string]$cfg.doneNote) $vars
-    return $vars
-}
-
 function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
     git -C $repo worktree prune 2>$null
     if (-not (Test-Path $wt)) {
@@ -175,7 +221,7 @@ function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
         $link = Join-Path $wt $d
         $target = Join-Path $repo $d
         if ((Test-Path $target) -and -not (Test-Path $link)) {
-            New-Item -ItemType Junction -Path $link -Target $target -ErrorAction SilentlyContinue | Out-Null
+            New-Item -ItemType (Get-HandoffLinkType) -Path $link -Target $target -ErrorAction SilentlyContinue | Out-Null
         }
     }
     # A brand-new worktree is an unapproved folder: the first session in it asks
@@ -189,38 +235,32 @@ function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
     }
 }
 
-function Build-Brief([hashtable]$info, [hashtable]$vars) {
-    $body = Resolve-HandoffBrief $cfg $info
-    $vars = $vars.Clone()
-    $vars["brief"] = Expand-HandoffTemplate $body $vars
-    if ($cfg.ContainsKey("briefTemplate") -and $cfg.briefTemplate) {
-        $tpl = if ($cfg.ContainsKey("briefTemplateFile") -and $cfg.briefTemplateFile) {
-            Get-Content (Join-Path $repo $cfg.briefTemplateFile) -Raw
-        } else { [string]$cfg.briefTemplate }
-        return Expand-HandoffTemplate $tpl $vars
-    }
-    return $vars["brief"]
+function Invoke-Launcher([string]$action, [hashtable]$vars) {
+    # Every call to the session tool goes through the adapter, so a repository can
+    # drive a different agent by replacing config rather than editing this script.
+    $argv = Build-HandoffLaunchArgs $cfg $action $vars
+    return (& $cfg.launcher.command @argv 2>&1 | Out-String)
 }
 
-function Start-Bg([string]$wt, [string[]]$argv, [string]$log) {
+function Start-Bg([string]$wt, [string]$action, [hashtable]$vars, [string]$log) {
     # `claude --bg` returns at once and prints the short id that `claude agents`,
     # `attach`, `logs` and `stop` take. Background sessions are listed in the
     # agents view, so the operator can follow and even join them — which a `-p`
     # print session does not allow.
     Push-Location $wt
     try {
-        $out = (& claude @argv 2>&1 | Out-String)
+        $out = Invoke-Launcher $action $vars
         $out | Out-File -Encoding utf8 $log
     }
     finally { Pop-Location }
-    if ($out -match "backgrounded[^\r\n]*?([0-9a-f]{8})") { return $Matches[1] }
+    if ($out -match $cfg.launcher.idPattern) { return $Matches[1] }
     Log "could not read a background id from: $(($out -replace '\s+', ' ').Trim())"
     return $null
 }
 
 function Get-BgEntry([string]$id) {
     try {
-        $arr = (& claude agents --json 2>$null | Out-String | ConvertFrom-Json)
+        $arr = (Invoke-Launcher "list" @{} | ConvertFrom-Json)
         return ($arr | Where-Object { $_.id -eq $id } | Select-Object -First 1)
     }
     catch { return $null }
@@ -240,7 +280,7 @@ function Wait-Bg([string]$id, [datetime]$deadline) {
         }
         else {
             $missing = 0
-            if ($e.state -and $e.state -ne "working") { return [string]$e.state }
+            if ($e.state -and $e.state -ne $cfg.launcher.workingState) { return [string]$e.state }
         }
         Start-Sleep -Seconds $cfg.pollSeconds
     }
@@ -252,10 +292,10 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     # local $followUp IS the [string]$FollowUp parameter, and assigning a bool to
     # it silently became the string "False" — which then failed to bind here.
     $info = $cfg.sessions[$s]
-    $wt = Join-Path $cfg.worktreeParent "$($cfg.worktreePrefix)-$($info.name)"
-    $branch = "$($cfg.branchPrefix)/$($info.name)"
-    $key = if ($isFollowUpRun) { "$s-followup" } else { $s }
-    $vars = Get-SessionVars $s $info $wt $branch $key
+    # Vars and brief come from HandoffCore, the same path -EmitBriefs uses, so a
+    # brief pasted by hand is byte-identical to the one the runner launches.
+    $vars = Get-HandoffSessionVars $cfg $s $isFollowUpRun
+    $wt = $vars["worktree"]; $branch = $vars["branch"]; $key = $vars["key"]
 
     $state = Read-HandoffState $stateFile
     if ($state.ContainsKey($key) -and $state[$key]["status"] -eq "merged" -and -not $Fresh) {
@@ -271,7 +311,7 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     $sessionId = $null
     if (-not $Fresh -and $state.ContainsKey($key) -and $state[$key]["session_id"]) { $sessionId = $state[$key]["session_id"] }
     $continues = 0; $retries = 0
-    $brief = Build-Brief $info $vars
+    $brief = Build-HandoffBrief $cfg $s $vars
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
     while ($true) {
@@ -282,17 +322,23 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         # becomes another "tool name" and the session starts with NO task. The
         # tool list therefore comes first and the prompt last, after a flag that
         # takes exactly one value.
-        $common = @("--allowedTools") + @($cfg.allowedTools) + @("--permission-mode", $cfg.permissionMode)
         if ($sessionId) {
-            $argv = @("--bg", "--resume", $sessionId) + $common + @(
-                "Continue the handoff from where you stopped; nothing you committed is lost. If the DONE note is not written yet, keep working until it is, then stop.")
-            Log "resuming $key (claude session $sessionId)"
+            $action = "resume"
+            $lvars = @{
+                sessionId = $sessionId; model = $info.model; rcName = $vars["rcName"]
+                prompt    = "Continue from where you stopped; nothing you committed is lost. If the DONE note is not written yet, keep working until it is, then stop."
+            }
+            Log "resuming $key (session $sessionId)"
         }
         else {
-            $argv = @("--bg", "--remote-control", "handoff-$key") + $common + @("--model", $info.model, $brief)
-            Log "starting $key as a background session named handoff-$key"
+            $action = "start"
+            # The remote-control name gives the session a stable handle an operator
+            # can join from anywhere, so an unattended run stays interactive on
+            # demand rather than being a black box until morning.
+            $lvars = @{ rcName = $vars["rcName"]; model = $info.model; prompt = $brief }
+            Log "starting $key as a background session named $($vars['rcName'])"
         }
-        $bgId = Start-Bg $wt $argv $log
+        $bgId = Start-Bg $wt $action $lvars $log
         if (-not $bgId) {
             $retries++
             $f = Classify-HandoffFailure (Get-Content $log -Raw)
@@ -307,10 +353,10 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         $entry = Get-BgEntry $bgId
         if ($entry -and $entry.sessionId) { $sessionId = [string]$entry.sessionId }
         Update-State $key @{ bg_id = $bgId; session_id = $sessionId; attach = "claude attach $bgId" }
-        Log "$key is background session $bgId (follow it: 'claude attach $bgId', 'claude logs $bgId')"
+        Log "$key is background session $bgId (join it: $($cfg.launcher.command) attach $bgId)"
 
         $ended = Wait-Bg $bgId (Get-Date).AddHours($cfg.maxSessionHours)
-        $text = try { (& claude logs $bgId 2>&1 | Out-String) } catch { "" }
+        $text = try { Invoke-Launcher "logs" @{ id = $bgId } } catch { "" }
         $text | Out-File -Append -Encoding utf8 $log
         $tail = $text.Substring([math]::Max(0, $text.Length - 4000))
         Log "$key turn ended ($ended)"
@@ -334,7 +380,7 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
             # the finished one is stopped before any resume, otherwise every
             # retry would leave another background session holding the same
             # conversation.
-            & claude stop $bgId 2>&1 | Out-Null
+            Invoke-Launcher "stop" @{ id = $bgId } | Out-Null
             if ($ended -eq "timeout") { Log "$key ran past $($cfg.maxSessionHours) h in one turn; stopped it, resuming" }
             else { Log "$($f.kind) failure; waiting $([int]($f.wait/60)) min before resuming"; Start-Sleep -Seconds $f.wait }
             continue
@@ -346,7 +392,7 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         Update-State $key @{ continues = $continues }
         if ($continues -gt $cfg.maxContinues) { Log "$key stopped $continues times without a DONE note; proceeding to the guards anyway"; break }
         Log "$key stopped without its DONE note; stopping session $bgId and resuming in 2 min ($continues/$($cfg.maxContinues))"
-        & claude stop $bgId 2>&1 | Out-Null
+        Invoke-Launcher "stop" @{ id = $bgId } | Out-Null
         Start-Sleep -Seconds 120
     }
 
@@ -369,19 +415,16 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     if ($NoMerge -or $cfg.ContainsKey("noMerge") -and $cfg.noMerge) {
         Update-State $key @{ status = "done-unmerged" }; Log "no-merge: $branch left for review"; return $true
     }
-    # The mutex is inlined rather than taken through With-Mutex: a `$script:`
-    # assignment inside that scriptblock writes a DIFFERENT variable from the
-    # function-scoped one read afterwards, so every successful merge would have
-    # been reported as a conflict and stopped its lane.
-    $merged = $false
-    $m = New-Object System.Threading.Mutex($false, $cfg.mutexName)
-    [void]$m.WaitOne()
-    try {
+    # The result is taken from Invoke-WithLock's RETURN VALUE, never assigned to
+    # an outer variable inside the scriptblock: such an assignment writes a
+    # DIFFERENT variable from the one read afterwards, and that bug reported every
+    # successful merge as a conflict and stopped its lane.
+    $merged = Invoke-WithLock {
         git -C $repo merge --no-ff $branch -m "merge $branch (session $key, unattended run $stamp)" 2>&1 | Out-File -Append -Encoding utf8 $runnerLog
-        $merged = ($LASTEXITCODE -eq 0)
-        if (-not $merged) { git -C $repo merge --abort 2>$null }
+        $ok = ($LASTEXITCODE -eq 0)
+        if (-not $ok) { git -C $repo merge --abort 2>$null }
+        $ok
     }
-    finally { $m.ReleaseMutex(); $m.Dispose() }
     if (-not $merged) { Update-State $key @{ status = "merge-conflict" }; Log "lane stops: merging $branch into $($cfg.baseBranch) conflicted; resolve by hand"; return $false }
     Update-State $key @{ status = "merged" }
     Log "merged $branch into $($cfg.baseBranch)"
@@ -390,18 +433,18 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
 
 function Preflight {
     $problems = @()
-    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { $problems += "claude CLI not on PATH" }
+    if (-not (Get-Command $cfg.launcher.command -ErrorAction SilentlyContinue)) { $problems += "launcher '$($cfg.launcher.command)' not on PATH" }
     elseif (-not $DryRun) {
         # A one-word headless call: the cheapest proof that the CLI's own login
         # is alive. An expired OAuth session fails every session instantly,
         # which is not something to discover at 03:00.
         $probe = Join-Path $stateDir "preflight-auth.json"
         Push-Location $repo
-        try { & claude -p "Reply with exactly the word OK." --model sonnet --output-format json 2>&1 | Out-File -Encoding utf8 $probe }
+        try { Invoke-Launcher "probe" @{ prompt = "Reply with exactly the word OK."; probeModel = $cfg.launcher.probeModel } | Out-File -Encoding utf8 $probe }
         finally { Pop-Location }
         $r = Parse-Result $probe
-        if ($r.is_error) { $problems += "claude headless call failed: $($r.result) — run 'claude login' in a terminal first" }
-        else { Log "preflight: headless claude answered (session $($r.session_id))" }
+        if ($r.is_error) { $problems += "launcher probe failed: $($r.result) - check the agent is authenticated (e.g. 'claude login')" }
+        else { Log "preflight: launcher answered (session $($r.session_id))" }
     }
     if (-not (Test-Path $repo)) { $problems += "repo does not exist: $repo" }
     foreach ($p in @($cfg.requirePaths)) {
@@ -433,6 +476,27 @@ if ($Validate) {
     Write-Host "  sessions:  $(($cfg.sessions.Keys | Sort-Object) -join ', ')"
     Write-Host "  lanes:     $(($cfg.lanes | ForEach-Object { $_ -join ',' }) -join '  |  ')"
     Write-Host "  guards:    $(if (Build-HandoffGuardCommand $cfg @{}) { 'configured' } else { 'none' })"
+    Write-Host "  subagents: $(if (Build-HandoffSubagentPolicy $cfg) { 'policy configured' } else { 'none' })"
+    # Surfaced because a repo driving a different agent has no other way to
+    # confirm the swap took before committing a night to it.
+    $onPath = if (Get-Command $cfg.launcher.command -ErrorAction SilentlyContinue) { "on PATH" } else { "NOT ON PATH" }
+    Write-Host "  launcher:  $($cfg.launcher.command) ($onPath)"
+    exit 0
+}
+
+if ($EmitBriefs) {
+    # Render every brief WITHOUT launching anything, so one config serves both an
+    # unattended run and a human pasting each brief into an interactive session.
+    # Same code path as a real launch — a copy-pasted brief that differs from the
+    # launched one is worse than no brief at all.
+    $md = Export-HandoffBriefs $cfg
+    if ($OutFile) {
+        $dir = Split-Path $OutFile -Parent
+        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+        $md | Set-Content -Path $OutFile -Encoding utf8
+        Write-Host "wrote $((($md -split "`n").Count)) lines to $OutFile"
+    }
+    else { Write-Output $md }
     exit 0
 }
 

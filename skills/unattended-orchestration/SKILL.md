@@ -1,6 +1,6 @@
 ---
 name: unattended-orchestration
-description: Run Claude Code sessions unattended for hours or overnight — headless background sessions in isolated git worktrees, in parallel lanes, surviving usage limits, API outages and early stops, then guard-tested and auto-merged. Load when work must continue with nobody watching.
+description: A portable runner that drives agent sessions unattended for hours or overnight — background sessions in isolated git worktrees, in parallel lanes, surviving usage limits, API outages and early stops, then guard-tested and auto-merged. Copy the folder into any git repository and run -Init; the repo is auto-detected and the agent is a swappable adapter. Load when work must continue with nobody watching, or when adopting unattended orchestration into a repository.
 ---
 
 # Unattended Orchestration
@@ -10,7 +10,40 @@ queue of handoffs too large for one sitting. The runner starts each session, wat
 recovers it — through the usage limit, a 529, and a session that stops early.
 
 Adopted from `basic-analysis`'s wave-3 runner (2026-09-04) and generalised; see
-[ADR 0006](../../docs/decisions/0006-unattended-session-orchestration.md) for why it is config-driven.
+ADR 0006 in that repository for why it is config-driven.
+
+## Adopting this skill in another repository
+
+**Copy this folder in and run it. Nothing here is specific to the repo it came from.**
+
+```bash
+cp -r skills/unattended-orchestration <your-repo>/skills/     # or anywhere you like
+cd <your-repo>
+pwsh -File skills/unattended-orchestration/run_handoff_sessions.ps1 -Init
+```
+
+`-Init` writes `.claude/handoff.config.json`, detecting your git root and your **actual** base
+branch. Then edit the sessions, and:
+
+```bash
+… -Validate      # repo, branch, lanes, guards, launcher — check before trusting it to a night
+… -EmitBriefs    # read the briefs as markdown; launches nothing
+… -DryRun        # rehearse preflight and lane dispatch; starts no session
+…                # run it
+```
+
+Four properties make that work, and each is covered by
+[`tests/Portability.Tests.ps1`](tests/Portability.Tests.ps1), which copies the skill into a
+throwaway repository and drives the whole path there unedited:
+
+| Property | Why it matters for adoption |
+|---|---|
+| **The repository is detected**, not configured (`git rev-parse --show-toplevel`) | A committed config carries no machine-specific path, so it works for everyone who clones it. `repo` remains available as an override. |
+| **The session tool is an adapter** (`launcher`) | The default describes Claude Code, so an unedited config just runs. A repo driving a different agent replaces only the keys it needs — the block merges key-by-key, so overriding `command` does not silently lose `list`/`logs`/`stop`. |
+| **Cross-platform primitives** | Junction on Windows, symlink elsewhere; named mutex on Windows, exclusive lock file elsewhere. A named `System.Threading.Mutex` throws `PlatformNotSupportedException` off Windows, which would kill the first state write. |
+| **Guards, subagents and briefs are opt-in** | An unconfigured repo gets a runner that works, not one that assumes pytest, a venv, or a delegation policy. |
+
+The one hard requirement is **PowerShell 7** (`pwsh`), which runs on Windows, Linux and macOS.
 
 ## 0. Where each fact lives — read this before editing anything
 
@@ -19,9 +52,11 @@ This file is **normative policy**. It holds no paths, models, timeouts or test c
 | Fact | Single owner |
 |---|---|
 | Sessions, models, briefs, lanes | your repo's `handoff.config.json` → `sessions`, `lanes` |
+| Subagent tiers, concurrency cap, leaf rule | same file → `subagents` |
 | Timeouts, retry and continue caps, poll interval | same file (defaults: `HandoffCore.psm1` → `$HandoffDefaults`) |
 | Guard command and its paths | same file → `guards` |
 | Tool allowlist, permission mode | same file → `allowedTools`, `permissionMode` |
+| Which agent to drive, and how | same file → `launcher` (defaults to Claude Code) |
 | Branch, worktree and state locations | same file → `baseBranch`, `branchPrefix`, `worktree*`, `stateDir` |
 | Shared brief preamble | same file → `briefTemplate` / `briefTemplateFile` |
 | Every annotated field | [`handoff.config.example.json`](handoff.config.example.json) |
@@ -60,7 +95,7 @@ generated artifact — in the *same* lane, and independent ones in different lan
 
 Each session gets its **own git worktree on its own branch**, cut from the current base branch.
 Isolation is per *session*, not per subagent — see the worktree rules in
-[`mcp-servers-setup`](../mcp-servers-setup/SKILL.md); a session per worktree is what gives each
+the `mcp-servers-setup` skill; a session per worktree is what gives each
 one its own Serena process and its own graph.
 
 ```mermaid
@@ -100,31 +135,80 @@ test them is to actually hit a usage limit at 03:00.
 one before resuming, so retries never accumulate background sessions holding the same
 conversation. Nothing a session committed is ever lost.
 
-## 4. Using it
+## 4. Three layers of orchestration
 
-```bash
-# 1. copy and edit the annotated example
-cp skills/unattended-orchestration/handoff.config.example.json .claude/handoff.config.json
+An unattended run is three levels deep, and each level has a different job. Collapsing them —
+one giant session doing everything itself — is the failure this section exists to prevent.
 
-# 2. validate BEFORE trusting it to a night — catches unknown sessions, bad lanes, missing paths
-pwsh -File skills/unattended-orchestration/run_handoff_sessions.ps1 -Validate
-
-# 3. dry run — creates nothing, launches nothing, exercises preflight and lane dispatch
-pwsh -File skills/unattended-orchestration/run_handoff_sessions.ps1 -DryRun
-
-# 4. the real thing
-pwsh -File skills/unattended-orchestration/run_handoff_sessions.ps1
+```mermaid
+flowchart TD
+    O["ORCHESTRATOR<br/>the runner (or a session driving it)"] -->|"claude --bg --remote-control"| S1["SESSION S2<br/>opus · own worktree"]
+    O --> S2["SESSION S1<br/>sonnet · own worktree"]
+    S1 -->|Agent tool| A1["subagent<br/>sonnet · mechanical"]
+    S1 --> A2["subagent<br/>opus · judgement"]
+    A1 -.->|leaf rule:<br/>no further spawning| X[" "]
+    style X fill:none,stroke:none
 ```
 
-Useful flags: `-Sessions E` (one session, ignoring lanes), `-Fresh` (ignore recorded state),
-`-NoMerge` (leave branches for review), `-WaitUntil "yyyy-MM-dd HH:mm"` (start later),
-`-FollowUp "yyyy-MM-dd HH:mm" -FollowUpSessions E` (schedule a detached second run, so one
-invocation covers a night *and* a morning).
+| Layer | Owns | Never does |
+|---|---|---|
+| **Orchestrator** | worktrees, launch, recovery, guards, merge | the work itself |
+| **Session** | one handoff, start to DONE note; delegates to subagents | merge to the base branch |
+| **Subagent** | one scoped task with an explicit return contract | spawn further subagents (*leaf rule*) |
 
-Follow a running session: `claude attach <id>` joins it, `claude logs <id>` prints its output.
-Both ids are recorded in `state.json` and the runner log.
+**Sessions stay joinable.** Each launches with a stable `--remote-control` name, so an
+"unattended" run is interactive on demand — `claude attach handoff-S2` joins it and lets you
+type; `claude logs handoff-S2` reads its output without joining. That name is derived in
+`Get-HandoffSessionVars` and printed in the runner log, the state file, and every emitted brief.
 
-## 5. Rules
+**Subagent policy is stated once.** The `subagents` block renders into every brief as
+`{{subagentPolicy}}`, so all sessions delegate the same way. It is opt-in: a session told to
+delegate with no cap and no tier assignment delegates badly. The leaf rule mirrors
+the `swarm-orchestration` skill - without it a wave fans out
+geometrically and the budget is gone before the work is.
+
+## 5. Choosing a model per session
+
+Route by the **shape** of the work, not its importance. The question that decides the tier is
+whether a wrong answer is *visible*: mechanical work fails loudly and cheaply, judgement work
+fails quietly and is discovered much later.
+
+| Work shape | Tier | Why |
+|---|---|---|
+| Pattern-matching an established convention; closed-file edits; scaffolding; renames; doc sweeps | cheaper tier | Structurally verifiable. A guard or a diff catches it immediately. |
+| Config with repo-wide blast radius; anything where the recovery is "revert and re-verify" | top tier | Needs the discipline to verify through the real path and back out rather than push through. |
+| Deciding what survives a refactor; reconciling two designs; ambiguous requirements | top tier | Fails silently. Nothing goes red when judgement is wrong. |
+| Work whose output another session depends on | top tier | Its errors are inherited, not contained. |
+
+Put the chosen model in each session's `model`, and the subagent tiers in `subagents.tiers`.
+Neither belongs in this file.
+
+## 6. Flags beyond the adoption path
+
+The four-step path is in *Adopting this skill* above. Beyond it:
+
+| Flag | Effect |
+|---|---|
+| `-Sessions X,Y` | run just these, as one sequential lane, ignoring configured lanes |
+| `-Lanes "X,Y" "Z"` | override the configured lanes for this run |
+| `-Fresh` | ignore recorded state; re-run sessions already marked merged |
+| `-NoMerge` | stop after the guards; leave branches for review |
+| `-WaitUntil "yyyy-MM-dd HH:mm"` | sleep, then start |
+| `-FollowUp "…" -FollowUpSessions X` | also schedule a detached second run, so one invocation covers a night *and* a morning |
+| `-OutFile <path>` | with `-EmitBriefs`, write instead of printing |
+| `-Init -Force` | overwrite an existing config |
+
+**`-EmitBriefs` is the manual path.** It renders each session as a `### Session` block — model,
+branch, worktree, attach command, then the brief in a fenced block — and launches nothing, so one
+config serves both an unattended run and a human pasting into interactive sessions. Both call the
+same `Build-HandoffBrief`, so pasted text cannot drift from what would have launched; that is the
+whole point, and it makes the emitted markdown **generated** — edit the config and re-emit, never
+the file. Use it for a session whose blast radius wants a human watching.
+
+Follow a running session with the launcher's own commands (`claude attach <id>`,
+`claude logs <id>` by default). Both ids are recorded in `state.json` and the runner log.
+
+## 7. Rules
 
 1. **Validate before every unattended run.** `-Validate` then `-DryRun`. A lane naming a session
    that does not exist used to fail four hours in, inside a detached child whose stdout nobody
@@ -142,9 +226,9 @@ Both ids are recorded in `state.json` and the runner log.
 7. **The tool allowlist must match how your MCP servers are wired.** A user-scope server is
    `mcp__<name>__*`; the same server as a plugin is `mcp__plugin_<plugin>_<server>__*`. Wrong
    prefix = the session silently lacks the tool. See
-   [`mcp-servers-setup`](../mcp-servers-setup/SKILL.md).
+   `mcp-servers-setup`.
 
-## 6. Changing the runner
+## 8. Changing the runner
 
 Tests are the contract, and both suites must stay green:
 

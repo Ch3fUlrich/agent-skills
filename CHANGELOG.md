@@ -5,65 +5,100 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-### Added — `unattended-orchestration`: overnight runs, generalised out of `basic-analysis` (2026-09-04)
+### Changed — markdown compressed where it was prose-heavy, not where it was dense (2026-09-04)
 
-`basic-analysis/scripts/management/run_handoff_sessions.ps1` ran wave-3 overnight — headless
-`claude --bg` sessions, a git worktree each, parallel lanes, automatic recovery across usage
-limits and API outages, guard-tested and auto-merged. The orchestration idea was cheap; what was
-expensive was the several nights of measured failures encoded in it (a variadic `--allowedTools`
-swallowing the prompt so the session started with *no task*; an unapproved fresh worktree that a
-background session can never trust its way out of; an expired OAuth session that must stop the
-run instead of being retried 40 times; a `$script:` assignment inside a mutex scriptblock that
-reported every successful merge as a conflict). All of it was hardcoded to one repo's session
-table, venv, pytest node ids and branch name.
+Audited all 67 tracked `.md` files by length, prose/code ratio and per-section size, then
+compressed only where prose was doing the padding:
 
-Adopted as [`skills/unattended-orchestration/`](skills/unattended-orchestration/SKILL.md), split
-so the knowledge is testable rather than trapped:
+| File | Before | After | Note |
+|---|---|---|---|
+| `skills/mcp-servers-setup/SKILL.md` | 641 | 575 | its Serena section alone was 253 lines — 40% of the file, 4x the next |
+| `CHANGELOG.md` (2026-09-04 entries) | 101 | 71 | three entries merged into two |
+| `skills/unattended-orchestration/SKILL.md` | 267 | 249 | the adoption path and §6 both listed the same flags |
 
-- **`HandoffCore.psm1`** — pure functions only (failure classification, config validation,
-  template expansion, state I/O, guard-command construction). The recovery rules were previously
-  reachable only by actually hitting a usage limit at 03:00; they are now assertions.
-- **`run_handoff_sessions.ps1`** — only what touches git, `claude` or the clock.
-- **`handoff.config.example.json`** — every repo-specific fact, annotated. Guards are opt-in and
-  take *any* command, because the hardcoded pytest invocation was exactly the unreusable part.
+Every measurement survives — 237 MB shadow home, 5 s -> 16 s startup, 34.4 s, the
+`serena_config.py` line numbers, the junction canary. Narrative framing went; facts did not.
 
-**Two suites, and the smoke suite is not optional.** Both bugs found on the first real invocation
-lived in the driver and were invisible to unit tests — and both were the same PowerShell trap:
-the output stream unrolls one array level, so `[["E","A"]]` collapsed to `["E","A"]` and every
-*sequential* lane silently ran in *parallel*, which is the precise contention lanes exist to
-prevent. Once via `ForEach-Object` over nested arrays, once via an `if`/`else` **expression**
-assigned to a variable. A third bug came from PowerShell's case-insensitive variables: a local
-`$followUp` *is* the `[string]$FollowUp` parameter, so assigning a bool to it produced the string
-`"False"`, which then failed to bind. Rationale: [ADR 0006](docs/decisions/0006-unattended-session-orchestration.md).
+**Deliberately not compressed:** `docs/superpowers/plans/2026-07-30-…` is the longest file at 1977
+lines but is **71% executable code** for work ADR 0004 records as *specified but not yet built*.
+It is a live task-by-task plan whose code blocks are the deliverable; shortening it would remove
+the thing an agent executes. Length is not the metric — prose-per-fact is.
+
+Also corrected a claim the audit exposed: the Serena section stated its memory tools are disabled,
+but `.serena/project.yml` carries `excluded_tools: []`, so they are not. The text now records the
+gap and why closing it is not a one-line edit — an invalid entry there can stop Serena starting,
+which takes down **all** symbolic tools.
+
+### Added — `unattended-orchestration`, and then made portable (2026-09-04)
+
+Adopted `basic-analysis/scripts/management/run_handoff_sessions.ps1` as
+[`skills/unattended-orchestration/`](skills/unattended-orchestration/SKILL.md): headless agent
+sessions, a git worktree each, parallel lanes, recovery across usage limits and API outages,
+guard-tested and auto-merged. The orchestration idea was cheap; the several nights of measured
+failures encoded in it were not — a variadic `--allowedTools` swallowing the prompt so the session
+starts with *no task*; an unapproved fresh worktree a background session can never trust its way
+out of; an expired OAuth session that must stop the run rather than be retried 40 times; a
+`$script:` assignment inside a mutex scriptblock that reported every successful merge as a
+conflict. All of it was hardcoded to one repo's session table, venv, pytest ids and branch.
+
+Split so that knowledge is testable rather than trapped: `HandoffCore.psm1` holds pure functions
+(failure classification, config validation, template expansion, state I/O, brief assembly);
+`run_handoff_sessions.ps1` keeps only what touches git, the agent or the clock. The recovery rules
+were previously reachable only by hitting a usage limit at 03:00; they are assertions now.
+
+Then made genuinely adoptable — it had been general in shape but not in fact, demanding an
+absolute `repo` path, hardcoding `claude` at a dozen call sites, and using two Windows-only
+primitives:
+
+- **Repo detected** (`git rev-parse --show-toplevel`), not configured, so a committed config
+  carries no machine-specific path. Found from a subdirectory too. `repo` survives as an override.
+- **`-Init`** scaffolds a runnable config, detecting the *actual* base branch, not assuming `main`.
+- **`launcher` adapter** replaces the hardcoded binary. Defaults describe Claude Code so an
+  unedited config runs; another agent overrides only the keys it needs, merged key-by-key so
+  replacing `command` cannot silently lose `list`/`logs`/`stop`. The variadic-flag gotcha is
+  encoded as `{{tools}}`/`{{prompt}}` ordering in the default template, and asserted.
+- **Cross-platform**: junction/symlink, named-mutex/lock-file. A named `System.Threading.Mutex`
+  throws `PlatformNotSupportedException` off Windows and would have killed the first state write.
+- **`-EmitBriefs`** renders briefs as copy-pasteable markdown, launching nothing; same
+  `Build-HandoffBrief` as a real launch, so pasted text cannot drift from what would have run.
+- **`subagents`** → `{{subagentPolicy}}` in every brief: cap, model tier per work shape, leaf rule.
+
+Four bugs surfaced by *running* it, all now covered. Three were PowerShell traps: the output
+stream unrolls one array level, so `[["E","A"]]` collapsed to `["E","A"]` and every **sequential**
+lane silently ran in **parallel** — the precise contention lanes exist to prevent (twice: via
+`ForEach-Object` over nested arrays, and via an `if`/`else` *expression* assigned to a variable);
+and variable names are case-insensitive, so a local `$followUp` *is* the `[string]$FollowUp`
+parameter, making a bool assignment become `"False"` and fail to bind.
+
+72 assertions across three suites. `tests/Portability.Tests.ps1` is the adoption claim's proof: it
+copies the skill into a throwaway repo on a branch named `trunk`, drives `-Init` → `-Validate` →
+`-EmitBriefs` → `-DryRun` unedited, and asserts nothing reaches back into this repository.
+Rationale: [ADR 0006](docs/decisions/0006-unattended-session-orchestration.md).
 
 ### Fixed — MCP connect timeouts were spawn concurrency, not CPU; `npx` was the cost (2026-09-04)
 
-`context7` began failing with `CONNECT_TIMEOUT after 30000ms`, on a machine sitting at 99% CPU.
-The CPU was a red herring, and measuring it said so: deliberately saturating 24 of 32 cores moved
-the spawn from 5.0 s to 7.1 s (**+2.1 s**), while going from 1 to 20 concurrent spawns moved it
-from 5.0 s to **34.4 s** (+29.4 s). Concurrency is ~14× more damaging. RAM (68 GB free), disk
-(99.75% idle, queue 0) and network (registry 320–512 ms) were all ruled out by measurement.
+`context7` began failing `CONNECT_TIMEOUT after 30000ms` on a machine at 99% CPU. The CPU was a
+red herring and measurement said so: saturating 24 of 32 cores moved the spawn 5.0 s → 7.1 s
+(**+2.1 s**); going from 1 to 20 concurrent spawns moved it 5.0 s → **34.4 s** (+29.4 s) —
+~14× more damaging. RAM (68 GB free), disk (99.75% idle, queue 0) and network (registry
+320–512 ms) were ruled out by measurement.
 
-The real cause is that **every open Claude Code session holds its own resident copy of every
-stdio MCP server**, each a 3–4 process chain; sessions left open ~23 h had accumulated 784
-processes and 333k handles. `context7` failed first because it was the only server paying a full
-`npx -y` registry resolve on every spawn.
-
-Both npx-launched servers moved to global installs driven by `node` — same code, one launch path
-removed:
+Cause: **every open session holds its own resident copy of every stdio MCP server**, each a 3–4
+process chain; sessions open ~23 h had accumulated 784 processes and 333k handles. `context7`
+failed first as the only server paying a full `npx -y` registry resolve per spawn.
 
 | Server | before (`npx`) | after (`node` global) |
 |---|---|---|
 | `context7` | 3704 ms solo · 11.9 s @20 concurrent | **1316 ms** · **3.7 s** |
 | `playwright` | 3521 ms | **392 ms** (9×) |
 
-Playwright additionally moved off the `claude-plugins-official` plugin (whose `.mcp.json` runs
-`npx @playwright/mcp@latest` and is overwritten on every plugin update) to a single user-scope
-entry. **This changes its tool prefix** from `mcp__plugin_playwright_playwright__*` to
-`mcp__playwright__*` — anything pre-allowing tools by name must follow. Docs corrected in
+Playwright also moved off the `claude-plugins-official` plugin (its `.mcp.json` runs
+`npx @playwright/mcp@latest` and is overwritten on every plugin update) to one user-scope entry.
+**Its tool prefix therefore changed** from `mcp__plugin_playwright_playwright__*` to
+`mcp__playwright__*`; anything pre-allowing tools by name must follow. Docs corrected in
 [`mcp-servers-setup`](skills/mcp-servers-setup/SKILL.md) and
-[`repository-index`](skills/repository-index/SKILL.md), which had described a Docker wiring that
-was not what any host was actually running.
+[`repository-index`](skills/repository-index/SKILL.md), which had described a Docker wiring no
+host was running. Also set `main`'s missing upstream (`git branch -u origin/main main`).
 
 ### Fixed — worktree agents keep Serena and Graphify; the rule that took them away was wrong (2026-09-01)
 
