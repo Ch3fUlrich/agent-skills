@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed - `unattended-orchestration` adopted into a second repository, and what that taught it (2026-09-05)
+
+Adopting the runner into `ebn-lbn` for a six-session, four-lane build found four defects and
+nine missing pieces in one morning. Everything below is tested (HandoffCore 69, Runner.Smoke 11,
+Portability 10 assertions) and the PROPOSALS file from the `basic-analysis` orchestrator sits
+beside the skill with a status table.
+
+| Finding (measured) | Change |
+|---|---|
+| Three lanes crashed in their first second: `([string](git rev-parse ...)).Trim()` is a null method call when git prints nothing | every native output goes through `Get-HandoffText` |
+| Three lanes blocked in three seconds on "New MCP server found in this project": the `~/.claude.json` entry does not suppress it | `trust_worktree.py` ships with the skill and writes the worktree's `.claude/settings.local.json` with `enableAllProjectMcpServers`; the dialog is now a recognised prompt |
+| A branch that merely fell behind the base is an ancestor too | merged-elsewhere uses the base's first-parent line |
+| `briefTemplateFile` alone was ignored; sessions launched with bare bodies | either template form wraps the brief |
+| A worktree holds tracked files only: the main venv's editable install imports the **main** checkout's package from inside a worktree | the adoption checklist in SKILL.md; `copyDirs`; per-worktree venv and graph in `postWorktree` |
+| One runner invocation could not express "B, T11, T6 in parallel, then C, then D" | `dependsOn` per session (waits for merges, fails on a failed dependency) |
+| Ordering is not exclusion; a reader starved a writer | `resources` (`name[:read\|write]`) with conflict detection |
+| A finished session reported `working` for hours and was stopped-and-resumed | DONE-note finish rule (`quietMinutes`), `stopAfterMerge`, `merged_into` |
+| No sanctioned way to add or stop a lane while running | `<stateDir>/queue/` (`lane-*.json`, `stop-<key>`) |
+| The final suite ran in the moving main checkout and reported artefact reds | `guardsOnly` sessions; rule 7 |
+| Nobody counted the whole machine | advisory `machineBudget` + `<stateDir>/load.json`; `{{traps}}` in every brief; `controllerBriefFile`; refusal counts; `-Cleanup` |
+
 ### Changed — markdown compressed where it was prose-heavy, not where it was dense (2026-09-04)
 
 Audited all 67 tracked `.md` files by length, prose/code ratio and per-section size, then
