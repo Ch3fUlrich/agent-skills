@@ -511,6 +511,18 @@ try {
         Assert-True ($md -match "## Controller") "-EmitBriefs must include the controller section"
     }
 
+    Write-Host "`nGet-HandoffText (native output to string)"
+    It "turns an empty native-command output into an empty string, never null" {
+        # A [string] cast of $null gave $null and .Trim() then crashed every
+        # lane on the first real run of dependsOn; this is the regression guard.
+        $t = Get-HandoffText $null
+        Assert-True ($null -ne $t) "must be a string"
+        Assert-Equal "" $t
+        Assert-Equal "abc" (Get-HandoffText @(" abc ", ""))
+        Assert-Equal "a`nb" (Get-HandoffText @("a", "b"))
+        Assert-Equal "x" (Get-HandoffText "x")
+    }
+
     Write-Host "`nPortability — scaffolding"
     It "generates a config that Read-HandoffConfig accepts unedited" {
         $dest = Join-Path $tmp "scaffold.json"

@@ -346,8 +346,8 @@ function Test-DoneQuiet([string]$wt, [string]$doneNotePath) {
     # The DONE note exists, the branch is clean, and nothing was committed for
     # quietMinutes: the session is finished whatever the agents view says.
     if (-not $doneNotePath -or -not (Test-Path $doneNotePath)) { return $false }
-    $last = (git -C $wt log -1 --format=%ct 2>$null)
-    $epoch = 0; if ($last) { $epoch = [long]([string]$last).Trim() }
+    $last = Get-HandoffText (git -C $wt log -1 --format=%ct 2>$null)
+    $epoch = 0; if ($last) { $epoch = [long]$last }
     $dirty = [bool](git -C $wt status --porcelain 2>$null)
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     return (Test-HandoffDoneQuiet $true $epoch $now ([int]$cfg.quietMinutes) $dirty)
@@ -434,8 +434,8 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     # existing branch whose tip is already an ancestor of the base branch and
     # is not simply equal to it (a freshly cut branch is an ancestor too).
     if (-not $Fresh -and -not $DryRun) {
-        $tipB = ([string](git -C $repo rev-parse --verify --quiet $branch 2>$null)).Trim()
-        $tipBase = ([string](git -C $repo rev-parse --verify --quiet $cfg.baseBranch 2>$null)).Trim()
+        $tipB = Get-HandoffText (git -C $repo rev-parse --verify --quiet $branch 2>$null)
+        $tipBase = Get-HandoffText (git -C $repo rev-parse --verify --quiet $cfg.baseBranch 2>$null)
         if ($tipB -and $tipBase -and $tipB -ne $tipBase) {
             git -C $repo merge-base --is-ancestor $branch $cfg.baseBranch 2>$null
             if ($LASTEXITCODE -eq 0) {
@@ -491,7 +491,7 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         Push-Location $wt
         try { & $guard.command @($guard.args) 2>&1 | Out-File -Encoding utf8 $guardLog; $green = ($LASTEXITCODE -eq 0) }
         finally { Pop-Location }
-        $baseSha = ([string](git -C $repo rev-parse HEAD 2>$null)).Trim()
+        $baseSha = Get-HandoffText (git -C $repo rev-parse HEAD 2>$null)
         Log "guards $(if ($green) { 'GREEN' } else { 'RED' }) at $baseSha`: $guardLog"
         Update-State $key @{ status = $(if ($green) { "guards-green" } else { "guards-red" }); guard_log = $guardLog; base_sha = $baseSha }
         return $green
@@ -630,7 +630,7 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         $ok
     }
     if (-not $merged) { Update-State $key @{ status = "merge-conflict" }; Log "lane stops: merging $branch into $($cfg.baseBranch) conflicted; resolve by hand"; return $false }
-    $mergedSha = ([string](git -C $repo rev-parse HEAD 2>$null)).Trim()
+    $mergedSha = Get-HandoffText (git -C $repo rev-parse HEAD 2>$null)
     $refusals = 0
     if (Test-Path $doneNote) { $refusals = Get-HandoffRefusalCount (Get-Content $doneNote -Raw) }
     Update-State $key @{ status = "merged"; merged_into = $mergedSha; refusals = $refusals }

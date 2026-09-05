@@ -509,6 +509,19 @@ function Build-HandoffControllerBrief {
     return (Expand-HandoffTemplate $tpl $vars)
 }
 
+function Get-HandoffText {
+    <#  A native command's captured output as a trimmed string, "" for nothing.
+
+        `([string](git ...)).Trim()` crashed every lane on the first real run
+        (2026-09-05): when git prints nothing the cast yields $null, not "",
+        and `.Trim()` on $null is "You cannot call a method on a null-valued
+        expression". Measured on pwsh 7.5; every `git rev-parse` in the driver
+        goes through here.  #>
+    param($Value)
+    if ($null -eq $Value) { return "" }
+    return ([string]::Join("`n", @($Value | ForEach-Object { [string]$_ }))).Trim()
+}
+
 function Get-HandoffSessionVars {
     <#  Every placeholder a brief, guard or hook can reference, for one session.
         Pure so that -EmitBriefs renders exactly what a real run would launch —
@@ -742,4 +755,5 @@ Build-HandoffGuardCommand, Read-HandoffConfig, Build-HandoffSubagentPolicy,
 Get-HandoffSessionVars, Build-HandoffBrief, Export-HandoffBriefs,
 Get-HandoffLinkType, Resolve-HandoffRepoRoot, Build-HandoffLaunchArgs, New-HandoffConfigScaffold,
 Get-HandoffDependencyState, Build-HandoffTraps, Test-HandoffDoneQuiet,
-Test-HandoffResourceConflict, Get-HandoffRefusalCount, Build-HandoffMachineBudget, Build-HandoffControllerBrief
+Test-HandoffResourceConflict, Get-HandoffRefusalCount, Build-HandoffMachineBudget, Build-HandoffControllerBrief,
+Get-HandoffText
