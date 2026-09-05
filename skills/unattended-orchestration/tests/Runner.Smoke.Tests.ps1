@@ -113,6 +113,29 @@ try {
         Assert-Match (Get-Content $f -Raw) "### Session X"
     }
 
+    It "a session with dependsOn reports the wait in -DryRun and -Validate instead of blocking" {
+        # The wait itself needs a live state file; a dry run must SAY it would
+        # wait and carry on, or every rehearsal of a dependent lane hangs.
+        $cfg = @{
+            repo         = $repo
+            baseBranch   = (git -C $repo rev-parse --abbrev-ref HEAD).Trim()
+            branchPrefix = "smoke"
+            stateDir     = (Join-Path $tmp "state-deps")
+            sessions     = @{
+                X = @{ name = "alpha"; model = "opus";   brief = "alpha work" }
+                Y = @{ name = "beta";  model = "sonnet"; brief = "beta work"; dependsOn = @("X") }
+            }
+            lanes        = @(@("X"), @("Y"))
+        }
+        $p = Join-Path $tmp "deps.json"
+        $cfg | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $out = (& pwsh -NoProfile -File $runner -Config $p -Validate 2>&1 | Out-String)
+        Assert-Match $out "dependsOn:\s+Y waits for X" "-Validate must surface the dependency"
+        $out = (& pwsh -NoProfile -File $runner -Config $p -DryRun -Sessions "Y" 2>&1 | Out-String)
+        Assert-Match $out "would wait for X" "a dry run must report the wait"
+        Assert-Match $out "dry run: would create" "and still reach the lane body"
+    }
+
     It "-Sessions overrides the config into a single inline lane" {
         $p = New-Config @(@("X"), @("Y")) "override"
         $out = (& pwsh -NoProfile -File $runner -Config $p -DryRun -Sessions "X,Y" 2>&1 | Out-String)

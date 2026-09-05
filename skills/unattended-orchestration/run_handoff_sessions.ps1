@@ -123,6 +123,9 @@ if (-not $Config) {
 # `repo` may be absent from the config on purpose; the detected root fills it in,
 # which is what lets a committed config be shared between machines.
 $cfg = Read-HandoffConfig $Config -DefaultRepo $detectedRoot
+# Where this skill lives: briefs, guards and postWorktree may reference the
+# bundled helpers as {{skillDir}} instead of a path that belongs to one repo.
+$cfg["skillDir"] = $PSScriptRoot
 
 # CLI overrides beat config; config beats the module defaults.
 if ($MaxContinues -gt 0) { $cfg.maxContinues = $MaxContinues }
@@ -224,6 +227,20 @@ function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
             New-Item -ItemType (Get-HandoffLinkType) -Path $link -Target $target -ErrorAction SilentlyContinue | Out-Null
         }
     }
+    # Directories COPIED from the main checkout, so each worktree owns an
+    # independent instance it may rebuild or append to without touching the
+    # others' - a per-worktree code graph, a gitignored working ledger. Use
+    # linkDirs for one shared artifact, copyDirs for one artifact per session.
+    foreach ($d in @($cfg.copyDirs)) {
+        if (-not $d) { continue }
+        $dst = Join-Path $wt $d
+        $src = Join-Path $repo $d
+        if ((Test-Path $src) -and -not (Test-Path $dst)) {
+            $parent = Split-Path $dst -Parent
+            if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+            Copy-Item -Recurse -Force $src $dst
+        }
+    }
     # A brand-new worktree is an unapproved folder: the first session in it asks
     # to trust the directory and its hooks, and a BACKGROUND session cannot
     # answer — it goes `blocked` and stays there. Pre-approving it is what an
@@ -266,11 +283,25 @@ function Get-BgEntry([string]$id) {
     catch { return $null }
 }
 
-function Wait-Bg([string]$id, [datetime]$deadline) {
+function Test-DoneQuiet([string]$wt, [string]$doneNotePath) {
+    # The DONE note exists, the branch is clean, and nothing was committed for
+    # quietMinutes: the session is finished whatever the agents view says.
+    if (-not $doneNotePath -or -not (Test-Path $doneNotePath)) { return $false }
+    $last = (git -C $wt log -1 --format=%ct 2>$null)
+    $epoch = 0; if ($last) { $epoch = [long]([string]$last).Trim() }
+    $dirty = [bool](git -C $wt status --porcelain 2>$null)
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    return (Test-HandoffDoneQuiet $true $epoch $now ([int]$cfg.quietMinutes) $dirty)
+}
+
+function Wait-Bg([string]$id, [datetime]$deadline, [string]$wt = "", [string]$doneNotePath = "") {
     # "working" while the session is in a turn; anything else (idle, done, gone)
-    # means the turn ended and the runner may look at what it produced.
+    # means the turn ended and the runner may look at what it produced. A
+    # session that wrote its DONE note and went quiet is finished even if the
+    # agents view still says "working" (measured: three hours of that, twice).
     $missing = 0
     while ((Get-Date) -lt $deadline) {
+        if ($wt -and (Test-DoneQuiet $wt $doneNotePath)) { return "done-note" }
         $e = Get-BgEntry $id
         if (-not $e) {
             $missing++
@@ -302,6 +333,37 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         Log "session $key already merged; skipping"; return $true
     }
     Log "=== session $key ($($info.name)) on $branch in $wt, model $($info.model)"
+    # Cross-lane dependencies: wait until every listed session has merged, so
+    # the worktree cut below forks from a base branch that already carries
+    # their work. A dependency that ends without merging stops this lane.
+    $deps = @($info["dependsOn"])
+    if ($deps.Count) {
+        if ($DryRun) { Log "dry run: $key would wait for $($deps -join ', ') to merge" }
+        else {
+            $depDeadline = (Get-Date).AddHours($cfg.maxDependencyHours)
+            $announced = $false
+            while ($true) {
+                $ds = Get-HandoffDependencyState (Read-HandoffState $stateFile) $deps
+                if ($ds.ready) { break }
+                if (@($ds.failed).Count) {
+                    Log "$key cannot start: dependency $(@($ds.failed) -join ', ') ended without merging"
+                    Update-State $key @{ status = "dependency-failed"; last_error = "dependency failed: $(@($ds.failed) -join ', ')" }
+                    return $false
+                }
+                if (-not $announced) {
+                    Log "$key waiting for $(@($ds.waiting) -join ', ') to merge"
+                    Update-State $key @{ status = "waiting"; waiting_for = (@($ds.waiting) -join ",") }
+                    $announced = $true
+                }
+                if ((Get-Date) -gt $depDeadline) {
+                    Log "$key gave up waiting for $(@($ds.waiting) -join ', ') after $($cfg.maxDependencyHours) h"
+                    Update-State $key @{ status = "dependency-timeout" }; return $false
+                }
+                Start-Sleep -Seconds $cfg.pollSeconds
+            }
+            Log "$key dependencies merged: $($deps -join ', ')"
+        }
+    }
     if ($DryRun) { Log "dry run: would create $wt and run claude there"; return $true }
 
     Ensure-Worktree $wt $branch $vars
@@ -355,7 +417,15 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         Update-State $key @{ bg_id = $bgId; session_id = $sessionId; attach = "claude attach $bgId" }
         Log "$key is background session $bgId (join it: $($cfg.launcher.command) attach $bgId)"
 
-        $ended = Wait-Bg $bgId (Get-Date).AddHours($cfg.maxSessionHours)
+        $ended = Wait-Bg $bgId (Get-Date).AddHours($cfg.maxSessionHours) $wt $doneNote
+        if ($ended -eq "done-note" -or ($ended -eq "timeout" -and (Test-Path $doneNote))) {
+            # Finished on the evidence that matters: the DONE note is there and
+            # the branch has been quiet. Never resume a finished session.
+            Log "$key finished by DONE note ($ended); stopping session $bgId and proceeding to the guards"
+            Update-State $key @{ finished_by = $ended }
+            Invoke-Launcher "stop" @{ id = $bgId } | Out-Null
+            break
+        }
         $text = try { Invoke-Launcher "logs" @{ id = $bgId } } catch { "" }
         $text | Out-File -Append -Encoding utf8 $log
         $tail = $text.Substring([math]::Max(0, $text.Length - 4000))
@@ -385,7 +455,7 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
             else { Log "$($f.kind) failure; waiting $([int]($f.wait/60)) min before resuming"; Start-Sleep -Seconds $f.wait }
             continue
         }
-        if ($vars["doneNote"] -and (Test-Path $doneNote)) { Log "DONE note present for $key"; break }
+        if ($vars["doneNote"] -and (Test-Path $doneNote)) { Log "DONE note present for $key"; Update-State $key @{ finished_by = "turn-end" }; break }
         if (-not $vars["doneNote"]) { Log "no doneNote configured; treating a clean stop as done"; break }
 
         $continues++
@@ -426,8 +496,12 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         $ok
     }
     if (-not $merged) { Update-State $key @{ status = "merge-conflict" }; Log "lane stops: merging $branch into $($cfg.baseBranch) conflicted; resolve by hand"; return $false }
-    Update-State $key @{ status = "merged" }
-    Log "merged $branch into $($cfg.baseBranch)"
+    $mergedSha = ([string](git -C $repo rev-parse HEAD 2>$null)).Trim()
+    Update-State $key @{ status = "merged"; merged_into = $mergedSha }
+    Log "merged $branch into $($cfg.baseBranch) ($mergedSha)"
+    # The session is done and its process still holds the worktree folder;
+    # stopping it is what lets the operator remove the worktree later.
+    if ($cfg.stopAfterMerge -and $bgId) { Invoke-Launcher "stop" @{ id = $bgId } | Out-Null; Log "stopped finished session $bgId" }
     return $true
 }
 
@@ -475,6 +549,10 @@ if ($Validate) {
     Write-Host "  worktrees: $($cfg.worktreeParent)\$($cfg.worktreePrefix)-<name>"
     Write-Host "  sessions:  $(($cfg.sessions.Keys | Sort-Object) -join ', ')"
     Write-Host "  lanes:     $(($cfg.lanes | ForEach-Object { $_ -join ',' }) -join '  |  ')"
+    foreach ($k in ($cfg.sessions.Keys | Sort-Object)) {
+        $dd = @($cfg.sessions[$k]["dependsOn"])
+        if ($dd.Count) { Write-Host "  dependsOn: $k waits for $($dd -join ', ')" }
+    }
     Write-Host "  guards:    $(if (Build-HandoffGuardCommand $cfg @{}) { 'configured' } else { 'none' })"
     Write-Host "  subagents: $(if (Build-HandoffSubagentPolicy $cfg) { 'policy configured' } else { 'none' })"
     # Surfaced because a repo driving a different agent has no other way to

@@ -70,18 +70,32 @@
   ],
   "linkDirs": ["graphify-out"],
 
+  "$comment_copyDirs": [
+    "Directories COPIED from the main checkout into every worktree, so each session",
+    "owns an independent instance it may rebuild or append to without touching the",
+    "others' - a gitignored working ledger, a per-worktree code graph. linkDirs = one",
+    "shared artifact; copyDirs = one artifact per session. Skipped silently if absent."
+  ],
+  "copyDirs": [".superpowers"],
+
   "$comment_postWorktree": [
     "Runs once per newly created worktree, in the configured shell, with {{vars}}",
     "expanded. A fresh worktree is an UNAPPROVED folder: the first session in it",
     "asks to trust the directory and its hooks, and a background session cannot",
     "answer — it goes `blocked` and stays there. Pre-approve it here."
   ],
-  "postWorktree": "& '{{python}}' '{{repo}}\\scripts\\management\\trust_worktree.py' '{{worktree}}' --repo '{{repo}}'",
+  "postWorktree": "& '{{python}}' '{{skillDir}}\\trust_worktree.py' '{{worktree}}' --repo '{{repo}}' --mcpjson omnigraph; Push-Location '{{worktree}}'; uv sync --frozen 2>&1 | Select-Object -Last 1; Pop-Location",
 
   "$comment_vars": [
     "Free-form passthrough available to briefs, guards and postWorktree as",
     "{{name}}. Values may themselves reference the built-ins: session, key,",
-    "sessionName, model, worktree, branch, repo, baseBranch, stateDir."
+    "sessionName, model, worktree, branch, repo, baseBranch, stateDir, and",
+    "skillDir (the folder this skill lives in - it ships trust_worktree.py, the",
+    "pre-approval helper postWorktree above calls; nothing repo-specific needed).",
+    "A worktree holds TRACKED files only: no venv, no generated graph, no ignored",
+    "workspace. postWorktree is where each of those is created per worktree - a",
+    "session that runs the main checkout's venv from a worktree imports the MAIN",
+    "checkout's package (its editable install points there), silently."
   ],
   "vars": {
     "python": "{{repo}}\\.venv\\Scripts\\python.exe",
@@ -113,16 +127,22 @@
     "A": { "name": "report",      "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-A-report.md" },
     "B": { "name": "correctness", "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-B-correctness.md" },
     "D": { "name": "drying",      "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-D-drying.md" },
-    "E": { "name": "preliminary", "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-E-preliminary.md" }
+    "E": { "name": "preliminary", "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-E-preliminary.md" },
+    "G": { "name": "integration", "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-G-integration.md",
+           "dependsOn": ["A", "B"] }
   },
 
   "$comment_lanes": [
     "Lanes run in PARALLEL; sessions inside a lane run in SEQUENCE. Put sessions",
     "that contend for a resource in the same lane. Omit `lanes` entirely and every",
     "session gets its own lane (maximum parallelism).",
-    "Here: E writes the store and A follows it; D and B only read, so they share a lane."
+    "Here: E writes the store and A follows it; D and B only read, so they share a lane.",
+    "`dependsOn` is the cross-lane primitive: G's lane WAITS until A and B have merged,",
+    "then cuts its worktree from the base branch that carries them. A dependency that",
+    "ends without merging (guards red, conflict, blocked) stops G's lane instead of",
+    "leaving it polling all night. maxDependencyHours (default 48) bounds the wait."
   ],
-  "lanes": [["E", "A"], ["D", "B"]],
+  "lanes": [["E", "A"], ["D", "B"], ["G"]],
 
   "$comment_briefTemplate": [
     "Wrapped around each session's brief; {{brief}} is where the session body lands.",
@@ -167,6 +187,25 @@
   ],
   "requirePaths": [".venv/Scripts/python.exe"],
   "envFrom": ".claude/settings.local.json",
+
+  "$comment_traps": [
+    "OPTIONAL. Rendered into every brief as {{traps}} under a 'measured traps - do not",
+    "re-measure' heading, so a trap one session paid for reaches every later one."
+  ],
+  "traps": [
+    "Serena's replace_symbol_body drops decorators on the symbol it replaces - re-add them and diff.",
+    "PowerShell parameter and variable names are case-insensitive: a local $doneFile IS the -DoneFile parameter.",
+    "A worktree's python must be the worktree's own venv; the main checkout's editable install imports the main checkout's src."
+  ],
+
+  "$comment_finish": [
+    "quietMinutes: a session whose DONE note exists, whose branch is clean and has had no",
+    "commit for this long is FINISHED even if the agents view still says working (measured:",
+    "three hours of that, twice). stopAfterMerge: stop the finished session once merged, so",
+    "its process releases the worktree folder."
+  ],
+  "quietMinutes": 20,
+  "stopAfterMerge": true,
 
   "stateDir": "output/sessions",
   "maxContinues": 8,
