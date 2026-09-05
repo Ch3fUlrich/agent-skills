@@ -136,6 +136,28 @@ try {
         Assert-Match $out "dry run: would create" "and still reach the lane body"
     }
 
+    It "a guards-only session is reported by -Validate and rehearsed by -DryRun without a launch" {
+        $cfg = @{
+            repo         = $repo
+            baseBranch   = (git -C $repo rev-parse --abbrev-ref HEAD).Trim()
+            branchPrefix = "smoke"
+            stateDir     = (Join-Path $tmp "state-guardsonly")
+            sessions     = @{
+                X = @{ name = "alpha"; model = "opus"; brief = "alpha work"; resources = @("store:write") }
+                F = @{ name = "final"; model = "sonnet"; guardsOnly = $true; dependsOn = @("X") }
+            }
+            lanes        = @(@("X"), @("F"))
+        }
+        $p = Join-Path $tmp "guardsonly.json"
+        $cfg | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $out = (& pwsh -NoProfile -File $runner -Config $p -Validate 2>&1 | Out-String)
+        Assert-Match $out "guardsOnly:\s+F" "-Validate must surface the guards-only session"
+        Assert-Match $out "resources:\s+X holds store:write" "-Validate must surface held resources"
+        $out = (& pwsh -NoProfile -File $runner -Config $p -DryRun -Sessions "F" 2>&1 | Out-String)
+        Assert-Match $out "guards-only" "a dry run must say the session runs guards only"
+        Assert-NotMatch $out "run claude there.*\n.*claude " "no launch may be rehearsed for it"
+    }
+
     It "-Sessions overrides the config into a single inline lane" {
         $p = New-Config @(@("X"), @("Y")) "override"
         $out = (& pwsh -NoProfile -File $runner -Config $p -DryRun -Sessions "X,Y" 2>&1 | Out-String)

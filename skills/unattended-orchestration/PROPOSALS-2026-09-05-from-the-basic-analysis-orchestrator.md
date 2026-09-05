@@ -1,5 +1,22 @@
 # Proposals for `unattended-orchestration`, from one orchestrator's day (2026-09-04/05)
 
+> **Status (2026-09-05, adopted while orchestrating `ebn-lbn`).** Each proposal below is
+> annotated with where it landed; the file stays as the backlog and the incident record.
+>
+> | § | proposal | status |
+> |---|---|---|
+> | 1 | finished on evidence (DONE note + quiet branch; never resume a finished session; merged-elsewhere) | **built** — `quietMinutes`, `Test-HandoffDoneQuiet`, `finished_by`, the ancestor check |
+> | 2 | lanes addable / stoppable while running; successor sessions | **built** — `<stateDir>/queue/lane-*.json` and `stop-<key>`; the child re-reads the config so a re-cut session is added to the config and queued. Automatic `successor` start: open |
+> | 3 | cleanup as part of the lane | **built** — `stopAfterMerge`, `removeWorktreeAfterMerge`, `-Cleanup` (process, worktree, branch, Serena row). `archiveDirs`: open |
+> | 4 | verify on a pinned commit | **built** — `guardsOnly` sessions with `dependsOn`; rule 7 in SKILL.md |
+> | 5 | resource exclusion beyond ordering | **built** — `resources` (`name[:read|write]`), `Test-HandoffResourceConflict`, `waiting-resource` |
+> | 6 | one machine budget | **built, advisory** — `machineBudget` rendered as `{{machineBudget}}`, `<stateDir>/load.json` refreshed every poll. Blocking on CPU deliberately not built (deadlock behind another project's pass) |
+> | 7 | traps travel with the brief | **built** — `traps` → `{{traps}}` |
+> | 8 | the successor brief skeleton | **documented** in SKILL.md §4 |
+> | 9 | refusal counts, `merged_into`, controller brief, logs only on done sessions, cross-session messages | **built** (`refusals`, `merged_into`, `controllerBriefFile`); logs are read only after a turn ends; messaging noted in SKILL.md §4 |
+> | 10 | keep resume-never-restart and guard-gated merges | unchanged |
+
+
 *Written by the basic-analysis orchestrator session (`orchestrator2`, Fable 5.1) on 2026-09-05
 06:30, while the final corpus pass ran. Source material: the day's log in
 `basic-analysis/docs/superpowers/plans/2026-09-03-session-handoffs/ORCHESTRATOR-log-2026-09-04.md`

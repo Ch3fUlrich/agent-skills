@@ -75,7 +75,11 @@ This file is **normative policy**. It holds no paths, models, timeouts or test c
 | Branch, worktree and state locations | same file → `baseBranch`, `branchPrefix`, `worktree*`, `stateDir` |
 | Shared vs per-session artifacts | same file → `linkDirs` (one shared copy) / `copyDirs` (one per worktree) |
 | Cross-lane ordering | same file → each session's `dependsOn`; `maxDependencyHours` |
-| When a quiet session counts as finished; whether it is stopped after merging | same file → `quietMinutes`, `stopAfterMerge` |
+| When a quiet session counts as finished; whether it is stopped after merging; whether its worktree goes | same file → `quietMinutes`, `stopAfterMerge`, `removeWorktreeAfterMerge` |
+| Mutual exclusion between running sessions | same file → each session's `resources` |
+| The final, pinned test run | same file → a session with `guardsOnly: true` and `dependsOn` the rest |
+| The machine budget briefs defer under | same file → `machineBudget`, rendered as `{{machineBudget}}`; `<stateDir>/load.json` |
+| The controller's own brief | same file → `controllerBrief` / `controllerBriefFile` |
 | Traps every brief must carry | same file → `traps`, rendered as `{{traps}}` |
 | The skill's own folder, for bundled helpers | `{{skillDir}}` (set by the runner) → `trust_worktree.py` |
 | Shared brief preamble | same file → `briefTemplate` / `briefTemplateFile` |
@@ -135,6 +139,12 @@ Per session: create worktree → start background session with its brief → pol
 ends → classify → recover or continue → run guards → merge. A red guard or a merge conflict
 stops **that lane only**; other lanes keep running.
 
+**Exclusion across lanes is `resources`.** Ordering is not exclusion: a read-only session can
+starve a writer on a single-holder store while the lanes say nothing is wrong. Each session lists
+what it *holds* while running (`"store:write"`, `"store:read"`, a bare name meaning write); the
+runner refuses to start a session whose resources conflict with a running one — write excludes
+everything on that name, read excludes only write — and says so in the state file.
+
 **Ordering across lanes is `dependsOn`.** A session listing dependencies waits — before its
 worktree is cut — until each has *merged*, so it forks from a base branch that already carries
 their work; a dependency that ends without merging fails the dependent instead of leaving it
@@ -159,6 +169,8 @@ Every turn that ends is classified from the session log, and the kind decides th
 | `limit` | sleep until the reset epoch Claude reports, else a flat wait, then **resume the same session** | The message carries the exact reset time; waiting blind wastes hours. |
 | `transient` | short wait, then resume | 500/529/network are self-clearing. |
 | `other` + no DONE note | resume with a nudge, up to the continue cap | A session that stopped early has committed work; resuming continues from it. |
+| operator's `stop-<key>` marker in `<stateDir>/queue` | **stop the lane at its next decision point** — with a DONE note present, go to the guards; without one, stop | A finished lane used to be killable only with `Stop-Process` on its poller. |
+| branch already an ancestor of the base branch (merged by hand or by another runner) | mark `merged`, `finished_by: merged-elsewhere`, skip | Two runners over one state file, or an orchestrator merging by hand, must not re-run a session whose work is already in. |
 | DONE note present, branch clean and quiet for `quietMinutes` | **finished** — stop the session, run the guards, merge — even while the agents view still says "working" | Measured twice in one day: a finished session reported `working` for three hours, hit the session-hours cap, and was stopped and *resumed* — a fresh session that read the brief, found the work done, and idled. The evidence of completion is the DONE note, not the turn. |
 | permission prompt | **`blocked`**, lane stops | A background session cannot answer. It would sit there until morning. |
 
@@ -196,12 +208,43 @@ flowchart TD
 type; `claude logs handoff-S2` reads its output without joining. That name is derived in
 `Get-HandoffSessionVars` and printed in the runner log, the state file, and every emitted brief.
 
+**The runner is controllable while it runs.** `<stateDir>/queue/lane-<name>.json`
+(`{"sessions": ["F9"]}`) starts another lane child, which re-reads the config — so a session added
+to the config after the start is launchable without a second runner over the same state file;
+an empty `stop-<key>` file stops that session's lane at its next decision point.
+`<stateDir>/load.json` (cpu %, running sessions, refreshed every poll) is what a brief under a
+`machineBudget` reads before a heavy run — the budget is *advisory* on purpose: a runner that
+blocked lanes on CPU would deadlock behind another project's compute pass. `-Cleanup` stops every
+merged session's process, removes its worktree and branch, and prunes its Serena project row.
+
+**The final suite is a lane, never the main checkout.** A `guardsOnly` session with `dependsOn`
+every other session cuts a worktree at the merged HEAD and runs the guards there; nothing else
+runs the full suite. Measured 2026-09-04: a suite started from the main checkout while five
+merges fast-forwarded under it reported 18 red, of which 9 were artefacts of the moving tree.
+
 **The orchestrator may itself be an agent session.** A controller session that launched the
 runner in the background watches `<stateDir>/state.json` and `runner.log`, reads each DONE note
 as it lands, and adjudicates — it never edits the worktrees. What it cannot do is *answer* a
 prompt inside a background session (there is no non-interactive `attach`), which is why
 `postWorktree` pre-approval and the refusal rule below matter more, not less, when the operator
 is an agent.
+
+**A successor brief is written from the predecessor's DONE note.** Eight re-cuts in one day
+converged on the same six blocks, and the sessions that received them lost no time orienting:
+
+```
+# Session <N> — <one line: what this pass is>
+*Read <previous DONE note> in full first — above all <the one finding it must not re-learn>.*
+## Start            worktree + venv/graph check + commit flags + refusal rule
+## What is true now measured facts with the session that measured them; what other lanes own RIGHT NOW
+## The work, in order   numbered; each item names the guard it ships with (pass AND fire)
+## Not yours — write it down, do not do it   the operator's items, other lanes' files, the changelog
+## Done means       DONE note contents: commits, remains, refusals verbatim, fallbacks
+```
+
+The "what other lanes own right now" line is the one that prevents conflicts. Render the
+controller's own brief the same way (`controllerBriefFile`, shown first by `-EmitBriefs`), so a
+controller session can be restarted from the same source of truth as its lanes.
 
 **Cross-session memory goes through the memory graph, not through files.** Parallel sessions
 each own a worktree copy of every tracked file, so a shared ledger, a shared RESUME note or a
@@ -246,6 +289,7 @@ The four-step path is in *Adopting this skill* above. Beyond it:
 | `-FollowUp "…" -FollowUpSessions X` | also schedule a detached second run, so one invocation covers a night *and* a morning |
 | `-OutFile <path>` | with `-EmitBriefs`, write instead of printing |
 | `-Init -Force` | overwrite an existing config |
+| `-Cleanup` | stop, remove and prune every merged session's process, worktree, branch and Serena row |
 
 **`-EmitBriefs` is the manual path.** It renders each session as a `### Session` block — model,
 branch, worktree, attach command, then the brief in a fenced block — and launches nothing, so one
@@ -274,7 +318,9 @@ Follow a running session with the launcher's own commands (`claude attach <id>`,
    The skill ships the helper: `'{{skillDir}}/trust_worktree.py' '{{worktree}}' --repo '{{repo}}'`
    (`--mcpjson <name>` also enables a `.mcp.json` server for the worktree).
 6. **Keep the machine awake.** The runner cannot change power settings.
-7. **The tool allowlist must match how your MCP servers are wired.** A user-scope server is
+7. **Never run a long suite in the main checkout while lanes merge into it.** Modules import
+   before a merge and tests collect after it; the reds are artefacts. Use a `guardsOnly` lane.
+8. **The tool allowlist must match how your MCP servers are wired.** A user-scope server is
    `mcp__<name>__*`; the same server as a plugin is `mcp__plugin_<plugin>_<server>__*`. Wrong
    prefix = the session silently lacks the tool. See
    `mcp-servers-setup`.
