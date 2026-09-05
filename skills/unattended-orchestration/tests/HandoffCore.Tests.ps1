@@ -406,11 +406,22 @@ try {
         Assert-Equal 0 (@($r.failed).Count)
     }
     It "fails the dependent on a terminal, non-merged dependency instead of waiting forever" {
-        foreach ($bad in @("guards-red", "merge-conflict", "blocked", "failed", "crashed", "auth-failed")) {
+        foreach ($bad in @("blocked", "failed", "crashed", "auth-failed", "dependency-failed", "stopped-by-operator")) {
             $st = @{ A = @{ status = $bad } }
             $r = Get-HandoffDependencyState $st @("A")
             Assert-True (-not $r.ready) "status $bad must not be ready"
             Assert-Equal "A" (@($r.failed) -join ",") "status $bad must be reported as failed"
+        }
+    }
+    It "keeps waiting on a red guard or a merge conflict, which an operator resolves by hand" {
+        # Measured 2026-09-05: three of nine merges needed a hand resolution, each done within
+        # minutes, and the final-suite lane failed and had to be re-queued after every one.
+        foreach ($fixable in @("guards-red", "merge-conflict")) {
+            $st = @{ A = @{ status = $fixable } }
+            $r = Get-HandoffDependencyState $st @("A")
+            Assert-True (-not $r.ready) "status $fixable must not be ready"
+            Assert-Equal "A" (@($r.waiting) -join ",") "status $fixable must be waited on, not failed"
+            Assert-Equal 0 (@($r.failed).Count)
         }
     }
     It "normalises dependsOn to an array and rejects unknown or self references" {

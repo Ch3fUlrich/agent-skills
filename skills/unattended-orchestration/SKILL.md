@@ -151,9 +151,14 @@ everything on that name, read excludes only write — and says so in the state f
 
 **Ordering across lanes is `dependsOn`.** A session listing dependencies waits — before its
 worktree is cut — until each has *merged*, so it forks from a base branch that already carries
-their work; a dependency that ends without merging fails the dependent instead of leaving it
-polling until morning. That is what lets one invocation run "B, T11 and T6 in parallel, then C
-after all three, then D" without an operator returning to start the second half.
+their work. A dependency that ends in a state no operator action turns into a merge (`failed`,
+`blocked`, `crashed`, `auth-failed`) fails the dependent instead of leaving it polling until
+morning; a red guard or a merge conflict is *waited on* (bounded by `maxDependencyHours`),
+because the operator resolves those by hand within minutes and the runner then records the
+branch as merged-elsewhere (measured 2026-09-05: three of nine merges, and the final-suite
+lane had to be re-queued after every one before this). That is what lets one invocation run
+"B, T11 and T6 in parallel, then C after all three, then D" without an operator returning to
+start the second half.
 
 ```mermaid
 flowchart LR

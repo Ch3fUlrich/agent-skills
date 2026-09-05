@@ -367,8 +367,15 @@ function Get-HandoffDependencyState {
         polling all night for a merge that cannot come.  #>
     param([hashtable]$State, [string[]]$Deps)
     $satisfied = @("merged", "done-unmerged", "guards-green")
-    $terminal = @("failed", "auth-failed", "blocked", "guards-red", "merge-conflict", "crashed",
-                  "dependency-failed", "dependency-timeout")
+    # A red guard and a merge conflict are the two states an operator resolves by
+    # hand within minutes (measured 2026-09-05: three of nine merges), after which
+    # the runner marks the session merged-elsewhere. Failing every dependent the
+    # moment they appear cost the final-suite lane three re-queues in one day, so
+    # they are RECOVERABLE: the dependent keeps waiting, bounded by
+    # maxDependencyHours. Terminal is what no operator action turns into a merge.
+    $recoverable = @("guards-red", "merge-conflict")
+    $terminal = @("failed", "auth-failed", "blocked", "crashed",
+                  "dependency-failed", "dependency-timeout", "stopped-by-operator")
     $waiting = @(); $failed = @()
     foreach ($d in @($Deps)) {
         if (-not $d) { continue }
@@ -378,7 +385,7 @@ function Get-HandoffDependencyState {
         }
         if ($satisfied -contains $status) { continue }
         if ($terminal -contains $status) { $failed += $d; continue }
-        $waiting += $d
+        $waiting += $d   # running, waiting, unknown - or recoverable (guards-red, merge-conflict)
     }
     return @{ ready = (($waiting.Count -eq 0) -and ($failed.Count -eq 0)); waiting = $waiting; failed = $failed }
 }
