@@ -611,6 +611,11 @@ function Get-HandoffSessionVars {
     }
     $vars["loadFile"] = Join-Path $stateDir "load.json"
     $vars["queueDir"] = Join-Path $stateDir "queue"
+    # The controller -> session channel. A background session cannot be
+    # messaged from a non-interactive controller (no `claude send`; the
+    # desktop session tools do not reach `--bg` sessions), so the brief tells
+    # the session to READ this file at every decision point and long wait.
+    $vars["inbox"] = Join-Path (Join-Path $stateDir "inbox") "$key.md"
     $vars["subagentPolicy"] = Build-HandoffSubagentPolicy $Config
     $vars["traps"] = Build-HandoffTraps $Config
     $vars["machineBudget"] = Build-HandoffMachineBudget $Config $vars

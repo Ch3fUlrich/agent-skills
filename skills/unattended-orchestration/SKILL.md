@@ -83,6 +83,7 @@ This file is **normative policy**. It holds no paths, models, timeouts or test c
 | The final, pinned test run | same file → a session with `guardsOnly: true` and `dependsOn` the rest |
 | The machine budget briefs defer under | same file → `machineBudget`, rendered as `{{machineBudget}}`; `<stateDir>/load.json` |
 | The controller's own brief | same file → `controllerBrief` / `controllerBriefFile` |
+| The controller → session channel | `{{inbox}}` (`<stateDir>/inbox/<key>.md`), read by the session; written by the controller |
 | Traps every brief must carry | same file → `traps`, rendered as `{{traps}}` |
 | The skill's own folder, for bundled helpers | `{{skillDir}}` (set by the runner) → `trust_worktree.py` |
 | Shared brief preamble | same file → `briefTemplate` / `briefTemplateFile` |
@@ -224,6 +225,14 @@ merged session's process, removes its worktree and branch, and prunes its Serena
 every other session cuts a worktree at the merged HEAD and runs the guards there; nothing else
 runs the full suite. Measured 2026-09-04: a suite started from the main checkout while five
 merges fast-forwarded under it reported 18 red, of which 9 were artefacts of the moving tree.
+
+**The controller's only channel INTO a running session is a file.** There is no
+non-interactive `claude send`; the desktop session-messaging tools do not reach `--bg` sessions;
+`attach` needs a terminal. So every brief carries `{{inbox}}` — `<stateDir>/inbox/<key>.md` —
+and tells the session to read it at every decision point and before every long wait, act on it,
+and append what it did. Measured need (2026-09-05): a session polled a silent three-hour compute
+run every 25 minutes; the controller had diagnosed the cause in five, and could only reach the
+session by appending to the log file it happened to be polling and killing the process.
 
 **The orchestrator may itself be an agent session.** A controller session that launched the
 runner in the background watches `<stateDir>/state.json` and `runner.log`, reads each DONE note

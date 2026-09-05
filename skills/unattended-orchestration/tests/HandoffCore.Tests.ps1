@@ -505,6 +505,7 @@ try {
         $v = Get-HandoffSessionVars $c "A" $false
         Assert-Equal "" $v["machineBudget"]
         Assert-True ($v["loadFile"] -match "load\.json$") "loadFile must point into the state dir"
+        Assert-True ($v["inbox"] -match "inbox[\\/]A\.md$") "each session gets its own inbox file under the state dir"
         $c["machineBudget"] = @{ maxCpuPercent = 75; maxWorkersPerSession = 8 }
         $v = Get-HandoffSessionVars $c "A" $false
         Assert-True ($v["machineBudget"] -match "above 75" -and $v["machineBudget"] -match "8 worker") "budget numbers must reach the brief"
