@@ -59,6 +59,9 @@ checklist, all measured while adopting this skill into a second repository (2026
 | the gitignored working ledger / SDD workspace | the brief points at files that do not exist | `copyDirs` |
 | trust in `~/.claude.json` and MCP approval in `.claude/settings.local.json` | the first tool call blocks on a dialog nobody answers — and the `~/.claude.json` entry alone does **not** suppress the "New MCP server found" dialog (measured: three lanes blocked in three seconds) | `postWorktree`: the bundled `{{skillDir}}/trust_worktree.py --mcpjson <name>`, which writes the worktree's `settings.local.json` with `enableAllProjectMcpServers`; keep that file gitignored |
 | a unique memory-tool project name | Serena's tracked `project.yml` names every worktree the same; by-name activation raises for all of them | drop `project_name` from `project.yml` (each worktree self-names by folder) and activate by absolute path |
+| the gitignored `.env` (secrets, switches) | the worktree app generates fresh secrets, so archives encrypted by the main checkout cannot be read there - or a fresh key silently becomes the live one | `copyFiles: [".env"]` |
+| the live data directory, wanted by ONE lane | every worktree that links it lets a suite run reach real data; every worktree that lacks it makes the data session move nothing and report success | per-session `linkDirs` on exactly the sessions that own the move, nothing global (measured 2026-09-05, gen-analysis: a tracked placeholder would also have pre-empted the link, so keep `data/` untracked) |
+| an untracked prior-art drop one lane reads | the port session finds an empty folder and ports from memory | per-session `linkDirs` for that lane only |
 
 ## 0. Where each fact lives — read this before editing anything
 
@@ -73,7 +76,7 @@ This file is **normative policy**. It holds no paths, models, timeouts or test c
 | Tool allowlist, permission mode | same file → `allowedTools`, `permissionMode` |
 | Which agent to drive, and how | same file → `launcher` (defaults to Claude Code) |
 | Branch, worktree and state locations | same file → `baseBranch`, `branchPrefix`, `worktree*`, `stateDir` |
-| Shared vs per-session artifacts | same file → `linkDirs` (one shared copy) / `copyDirs` (one per worktree) |
+| Shared vs per-session artifacts | same file → `linkDirs` (one shared copy) / `copyDirs` (one per worktree) / `copyFiles` (single gitignored files, e.g. `.env`); a session adds its own under `sessions.<key>.linkDirs|copyDirs|copyFiles`, merged after the global lists |
 | Cross-lane ordering | same file → each session's `dependsOn`; `maxDependencyHours` |
 | When a quiet session counts as finished; whether it is stopped after merging; whether its worktree goes | same file → `quietMinutes`, `stopAfterMerge`, `removeWorktreeAfterMerge` |
 | Mutual exclusion between running sessions | same file → each session's `resources` |
@@ -290,6 +293,7 @@ The four-step path is in *Adopting this skill* above. Beyond it:
 | `-OutFile <path>` | with `-EmitBriefs`, write instead of printing |
 | `-Init -Force` | overwrite an existing config |
 | `-Cleanup` | stop, remove and prune every merged session's process, worktree, branch and Serena row |
+| `-Status` | print every session's state from `state.json` as one table (status, finished_by, refusals, last error) |
 
 **`-EmitBriefs` is the manual path.** It renders each session as a `### Session` block — model,
 branch, worktree, attach command, then the brief in a fenced block — and launches nothing, so one

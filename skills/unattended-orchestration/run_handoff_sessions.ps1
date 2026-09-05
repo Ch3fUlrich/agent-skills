@@ -15,6 +15,7 @@ config), so it can drive agents other than Claude Code.
   -DryRun      rehearse: preflight and lane dispatch, but no session is started
   -Cleanup     stop, remove and prune every MERGED session's background process,
                worktree, branch and Serena project row; launches nothing
+  -Status      print every session's state from state.json as a table
   (no flag)    run it
 
 While it runs, <stateDir>/queue is the operator's control surface: drop
@@ -90,6 +91,7 @@ param(
     [int]$MaxRetries = 0,
     [int]$MaxSessionHours = 0,
     [switch]$Cleanup,
+    [switch]$Status,
     [string]$LaneName = ""
 )
 
@@ -222,7 +224,7 @@ function Parse-Result([string]$path) {
 # profile, whose PSReadLine setup errors out on a redirected console.
 $shell = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
 
-function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
+function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars, [hashtable]$assets) {
     git -C $repo worktree prune 2>$null
     if (-not (Test-Path $wt)) {
         $exists = git -C $repo branch --list $branch
@@ -232,19 +234,32 @@ function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
     }
     # Directories shared with the main checkout rather than copied — a generated
     # graph, a model cache. Junctions, so the worktree sees one artifact.
-    foreach ($d in @($cfg.linkDirs)) {
+    foreach ($d in @($assets.linkDirs)) {
         if (-not $d) { continue }
         $link = Join-Path $wt $d
         $target = Join-Path $repo $d
-        if ((Test-Path $target) -and -not (Test-Path $link)) {
-            New-Item -ItemType (Get-HandoffLinkType) -Path $link -Target $target -ErrorAction SilentlyContinue | Out-Null
+        if (-not (Test-Path $target)) { continue }
+        if (Test-Path $link) {
+            $item = Get-Item $link -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }   # already linked
+            # A tracked placeholder (data/.gitkeep) makes git create the directory
+            # before the link can, and `-not (Test-Path $link)` then skipped the
+            # link SILENTLY: the data session would have moved nothing and reported
+            # success (measured 2026-09-05, gen-analysis). A directory holding
+            # nothing but placeholders is replaced by the link; real content is
+            # left alone and logged, because replacing it would delete work.
+            $real = @(Get-ChildItem $link -Force -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne ".gitkeep" })
+            if ($real.Count) { Log "linkDirs: $link already holds $($real.Count) real file(s); NOT replacing it with a link to $target"; continue }
+            Remove-Item -Recurse -Force $link
         }
+        New-Item -ItemType (Get-HandoffLinkType) -Path $link -Target $target -ErrorAction SilentlyContinue | Out-Null
+        if (Test-Path $link) { Log "linked $link -> $target" } else { Log "could not link $link -> $target" }
     }
     # Directories COPIED from the main checkout, so each worktree owns an
     # independent instance it may rebuild or append to without touching the
     # others' - a per-worktree code graph, a gitignored working ledger. Use
     # linkDirs for one shared artifact, copyDirs for one artifact per session.
-    foreach ($d in @($cfg.copyDirs)) {
+    foreach ($d in @($assets.copyDirs)) {
         if (-not $d) { continue }
         $dst = Join-Path $wt $d
         $src = Join-Path $repo $d
@@ -252,6 +267,20 @@ function Ensure-Worktree([string]$wt, [string]$branch, [hashtable]$vars) {
             $parent = Split-Path $dst -Parent
             if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
             Copy-Item -Recurse -Force $src $dst
+        }
+    }
+    # Single FILES copied from the main checkout - a gitignored `.env`, a
+    # local settings file - so a worktree session runs with the same secrets
+    # and switches as the main checkout instead of silently generating its
+    # own (a fresh SESSION_SECRET is harmless; a fresh DB key is not).
+    foreach ($f in @($assets.copyFiles)) {
+        if (-not $f) { continue }
+        $dst = Join-Path $wt $f
+        $src = Join-Path $repo $f
+        if ((Test-Path $src -PathType Leaf) -and -not (Test-Path $dst)) {
+            $parent = Split-Path $dst -Parent
+            if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+            Copy-Item -Force $src $dst
         }
     }
     # A brand-new worktree is an unapproved folder: the first session in it asks
@@ -478,10 +507,11 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     }
     if ($DryRun) {
         if ($info["guardsOnly"]) { Log "dry run: $key is guards-only; would cut $wt at $($cfg.baseBranch) and run the guards there" }
-        Log "dry run: would create $wt and run claude there"; return $true
+        $as = Get-HandoffWorktreeAssets $cfg $s
+        Log "dry run: would create $wt (link: $($as.linkDirs -join ','); copy: $($as.copyDirs -join ','); files: $($as.copyFiles -join ',')) and run claude there"; return $true
     }
 
-    Ensure-Worktree $wt $branch $vars
+    Ensure-Worktree $wt $branch $vars (Get-HandoffWorktreeAssets $cfg $s)
     Update-State $key @{ status = "running"; worktree = $wt; branch = $branch; model = $info.model; resources = @($info["resources"]) }
 
     if ($info["guardsOnly"]) {
@@ -682,6 +712,25 @@ function Preflight {
 }
 
 # ---------------------------------------------------------------------------
+if ($Status) {
+    # The morning (or the controller's) one-glance view of state.json, so
+    # nobody has to read raw JSON to learn which lane stopped and why.
+    $state = Read-HandoffState $stateFile
+    if (-not @($state.Keys).Count) { Write-Host "no state yet at $stateFile"; exit 0 }
+    $rows = @()
+    foreach ($k in @($state.Keys | Sort-Object)) {
+        $e = $state[$k]
+        if ($e -isnot [hashtable]) { continue }
+        $rows += [pscustomobject]@{
+            session = $k; status = $e["status"]; finished_by = $e["finished_by"]; bg = $e["bg_id"]
+            branch = $e["branch"]; refusals = $e["refusals"]; updated = $e["updated"]; error = $e["last_error"]
+        }
+    }
+    Write-Host "state: $stateFile"
+    $rows | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
+    exit 0
+}
+
 if ($Validate) {
     Write-Host "config OK: $($cfg.configPath)"
     Write-Host "  repo:      $repo"
@@ -695,6 +744,11 @@ if ($Validate) {
         $rr = @($cfg.sessions[$k]["resources"])
         if ($rr.Count) { Write-Host "  resources: $k holds $($rr -join ', ')" }
         if ($cfg.sessions[$k]["guardsOnly"]) { Write-Host "  guardsOnly: $k launches no agent" }
+        $own = @($cfg.sessions[$k]["linkDirs"]) + @($cfg.sessions[$k]["copyDirs"]) + @($cfg.sessions[$k]["copyFiles"])
+        if (@($own | Where-Object { $_ }).Count) {
+            $as = Get-HandoffWorktreeAssets $cfg $k
+            Write-Host "  assets:    $k links [$($as.linkDirs -join ', ')] copies [$($as.copyDirs -join ', ')] files [$($as.copyFiles -join ', ')]"
+        }
     }
     Write-Host "  queue:     $queueDir   load: $loadFile"
     Write-Host "  guards:    $(if (Build-HandoffGuardCommand $cfg @{}) { 'configured' } else { 'none' })"

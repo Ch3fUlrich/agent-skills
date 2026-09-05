@@ -559,6 +559,40 @@ try {
         Assert-Throws { New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" } "exists"
         New-HandoffConfigScaffold -Path $dest -RepoRoot $tmp -BaseBranch "main" -Force | Out-Null
     }
+    Write-Host "`nGet-HandoffWorktreeAssets (per-session worktree assets)"
+    # Why this matters: every worktree that links the live data directory lets a
+    # suite run reach real data. The data lane alone links it; the port lane alone
+    # links the prior-art drop; everyone else must see neither.
+    It "merges global and per-session link/copy lists, deduplicated, and gives other sessions only the global ones" {
+        $cfgA = @{
+            repo = $tmp; baseBranch = "main"
+            copyDirs = @("graphify-out"); copyFiles = @(".env")
+            sessions = @{
+                A = @{ name = "data";  model = "opus"; brief = "a"; linkDirs = @("data", "data"); copyFiles = @(".env", ".secrets") }
+                B = @{ name = "views"; model = "opus"; brief = "b" }
+            }
+            lanes = @(@("A"), @("B"))
+        }
+        $p = Join-Path $tmp "assets.json"; $cfgA | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $c = Read-HandoffConfig $p
+        $a = Get-HandoffWorktreeAssets $c "A"
+        Assert-Equal "data" (@($a.linkDirs) -join ",") "A links data exactly once"
+        Assert-Equal "graphify-out" (@($a.copyDirs) -join ",") "the global copy list reaches A"
+        Assert-Equal ".env,.secrets" (@($a.copyFiles) -join ",") "global first, then the session's own, no duplicates"
+        $b = Get-HandoffWorktreeAssets $c "B"
+        Assert-Equal "" (@($b.linkDirs) -join ",") "B must NOT see the data link"
+        Assert-Equal ".env" (@($b.copyFiles) -join ",") "B gets only the global file"
+    }
+    It "refuses a path that is both linked and copied for one session, at validation time" {
+        $bad = @{
+            repo = $tmp; baseBranch = "main"; copyDirs = @("graphify-out")
+            sessions = @{ A = @{ name = "a"; model = "opus"; brief = "a"; linkDirs = @("graphify-out") } }
+            lanes = @(, @("A"))
+        }
+        $p = Join-Path $tmp "assets-bad.json"; $bad | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        Assert-Throws { Read-HandoffConfig $p } "both linkDirs and copyDirs"
+    }
+
     It "writes no absolute machine-specific path into the scaffold" {
         # A scaffold carrying the generating machine's paths is not portable.
         $dest = Join-Path $tmp "scaffold3.json"

@@ -28,6 +28,7 @@ $script:HandoffDefaults = @{
     pollSeconds    = 30
     linkDirs       = @()
     copyDirs       = @()
+    copyFiles      = @()
     maxDependencyHours = 48
     quietMinutes   = 20
     stopAfterMerge = $true
@@ -542,6 +543,39 @@ function Test-HandoffMergedElsewhere {
     return $true
 }
 
+function Get-HandoffWorktreeAssets {
+    <#  -> @{ linkDirs; copyDirs; copyFiles } for one session: the global lists
+        followed by the session's own, deduplicated, order preserved.
+
+        Pure, so "which worktree sees the live data directory" is asserted by
+        a test rather than discovered by a suite writing into it. A path that
+        is both linked and copied is a contradiction and throws here, at
+        validation, not at 03:00 inside Ensure-Worktree.  #>
+    param([hashtable]$Config, [string]$SessionKey)
+    if (-not $Config["sessions"].ContainsKey($SessionKey)) { throw "unknown session '$SessionKey'" }
+    $info = $Config["sessions"][$SessionKey]
+    $out = @{}
+    foreach ($f in @("linkDirs", "copyDirs", "copyFiles")) {
+        $merged = @()
+        # Plain assignments, never `$x = if (...) { @(...) }`: an if EXPRESSION goes
+        # through the output stream, which unrolls a one-element array into a
+        # string - and `"a" + @("b")` is then string concatenation ("ab"). The
+        # new test caught exactly that on its first run.
+        $global = @(); if ($Config.ContainsKey($f) -and $null -ne $Config[$f]) { $global = @($Config[$f]) }
+        $own = @();    if ($info.ContainsKey($f) -and $null -ne $info[$f]) { $own = @($info[$f]) }
+        foreach ($i in @($global + $own)) {
+            if ($null -eq $i) { continue }
+            $n = ([string]$i).Trim()
+            if ($n -and ($merged -notcontains $n)) { $merged += $n }
+        }
+        $out[$f] = $merged
+    }
+    foreach ($d in @($out["linkDirs"])) {
+        if (@($out["copyDirs"]) -contains $d) { throw "session '$SessionKey': '$d' is in both linkDirs and copyDirs - pick one" }
+    }
+    return $out
+}
+
 function Get-HandoffSessionVars {
     <#  Every placeholder a brief, guard or hook can reference, for one session.
         Pure so that -EmitBriefs renders exactly what a real run would launch —
@@ -724,6 +758,19 @@ function Read-HandoffConfig {
             foreach ($d in @($s["dependsOn"])) { $n = ([string]$d).Trim(); if ($n) { $deps += $n } }
         }
         $s["dependsOn"] = $deps
+        # Per-session worktree assets: what THIS session's worktree links or
+        # copies on top of the global lists. Giving every worktree everything
+        # is how a suite run in the wrong lane reaches the live data directory,
+        # so the data lane alone links `data`, the port lane alone links the
+        # prior-art drop, and the rest see neither. Normalised here so the
+        # driver never has to ask whether a key exists.
+        foreach ($f in @("linkDirs", "copyDirs", "copyFiles")) {
+            $items = @()
+            if ($s.ContainsKey($f) -and $null -ne $s[$f]) {
+                foreach ($i in @($s[$f])) { $n = ([string]$i).Trim(); if ($n) { $items += $n } }
+            }
+            $s[$f] = $items
+        }
     }
     foreach ($key in @($cfg["sessions"].Keys)) {
         foreach ($d in @($cfg["sessions"][$key]["dependsOn"])) {
@@ -732,6 +779,8 @@ function Read-HandoffConfig {
                 throw "session '$key' dependsOn unknown session '$d' (known: $(($cfg['sessions'].Keys | Sort-Object) -join ', '))"
             }
         }
+        # Throws when one path is both linked and copied for a session.
+        [void](Get-HandoffWorktreeAssets $cfg $key)
     }
 
     # Lanes default to one session per lane: maximum parallelism, which is the
@@ -776,4 +825,4 @@ Get-HandoffSessionVars, Build-HandoffBrief, Export-HandoffBriefs,
 Get-HandoffLinkType, Resolve-HandoffRepoRoot, Build-HandoffLaunchArgs, New-HandoffConfigScaffold,
 Get-HandoffDependencyState, Build-HandoffTraps, Test-HandoffDoneQuiet,
 Test-HandoffResourceConflict, Get-HandoffRefusalCount, Build-HandoffMachineBudget, Build-HandoffControllerBrief,
-Get-HandoffText, Test-HandoffMergedElsewhere
+Get-HandoffText, Test-HandoffMergedElsewhere, Get-HandoffWorktreeAssets

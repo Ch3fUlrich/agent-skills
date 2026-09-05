@@ -78,6 +78,16 @@
   ],
   "copyDirs": [".superpowers"],
 
+  "$comment_copyFiles": [
+    "Single FILES copied from the main checkout into every worktree - the gitignored",
+    ".env with the secrets and switches the app reads from its own root, so a worktree",
+    "session neither generates a fresh DB key nor binds a different port. Skipped if absent.",
+    "Per-session variants: a session may carry its own linkDirs / copyDirs / copyFiles,",
+    "merged AFTER the global lists (see session E below). That is how one lane links the",
+    "live data directory while every other worktree stays unable to reach it."
+  ],
+  "copyFiles": [".env"],
+
   "$comment_postWorktree": [
     "Runs once per newly created worktree, in the configured shell, with {{vars}}",
     "expanded. A fresh worktree is an UNAPPROVED folder: the first session in it",
@@ -127,7 +137,8 @@
     "A": { "name": "report",      "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-A-report.md" },
     "B": { "name": "correctness", "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-B-correctness.md" },
     "D": { "name": "drying",      "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-D-drying.md" },
-    "E": { "name": "preliminary", "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-E-preliminary.md" },
+    "E": { "name": "preliminary", "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-E-preliminary.md",
+           "linkDirs": ["data"], "resources": ["store:write"] },
     "G": { "name": "integration", "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-G-integration.md",
            "dependsOn": ["A", "B"], "resources": ["store:write"] },
     "FINAL": { "name": "final-suite", "model": "sonnet", "guardsOnly": true, "dependsOn": ["A", "B", "D", "E", "G"] }
