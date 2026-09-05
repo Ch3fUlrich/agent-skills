@@ -459,7 +459,13 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     }
     # Operator control: an empty stop-<key> file in the queue directory ends
     # this lane before the session starts.
-    if (Test-Path (Join-Path $queueDir "stop-$key")) {
+    # With a DONE note already in the worktree the marker means "never resume this
+    # session again - go straight to the guards and the merge", exactly as it does
+    # inside the session loop. The first version stopped the lane here regardless,
+    # so an operator who had fixed a red branch by hand and relaunched the lane got
+    # "stopped by the operator" instead of a guard run (measured 2026-09-05).
+    $doneEarly = [bool]($vars["doneNote"] -and (Test-Path (Join-Path $wt $vars["doneNote"])))
+    if ((Test-Path (Join-Path $queueDir "stop-$key")) -and -not $doneEarly) {
         Log "$key stopped by the operator's stop marker before starting"
         Update-State $key @{ status = "stopped-by-operator" }; return $false
     }
