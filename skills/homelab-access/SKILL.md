@@ -27,9 +27,18 @@ reachable on every Linux VM with the same `claude-ops` key, and they are not a h
 | Passwordless sudo | ❌ prompts | ✅ scoped | ✅ **`(ALL) NOPASSWD: ALL`** |
 | sudo scope | — | only `/usr/bin/docker`, `/usr/bin/systemctl`, `/usr/local/bin/docker-compose` | **everything — full root** |
 
-- **Container work → `<host>-vm`** (`DOCKER_HOST=ssh://` needs the docker *group*, not sudo).
+- **Container reads → `scripts/homelab ps|logs`** (runs `dockerq` via `<host>-ops`); **deploy/restart →
+  `scripts/homelab deploy|restart`** (Semaphore `stack-deploy` template) — prefer these over raw
+  `docker`/`DOCKER_HOST=ssh://` for anything scripted or repeatable.
 - **`systemctl` / quick service work → `<host>-ops`.**
 - **Anything else needing root** — editing `/etc`, `apt`, mounts, arbitrary files — **→ `<host>-svc`.**
+  **Recorded root:** every `<host>-svc` session is I/O-recorded (`/var/log/sudo-io/svc-ops/`,
+  `/var/log/sudo-svc-ops.log`) and every execve is audited (`ausearch --input-logs -k
+  svc_ops_exec -ts recent`); use it only for what `scripts/homelab`/`dockerq`/`<host>-ops` can't
+  do, and say why in the commit/report. `journalctl` is **not** granted to `claude-ops` — use
+  `<host>-svc` for journal reads.
+  **`coding.vm` exception:** no `claude-ops` user and no `coding-ops`/`coding-svc` aliases exist
+  there — root is `ssh -i ~/.ssh/claude-ops svc-ops@127.0.0.1`.
 
 ```bash
 DOCKER_HOST=ssh://cloud-vm docker compose ps          # as s
