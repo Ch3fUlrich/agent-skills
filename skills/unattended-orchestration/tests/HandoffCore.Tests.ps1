@@ -82,6 +82,15 @@ It "does not fire on ordinary prose" {
     Assert-True (-not (Test-HandoffPermissionPrompt "I proceeded to edit the file")) "false positive"
 }
 
+It "recognises the MCP-approval dialog and the folder-trust dialog as prompts" {
+    # Measured 2026-09-05: three lanes blocked on "New MCP server found in this
+    # project: omnigraph" and the runner read it as an ordinary early stop,
+    # resuming into the same dialog every two minutes.
+    Assert-True (Test-HandoffPermissionPrompt "New MCP server found in this project: omnigraph`nUse this MCP server`nEnter to confirm")
+    Assert-True (Test-HandoffPermissionPrompt "Do you trust the files in this folder?")
+    Assert-True (-not (Test-HandoffPermissionPrompt "ran 12 tests, all green"))
+}
+
 Write-Host "`nExpand-HandoffTemplate"
 It "substitutes {{placeholders}} from a hashtable" {
     Assert-Equal "run in C:\wt on b1" (Expand-HandoffTemplate "run in {{worktree}} on {{branch}}" @{ worktree = "C:\wt"; branch = "b1" })
@@ -509,6 +518,18 @@ try {
         Assert-True ($b -match "claude attach handoff-A") "each session's attach command must be listed"
         $md = Export-HandoffBriefs $c
         Assert-True ($md -match "## Controller") "-EmitBriefs must include the controller section"
+    }
+
+    Write-Host "`nTest-HandoffMergedElsewhere"
+    It "treats a branch that merely fell behind the base as NOT merged, and a --no-ff-merged one as merged" {
+        # Measured 2026-09-05: the ancestry-only check would have skipped every
+        # fresh lane after one commit landed on the base behind its cut.
+        $line = @("c3", "c2", "c1", "c0")          # the base's first-parent history, newest first
+        Assert-True (-not (Test-HandoffMergedElsewhere "c2" "c3" $true $line)) "behind the base, on its first-parent line -> not merged"
+        Assert-True (-not (Test-HandoffMergedElsewhere "c3" "c3" $true $line)) "equal to the base tip -> nothing done yet"
+        Assert-True (Test-HandoffMergedElsewhere "b7" "c3" $true $line) "reachable but off the first-parent line -> merged by a --no-ff merge"
+        Assert-True (-not (Test-HandoffMergedElsewhere "b7" "c3" $false $line)) "not reachable at all -> not merged"
+        Assert-True (-not (Test-HandoffMergedElsewhere "" "c3" $true $line)) "no branch yet -> not merged"
     }
 
     Write-Host "`nGet-HandoffText (native output to string)"

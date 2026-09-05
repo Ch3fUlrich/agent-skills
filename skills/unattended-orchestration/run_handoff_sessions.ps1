@@ -431,14 +431,17 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
         Update-State $key @{ status = "stopped-by-operator" }; return $false
     }
     # Merged elsewhere - by hand, or by another runner over the same state: an
-    # existing branch whose tip is already an ancestor of the base branch and
-    # is not simply equal to it (a freshly cut branch is an ancestor too).
+    # existing branch whose tip is reachable from the base branch but OFF its
+    # first-parent line (a --no-ff merge). A branch that merely fell behind the
+    # base is an ancestor too, and sits ON that line - it is not merged.
     if (-not $Fresh -and -not $DryRun) {
         $tipB = Get-HandoffText (git -C $repo rev-parse --verify --quiet $branch 2>$null)
         $tipBase = Get-HandoffText (git -C $repo rev-parse --verify --quiet $cfg.baseBranch 2>$null)
         if ($tipB -and $tipBase -and $tipB -ne $tipBase) {
             git -C $repo merge-base --is-ancestor $branch $cfg.baseBranch 2>$null
-            if ($LASTEXITCODE -eq 0) {
+            $isAncestor = ($LASTEXITCODE -eq 0)
+            $firstParents = @((Get-HandoffText (git -C $repo rev-list --first-parent $cfg.baseBranch 2>$null)) -split "`n")
+            if (Test-HandoffMergedElsewhere $tipB $tipBase $isAncestor $firstParents) {
                 Log "$key ($branch) is already merged into $($cfg.baseBranch); skipping"
                 Update-State $key @{ status = "merged"; finished_by = "merged-elsewhere"; merged_into = $tipBase }
                 return $true

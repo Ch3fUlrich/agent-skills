@@ -268,7 +268,9 @@ function Test-HandoffPermissionPrompt {
         can see in the state file the next morning.  #>
     param([string]$Text)
     if (-not $Text) { return $false }
-    return [bool]($Text -match "(?i)do you want to proceed|do you trust|allow this|\[y/n\]|permission required")
+    # The MCP-approval and folder-trust dialogs are drawn as full-screen
+    # menus, not questions: match their wording, not only a question mark.
+    return [bool]($Text -match "(?i)do you want to proceed|do you trust|allow this|\[y/n\]|permission required|new mcp server found|use this mcp server|use this and all future mcp servers|enter to confirm|esc to cancel|trust the files in this folder")
 }
 
 function Read-HandoffState {
@@ -522,6 +524,24 @@ function Get-HandoffText {
     return ([string]::Join("`n", @($Value | ForEach-Object { [string]$_ }))).Trim()
 }
 
+function Test-HandoffMergedElsewhere {
+    <#  Was this session's branch merged into the base branch by someone else?
+
+        Ancestry alone cannot tell: a branch cut from the base and left with
+        NO commits is an ancestor of a base that moved on, exactly like a
+        merged branch is - and the first version of this check skipped every
+        fresh lane whose base had gained one commit since the cut. The tell is
+        the base's FIRST-PARENT line: a `--no-ff` merge leaves the branch tip
+        reachable but off that line; a branch merely behind the base sits ON
+        it. Tip equal to the base tip is "nothing done yet", never "merged".  #>
+    param([string]$Tip, [string]$BaseTip, [bool]$IsAncestor, [string[]]$FirstParentLine)
+    if (-not $Tip -or -not $BaseTip) { return $false }
+    if ($Tip -eq $BaseTip) { return $false }
+    if (-not $IsAncestor) { return $false }
+    if (@($FirstParentLine) -contains $Tip) { return $false }
+    return $true
+}
+
 function Get-HandoffSessionVars {
     <#  Every placeholder a brief, guard or hook can reference, for one session.
         Pure so that -EmitBriefs renders exactly what a real run would launch —
@@ -756,4 +776,4 @@ Get-HandoffSessionVars, Build-HandoffBrief, Export-HandoffBriefs,
 Get-HandoffLinkType, Resolve-HandoffRepoRoot, Build-HandoffLaunchArgs, New-HandoffConfigScaffold,
 Get-HandoffDependencyState, Build-HandoffTraps, Test-HandoffDoneQuiet,
 Test-HandoffResourceConflict, Get-HandoffRefusalCount, Build-HandoffMachineBudget, Build-HandoffControllerBrief,
-Get-HandoffText
+Get-HandoffText, Test-HandoffMergedElsewhere

@@ -22,6 +22,13 @@ alone unless ``--force``, nothing else in the config is touched, and the file is
 written atomically beside a one-per-day backup. It grants no permission a
 session would not have had after the operator clicked "trust" once.
 
+Note the MCP half: the ``~/.claude.json`` entry alone does NOT suppress the
+"New MCP server found in this project" dialog (measured 2026-09-05, three lanes
+blocked in three seconds). The worktree's ``.claude/settings.local.json`` with
+``enableAllProjectMcpServers: true`` does, so this script always writes one -
+copied from the main checkout when it has one, minimal otherwise. Keep that
+file gitignored in the adopting repository.
+
 This file is part of the ``unattended-orchestration`` skill and carries no
 repository-specific knowledge; reference it from ``postWorktree`` as
 ``'{{skillDir}}/trust_worktree.py'``.
@@ -130,18 +137,51 @@ def trust(worktree: Path, repo: Path, *, mcpjson: list[str], force: bool = False
     return True, f"trusted: {key}" + (f" (mcpjson {sorted(set(enabled) | set(mcpjson))})" if mcpjson else "")
 
 
-def copy_local_settings(worktree: Path, repo: Path, *, check: bool = False) -> str:
-    """Copy the gitignored local settings into the worktree, if any."""
+def copy_local_settings(worktree: Path, repo: Path, *, mcpjson: list[str],
+                        check: bool = False) -> str:
+    """Give the worktree a local settings file that approves its MCP servers.
+
+    Measured 2026-09-05: a project entry in ``~/.claude.json`` carrying
+    ``enabledMcpjsonServers`` does NOT suppress the "New MCP server found in
+    this project" dialog - three background sessions blocked on it within
+    three seconds of launch. What does suppress it is
+    ``.claude/settings.local.json`` in the worktree with
+    ``enableAllProjectMcpServers: true`` (and the names in
+    ``enabledMcpjsonServers``). So: copy the main checkout's file when it has
+    one (it also carries tokens and permission allow-lists), otherwise write a
+    minimal one; either way merge the approval keys in.
+    """
     src, dst = repo / LOCAL_SETTINGS, worktree / LOCAL_SETTINGS
-    if not src.is_file():
-        return f"no {LOCAL_SETTINGS} in the main checkout"
-    if dst.is_file():
-        return f"worktree already has {LOCAL_SETTINGS}"
     if check:
-        return f"WOULD copy {src} -> {dst}"
+        return f"WOULD write {dst} (from {src if src.is_file() else 'scratch'})"
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    return f"copied {LOCAL_SETTINGS} into the worktree"
+    data: dict = {}
+    origin = "scratch"
+    if dst.is_file():
+        try:
+            data = json.loads(dst.read_text(encoding="utf-8"))
+            origin = "the worktree's existing file"
+        except json.JSONDecodeError:
+            data = {}
+    elif src.is_file():
+        shutil.copy2(src, dst)
+        data = json.loads(dst.read_text(encoding="utf-8"))
+        origin = f"a copy of {LOCAL_SETTINGS}"
+    changed = False
+    if data.get("enableAllProjectMcpServers") is not True:
+        data["enableAllProjectMcpServers"] = True
+        changed = True
+    enabled = list(data.get("enabledMcpjsonServers") or [])
+    for name in mcpjson:
+        if name not in enabled:
+            enabled.append(name)
+            changed = True
+    if enabled:
+        data["enabledMcpjsonServers"] = enabled
+    if changed or not dst.is_file():
+        dst.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return f"wrote {dst} from {origin} (MCP servers approved: {enabled or 'all project servers'})"
+    return f"{dst} already approves the MCP servers"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -167,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
 
     changed, msg = trust(worktree, repo, mcpjson=args.mcpjson, force=args.force, check=args.check)
     print(msg)
-    print(copy_local_settings(worktree, repo, check=args.check))
+    print(copy_local_settings(worktree, repo, mcpjson=args.mcpjson, check=args.check))
     return 0
 
 
