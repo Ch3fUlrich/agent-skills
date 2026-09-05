@@ -127,6 +127,20 @@ Server: `omnigraph-server` v0.8.1 · MCP bridge `@modernrelay/omnigraph-mcp`
      the next call re-pins. If it persists, write onto a fresh branch via
      `load --from main` instead, which doesn't suffer `main`'s concurrent-commit drift.
 
+6b. **`fetch failed` on every tool, or `Lance HEAD version N ahead of manifest version M; a pending
+   recovery sidecar requires rollback` on every `insert` of one node type - the STORE broke under
+   concurrent writers, not your query.** Measured 2026-09-05 with three unattended sessions writing
+   the `ebn-lbn` graph at once: MinIO logged `taking drive /data offline: unable to write+read for
+   30s` and `file is corrupted, Object buckets/.bloomcycle.bin`; one session's mutation died with a
+   503 mid-write; every later `insert Decision` failed with the sidecar error while reads worked.
+   Recovery, in order: move `/data/.minio.sys/buckets/.bloomcycle.bin` aside inside the
+   `omnigraph-minio` container (MinIO recreates it); `docker restart omnigraph-minio` and wait for
+   `/minio/health/cluster` = 200; `docker restart omnigraph-server` - it logs `recovery: rolling
+   back sidecar`, then takes **~13 minutes** to load all graphs (AIMD throttle warnings are
+   normal); its health path is **`/healthz`**, not `/health`. A batch that failed mid-way landed
+   NOTHING (verified by reading the slugs back), so re-insert only what is missing - never the
+   whole batch (rule 7: edges duplicate).
+
 7. **Duplicate edges are the classic trap.** Edges are **not** slug-keyed, so a
    cross-store `load --mode merge` (device-branch merge, reconciling two clients)
    **appends** them → duplicates. There is **no API to delete an individual edge**
