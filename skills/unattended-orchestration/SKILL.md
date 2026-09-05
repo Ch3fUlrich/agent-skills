@@ -45,6 +45,21 @@ throwaway repository and drives the whole path there unedited:
 
 The one hard requirement is **PowerShell 7** (`pwsh`), which runs on Windows, Linux and macOS.
 
+**A worktree holds tracked files only.** Everything a session needs that git does not carry has
+to be created *per worktree*, in `postWorktree`, or it is silently absent — and "silently" is
+the word: a venv whose editable install points at the main checkout imports the **main
+checkout's** package from inside the worktree, a cwd-relative code-graph server answers from a
+graph that was never built there, a memory tool registers every worktree under one name. The
+checklist, all measured while adopting this skill into a second repository (2026-09-05):
+
+| the worktree lacks | what happens if you ignore it | fix, per worktree |
+|---|---|---|
+| a venv | `python` from the main checkout's venv resolves `import <package>` to the main checkout's `src` (editable `.pth`), so the session tests code it did not write | `postWorktree`: `uv sync --frozen` (24 s with a warm cache); guards and briefs use `{{worktree}}/.venv` |
+| the code graph (`graphify-out/`, gitignored) | the cwd-relative MCP server finds nothing, or a junction shares ONE graph that any session's rebuild overwrites for all | build it in `postWorktree` (27 s, no API key) — or `copyDirs` for a snapshot each session may rebuild |
+| the gitignored working ledger / SDD workspace | the brief points at files that do not exist | `copyDirs` |
+| trust and MCP approval in `~/.claude.json` | the first tool call blocks on a prompt nobody answers | `postWorktree`: the bundled `{{skillDir}}/trust_worktree.py` |
+| a unique memory-tool project name | Serena's tracked `project.yml` names every worktree the same; by-name activation raises for all of them | drop `project_name` from `project.yml` (each worktree self-names by folder) and activate by absolute path |
+
 ## 0. Where each fact lives — read this before editing anything
 
 This file is **normative policy**. It holds no paths, models, timeouts or test commands.
@@ -58,6 +73,11 @@ This file is **normative policy**. It holds no paths, models, timeouts or test c
 | Tool allowlist, permission mode | same file → `allowedTools`, `permissionMode` |
 | Which agent to drive, and how | same file → `launcher` (defaults to Claude Code) |
 | Branch, worktree and state locations | same file → `baseBranch`, `branchPrefix`, `worktree*`, `stateDir` |
+| Shared vs per-session artifacts | same file → `linkDirs` (one shared copy) / `copyDirs` (one per worktree) |
+| Cross-lane ordering | same file → each session's `dependsOn`; `maxDependencyHours` |
+| When a quiet session counts as finished; whether it is stopped after merging | same file → `quietMinutes`, `stopAfterMerge` |
+| Traps every brief must carry | same file → `traps`, rendered as `{{traps}}` |
+| The skill's own folder, for bundled helpers | `{{skillDir}}` (set by the runner) → `trust_worktree.py` |
 | Shared brief preamble | same file → `briefTemplate` / `briefTemplateFile` |
 | Every annotated field | [`handoff.config.example.json`](handoff.config.example.json) |
 | Failure→recovery rules, config validation | [`HandoffCore.psm1`](HandoffCore.psm1) (tested) |
@@ -115,6 +135,20 @@ Per session: create worktree → start background session with its brief → pol
 ends → classify → recover or continue → run guards → merge. A red guard or a merge conflict
 stops **that lane only**; other lanes keep running.
 
+**Ordering across lanes is `dependsOn`.** A session listing dependencies waits — before its
+worktree is cut — until each has *merged*, so it forks from a base branch that already carries
+their work; a dependency that ends without merging fails the dependent instead of leaving it
+polling until morning. That is what lets one invocation run "B, T11 and T6 in parallel, then C
+after all three, then D" without an operator returning to start the second half.
+
+```mermaid
+flowchart LR
+    B[B] --> C
+    T11[T11] --> C
+    T6[T6] --> C[C — dependsOn B, T11, T6]
+    C --> D[D — same lane, sequential]
+```
+
 ## 3. Recovery — the part that earns the skill
 
 Every turn that ends is classified from the session log, and the kind decides the response:
@@ -125,6 +159,7 @@ Every turn that ends is classified from the session log, and the kind decides th
 | `limit` | sleep until the reset epoch Claude reports, else a flat wait, then **resume the same session** | The message carries the exact reset time; waiting blind wastes hours. |
 | `transient` | short wait, then resume | 500/529/network are self-clearing. |
 | `other` + no DONE note | resume with a nudge, up to the continue cap | A session that stopped early has committed work; resuming continues from it. |
+| DONE note present, branch clean and quiet for `quietMinutes` | **finished** — stop the session, run the guards, merge — even while the agents view still says "working" | Measured twice in one day: a finished session reported `working` for three hours, hit the session-hours cap, and was stopped and *resumed* — a fresh session that read the brief, found the work done, and idled. The evidence of completion is the DONE note, not the turn. |
 | permission prompt | **`blocked`**, lane stops | A background session cannot answer. It would sit there until morning. |
 
 The exact patterns and waits live in `Classify-HandoffFailure`; they are covered by
@@ -160,6 +195,20 @@ flowchart TD
 "unattended" run is interactive on demand — `claude attach handoff-S2` joins it and lets you
 type; `claude logs handoff-S2` reads its output without joining. That name is derived in
 `Get-HandoffSessionVars` and printed in the runner log, the state file, and every emitted brief.
+
+**The orchestrator may itself be an agent session.** A controller session that launched the
+runner in the background watches `<stateDir>/state.json` and `runner.log`, reads each DONE note
+as it lands, and adjudicates — it never edits the worktrees. What it cannot do is *answer* a
+prompt inside a background session (there is no non-interactive `attach`), which is why
+`postWorktree` pre-approval and the refusal rule below matter more, not less, when the operator
+is an agent.
+
+**Cross-session memory goes through the memory graph, not through files.** Parallel sessions
+each own a worktree copy of every tracked file, so a shared ledger, a shared RESUME note or a
+shared changelog section edited by two sessions is a merge conflict waiting for the runner.
+Give parallel sessions their own ledger/memory/changelog-fragment files and let the sequential
+tail fold them in; put the durable decisions in the structured memory graph, which every session
+reads at start.
 
 **Subagent policy is stated once.** The `subagents` block renders into every brief as
 `{{subagentPolicy}}`, so all sessions delegate the same way. It is opt-in: a session told to
@@ -222,6 +271,8 @@ Follow a running session with the launcher's own commands (`claude attach <id>`,
    it. This is the single most important line in `briefTemplate`.
 5. **Pre-approve the worktree** via `postWorktree`. A fresh worktree is an unapproved folder; the
    first session in it asks to trust the directory, and a background session cannot answer.
+   The skill ships the helper: `'{{skillDir}}/trust_worktree.py' '{{worktree}}' --repo '{{repo}}'`
+   (`--mcpjson <name>` also enables a `.mcp.json` server for the worktree).
 6. **Keep the machine awake.** The runner cannot change power settings.
 7. **The tool allowlist must match how your MCP servers are wired.** A user-scope server is
    `mcp__<name>__*`; the same server as a plugin is `mcp__plugin_<plugin>_<server>__*`. Wrong
@@ -236,6 +287,13 @@ Tests are the contract, and both suites must stay green:
 pwsh -File skills/unattended-orchestration/tests/HandoffCore.Tests.ps1   # pure logic
 pwsh -File skills/unattended-orchestration/tests/Runner.Smoke.Tests.ps1  # the driver, via -Validate/-DryRun
 ```
+
+Proposals that came out of real runs but are not built yet — lane control while running,
+resource exclusion beyond ordering, a machine-wide compute budget, post-merge worktree cleanup —
+are collected in
+[`PROPOSALS-2026-09-05-from-the-basic-analysis-orchestrator.md`](PROPOSALS-2026-09-05-from-the-basic-analysis-orchestrator.md),
+each with the incident that motivates it. Read it before inventing a feature; the incident may
+already be there.
 
 Put anything that is a function of its arguments in `HandoffCore.psm1` so it can be tested
 without an overnight run; the driver keeps only what genuinely touches git, `claude` or the

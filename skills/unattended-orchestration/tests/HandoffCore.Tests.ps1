@@ -379,6 +379,90 @@ try {
         Assert-True ($c1.mutexName -ne $c2.mutexName) "distinct repos must get distinct mutex names"
     }
 
+    Write-Host "`nCross-lane dependencies (dependsOn)"
+    # Why these matter: a dependent session that starts before its dependency
+    # merged forks from a base branch WITHOUT that work; one that waits for a
+    # dependency that can never merge polls until morning. Both are silent.
+    It "reports ready when every dependency has merged (or was left unmerged on purpose)" {
+        $st = @{ A = @{ status = "merged" }; B = @{ status = "done-unmerged" } }
+        $r = Get-HandoffDependencyState $st @("A", "B")
+        Assert-True $r.ready "merged + done-unmerged must satisfy"
+        Assert-Equal 0 (@($r.waiting).Count)
+    }
+    It "waits on a dependency that is running or has no state yet" {
+        $st = @{ A = @{ status = "running" } }
+        $r = Get-HandoffDependencyState $st @("A", "NOTYET")
+        Assert-True (-not $r.ready)
+        Assert-Equal "A,NOTYET" (@($r.waiting) -join ",")
+        Assert-Equal 0 (@($r.failed).Count)
+    }
+    It "fails the dependent on a terminal, non-merged dependency instead of waiting forever" {
+        foreach ($bad in @("guards-red", "merge-conflict", "blocked", "failed", "crashed", "auth-failed")) {
+            $st = @{ A = @{ status = $bad } }
+            $r = Get-HandoffDependencyState $st @("A")
+            Assert-True (-not $r.ready) "status $bad must not be ready"
+            Assert-Equal "A" (@($r.failed) -join ",") "status $bad must be reported as failed"
+        }
+    }
+    It "normalises dependsOn to an array and rejects unknown or self references" {
+        $dep = $good.Clone()
+        $dep.sessions = @{ A = @{ name = "alpha"; model = "opus"; brief = "a" }
+                           B = @{ name = "beta";  model = "opus"; brief = "b"; dependsOn = "A" } }
+        $dep.lanes = @(@("A"), @("B"))
+        $p = Join-Path $tmp "deps.json"; $dep | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $c = Read-HandoffConfig $p
+        Assert-Equal "A" (@($c.sessions.B.dependsOn) -join ",") "a bare string must become a one-element array"
+        Assert-Equal 0 (@($c.sessions.A.dependsOn).Count) "a session without dependsOn gets an empty array"
+
+        $dep.sessions.B.dependsOn = @("ZZ")
+        $dep | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        Assert-Throws { Read-HandoffConfig $p } "ZZ"
+
+        $dep.sessions.B.dependsOn = @("B")
+        $dep | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        Assert-Throws { Read-HandoffConfig $p } "itself"
+    }
+    It "exposes skillDir to briefs and hooks when the runner sets it" {
+        $c = Read-HandoffConfig $goodPath
+        $c["skillDir"] = "X:\\the\\skill"
+        $v = Get-HandoffSessionVars $c "A" $false
+        Assert-Equal "X:\\the\\skill" $v["skillDir"]
+        Assert-Equal "X:\\the\\skill/trust_worktree.py" (Expand-HandoffTemplate "{{skillDir}}/trust_worktree.py" $v)
+    }
+
+    Write-Host "`nbriefTemplateFile, traps, and the DONE-note finish rule"
+    It "wraps the brief with briefTemplateFile even when no inline briefTemplate is set" {
+        # Measured 2026-09-05: a config with only briefTemplateFile launched every
+        # session with its bare body - none of the shared rules reached them.
+        $tplPath = Join-Path $tmp "tpl.md"
+        "PREAMBLE for {{session}}`n{{brief}}`nPOSTAMBLE" | Set-Content $tplPath -Encoding utf8
+        $t = $good.Clone(); $t.briefTemplateFile = "tpl.md"
+        $p = Join-Path $tmp "tplfile.json"; $t | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $c = Read-HandoffConfig $p
+        $v = Get-HandoffSessionVars $c "A" $false
+        $b = Build-HandoffBrief $c "A" $v
+        Assert-True ($b -match "PREAMBLE for A") "template file must wrap the brief"
+        Assert-True ($b -match "do A") "the session body must be inside"
+        Assert-True ($b -match "POSTAMBLE") "the template's tail must survive"
+    }
+    It "renders the traps list into every brief, and nothing when unset" {
+        $c = Read-HandoffConfig $goodPath
+        Assert-Equal "" (Build-HandoffTraps $c) "no traps configured -> empty block"
+        $c["traps"] = @("first trap", "second trap")
+        $block = Build-HandoffTraps $c
+        Assert-True ($block -match "first trap" -and $block -match "second trap")
+        $v = Get-HandoffSessionVars $c "A" $false
+        Assert-True ($v["traps"] -match "second trap") "traps must reach the session vars"
+    }
+    It "calls a session finished only when the DONE note exists AND the clean branch has been quiet" {
+        $now = 1000000
+        Assert-True (-not (Test-HandoffDoneQuiet $false ($now - 3600) $now 20 $false)) "no DONE note -> not finished"
+        Assert-True (-not (Test-HandoffDoneQuiet $true ($now - 60) $now 20 $false)) "a commit one minute ago -> still working"
+        Assert-True (-not (Test-HandoffDoneQuiet $true ($now - 3600) $now 20 $true)) "uncommitted changes -> still working"
+        Assert-True (-not (Test-HandoffDoneQuiet $true 0 $now 20 $false)) "no commit at all -> not finished"
+        Assert-True (Test-HandoffDoneQuiet $true ($now - 3600) $now 20 $false) "DONE note + clean + quiet an hour -> finished"
+    }
+
     Write-Host "`nPortability — scaffolding"
     It "generates a config that Read-HandoffConfig accepts unedited" {
         $dest = Join-Path $tmp "scaffold.json"

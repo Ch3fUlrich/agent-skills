@@ -27,6 +27,11 @@ $script:HandoffDefaults = @{
     maxSessionHours = 6
     pollSeconds    = 30
     linkDirs       = @()
+    copyDirs       = @()
+    maxDependencyHours = 48
+    quietMinutes   = 20
+    stopAfterMerge = $true
+    traps          = @()
     allowedTools   = @("Bash", "Edit", "Write", "Read", "Glob", "Grep", "Agent", "ToolSearch", "Skill")
     guards         = $null
     postWorktree   = $null
@@ -344,6 +349,61 @@ function Build-HandoffSubagentPolicy {
     return ($parts -join " ")
 }
 
+function Get-HandoffDependencyState {
+    <#  -> @{ ready; waiting = @(keys); failed = @(keys) } for one session's dependsOn.
+
+        Pure: reads only the state hashtable it is given, so the wait/stop
+        decision is testable without a run. "merged" satisfies a dependency;
+        "done-unmerged" (a -NoMerge run) is accepted too, because the operator
+        chose not to merge and a dependent that waits forever helps nobody. A
+        terminal non-merged status FAILS the dependent rather than leaving it
+        polling all night for a merge that cannot come.  #>
+    param([hashtable]$State, [string[]]$Deps)
+    $satisfied = @("merged", "done-unmerged")
+    $terminal = @("failed", "auth-failed", "blocked", "guards-red", "merge-conflict", "crashed",
+                  "dependency-failed", "dependency-timeout")
+    $waiting = @(); $failed = @()
+    foreach ($d in @($Deps)) {
+        if (-not $d) { continue }
+        $status = ""
+        if ($State -and $State.ContainsKey($d) -and $State[$d] -is [hashtable] -and $State[$d].ContainsKey("status")) {
+            $status = [string]$State[$d]["status"]
+        }
+        if ($satisfied -contains $status) { continue }
+        if ($terminal -contains $status) { $failed += $d; continue }
+        $waiting += $d
+    }
+    return @{ ready = (($waiting.Count -eq 0) -and ($failed.Count -eq 0)); waiting = $waiting; failed = $failed }
+}
+
+function Build-HandoffTraps {
+    <#  The `traps` list rendered as one block for every brief, so a trap one
+        session measured is not re-measured by the next. Empty when unset. #>
+    param([hashtable]$Config)
+    if (-not $Config.ContainsKey("traps") -or -not $Config["traps"]) { return "" }
+    $items = @($Config["traps"]) | Where-Object { $_ }
+    if (-not $items.Count) { return "" }
+    $lines = @("Measured traps - do not re-measure them, work around them:")
+    foreach ($t in $items) { $lines += "- $t" }
+    return ($lines -join "`n")
+}
+
+function Test-HandoffDoneQuiet {
+    <#  Has a session FINISHED even though its turn has not ended?
+
+        Measured 2026-09-04 (basic-analysis, lanes C and F7): a session wrote its
+        DONE note, made its last commit, and then reported `working` for three
+        hours; the runner waited on the turn, hit maxSessionHours, stopped the
+        finished session and resumed it - twice - each resume a fresh session
+        that read the brief, found the work done, and idled. The evidence of
+        completion is the DONE note plus a quiet, clean branch, not the turn.  #>
+    param([bool]$DoneExists, [long]$LastCommitEpoch, [long]$NowEpoch, [int]$QuietMinutes, [bool]$Dirty)
+    if (-not $DoneExists) { return $false }
+    if ($Dirty) { return $false }
+    if ($LastCommitEpoch -le 0) { return $false }
+    return (($NowEpoch - $LastCommitEpoch) -ge ($QuietMinutes * 60))
+}
+
 function Get-HandoffSessionVars {
     <#  Every placeholder a brief, guard or hook can reference, for one session.
         Pure so that -EmitBriefs renders exactly what a real run would launch —
@@ -369,12 +429,16 @@ function Get-HandoffSessionVars {
         stateDir       = $stateDir
         rcName         = "handoff-$key"
         planDir        = ""
+        # The folder this skill lives in, so postWorktree can reference the
+        # bundled helpers (trust_worktree.py) without a repo-specific path.
+        skillDir       = $(if ($Config.ContainsKey("skillDir") -and $Config["skillDir"]) { [string]$Config["skillDir"] } else { "" })
     }
     # Config passthrough may reference the built-ins above, so it is expanded after them.
     if ($Config.ContainsKey("vars") -and $Config["vars"]) {
         foreach ($k in $Config["vars"].Keys) { $vars[$k] = Expand-HandoffTemplate ([string]$Config["vars"][$k]) $vars }
     }
     $vars["subagentPolicy"] = Build-HandoffSubagentPolicy $Config
+    $vars["traps"] = Build-HandoffTraps $Config
     $vars["doneNote"] = Expand-HandoffTemplate ([string]$Config["doneNote"]) $vars
     return $vars
 }
@@ -387,9 +451,16 @@ function Build-HandoffBrief {
     $info = $Config["sessions"][$SessionKey]
     $v = $Vars.Clone()
     $v["brief"] = Expand-HandoffTemplate (Resolve-HandoffBrief $Config $info) $v
-    if ($Config.ContainsKey("briefTemplate") -and $Config["briefTemplate"]) {
-        $tpl = if ($Config.ContainsKey("briefTemplateFile") -and $Config["briefTemplateFile"]) {
-            Get-Content (Join-Path $Config["repo"] $Config["briefTemplateFile"]) -Raw
+    # Either form of template wraps the brief. A `briefTemplateFile` given
+    # WITHOUT an inline `briefTemplate` used to be ignored silently, so every
+    # session launched with its bare body and none of the shared rules.
+    $hasFile = $Config.ContainsKey("briefTemplateFile") -and $Config["briefTemplateFile"]
+    $hasInline = $Config.ContainsKey("briefTemplate") -and $Config["briefTemplate"]
+    if ($hasFile -or $hasInline) {
+        $tpl = if ($hasFile) {
+            $tp = if ([System.IO.Path]::IsPathRooted($Config["briefTemplateFile"])) { $Config["briefTemplateFile"] } else { Join-Path $Config["repo"] $Config["briefTemplateFile"] }
+            if (-not (Test-Path $tp)) { throw "briefTemplateFile not found: $tp" }
+            Get-Content $tp -Raw
         } else { [string]$Config["briefTemplate"] }
         return Expand-HandoffTemplate $tpl $v
     }
@@ -480,6 +551,23 @@ function Read-HandoffConfig {
         if (-not ($s.ContainsKey("brief") -and $s["brief"]) -and -not ($s.ContainsKey("briefFile") -and $s["briefFile"])) {
             throw "session '$key' must set either 'brief' or 'briefFile'"
         }
+        # `dependsOn`: sessions that must have MERGED before this one starts. It
+        # is the one cross-lane primitive: a lane holding a dependent session
+        # waits (its worktree is cut only once the base branch carries the
+        # dependencies) instead of the operator running the runner twice.
+        $deps = @()
+        if ($s.ContainsKey("dependsOn") -and $null -ne $s["dependsOn"]) {
+            foreach ($d in @($s["dependsOn"])) { $n = ([string]$d).Trim(); if ($n) { $deps += $n } }
+        }
+        $s["dependsOn"] = $deps
+    }
+    foreach ($key in @($cfg["sessions"].Keys)) {
+        foreach ($d in @($cfg["sessions"][$key]["dependsOn"])) {
+            if ($d -eq $key) { throw "session '$key' dependsOn itself" }
+            if (-not $cfg["sessions"].ContainsKey($d)) {
+                throw "session '$key' dependsOn unknown session '$d' (known: $(($cfg['sessions'].Keys | Sort-Object) -join ', '))"
+            }
+        }
     }
 
     # Lanes default to one session per lane: maximum parallelism, which is the
@@ -521,4 +609,5 @@ Export-ModuleMember -Function ConvertTo-HandoffHash, Expand-HandoffTemplate, Cla
 Test-HandoffPermissionPrompt, Read-HandoffState, Write-HandoffState, Resolve-HandoffBrief,
 Build-HandoffGuardCommand, Read-HandoffConfig, Build-HandoffSubagentPolicy,
 Get-HandoffSessionVars, Build-HandoffBrief, Export-HandoffBriefs,
-Get-HandoffLinkType, Resolve-HandoffRepoRoot, Build-HandoffLaunchArgs, New-HandoffConfigScaffold
+Get-HandoffLinkType, Resolve-HandoffRepoRoot, Build-HandoffLaunchArgs, New-HandoffConfigScaffold,
+Get-HandoffDependencyState, Build-HandoffTraps, Test-HandoffDoneQuiet
