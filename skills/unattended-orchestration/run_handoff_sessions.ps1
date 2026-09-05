@@ -13,7 +13,16 @@ config), so it can drive agents other than Claude Code.
   -Validate    check the config; report repo, branch, lanes, guards, launcher
   -EmitBriefs  render every brief as copy-pasteable markdown, launch nothing
   -DryRun      rehearse: preflight and lane dispatch, but no session is started
+  -Cleanup     stop, remove and prune every MERGED session's background process,
+               worktree, branch and Serena project row; launches nothing
   (no flag)    run it
+
+While it runs, <stateDir>/queue is the operator's control surface: drop
+lane-<name>.json ({"sessions": ["X"]}) to start another lane (the child re-reads
+the config, so a session added to it after the start is launchable), or an empty
+stop-<session key> file to stop that session's lane at its next decision point.
+<stateDir>/load.json carries cpu_percent and the running sessions, refreshed
+every poll, for briefs that defer heavy runs under a machine budget.
 
 The repository is DETECTED (`git rev-parse --show-toplevel`), so a committed
 config carries no machine-specific path and works for everyone who clones it.
@@ -80,6 +89,7 @@ param(
     [int]$MaxContinues = 0,
     [int]$MaxRetries = 0,
     [int]$MaxSessionHours = 0,
+    [switch]$Cleanup,
     [string]$LaneName = ""
 )
 
@@ -136,7 +146,10 @@ $repo = $cfg.repo
 $stateDir = if ([System.IO.Path]::IsPathRooted($cfg.stateDir)) { $cfg.stateDir } else { Join-Path $repo $cfg.stateDir }
 $stateFile = Join-Path $stateDir "state.json"
 $runnerLog = Join-Path $stateDir "runner.log"
+$queueDir = Join-Path $stateDir "queue"
+$loadFile = Join-Path $stateDir "load.json"
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+New-Item -ItemType Directory -Force -Path $queueDir | Out-Null
 
 function Log([string]$msg) {
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [$LaneName] $msg"
@@ -283,6 +296,52 @@ function Get-BgEntry([string]$id) {
     catch { return $null }
 }
 
+function Write-Load {
+    # <stateDir>/load.json: the one number briefs can read before a heavy run.
+    try {
+        $cpu = $null
+        if ((Get-HandoffLinkType) -eq "Junction") {
+            $cpu = [double](Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+        }
+        elseif (Test-Path "/proc/loadavg") {
+            $la = [double](((Get-Content /proc/loadavg -Raw) -split " ")[0])
+            $cpu = [math]::Round(100.0 * $la / [math]::Max(1, [Environment]::ProcessorCount), 1)
+        }
+        $st = Read-HandoffState $stateFile
+        $running = @()
+        foreach ($k in @($st.Keys)) { $e = $st[$k]; if ($e -is [hashtable] -and $e.ContainsKey("status") -and $e["status"] -eq "running") { $running += $k } }
+        @{ updated = (Get-Date -Format "s"); cpu_percent = $cpu; running_sessions = $running; lane = $LaneName } |
+            ConvertTo-Json -Depth 4 | Set-Content -Path $loadFile -Encoding utf8
+    }
+    catch { }
+}
+
+function Remove-Worktree([string]$wt, [string]$branch) {
+    if (Test-Path $wt) { git -C $repo worktree remove --force $wt 2>&1 | Out-Null }
+    git -C $repo worktree prune 2>$null
+    if (git -C $repo branch --list $branch) { git -C $repo branch -d $branch 2>&1 | Out-Null }
+    Remove-SerenaProjectRow $wt
+}
+
+function Remove-SerenaProjectRow([string]$wt) {
+    # Serena appends a `projects:` row per activated worktree and never removes
+    # one; a page of dead rows is what every unattended day used to leave.
+    $home = if ($env:SERENA_HOME) { $env:SERENA_HOME } else { Join-Path $HOME ".serena" }
+    $cfgPath = Join-Path $home "serena_config.yml"
+    if (-not (Test-Path $cfgPath)) { return }
+    try {
+        $lines = Get-Content $cfgPath
+        $a = $wt.Replace('/', '\'); $b = $wt.Replace('\', '/')
+        $kept = @($lines | Where-Object { ($_.Trim() -ne "- $a") -and ($_.Trim() -ne "- $b") })
+        if ($kept.Count -ne $lines.Count) {
+            Copy-Item $cfgPath "$cfgPath.bak-$(Get-Date -Format 'yyyyMMdd')" -ErrorAction SilentlyContinue
+            $kept | Set-Content $cfgPath -Encoding utf8
+            Log "pruned the Serena project row for $wt"
+        }
+    }
+    catch { Log "could not prune the Serena project row for ${wt}: $($_.Exception.Message)" }
+}
+
 function Test-DoneQuiet([string]$wt, [string]$doneNotePath) {
     # The DONE note exists, the branch is clean, and nothing was committed for
     # quietMinutes: the session is finished whatever the agents view says.
@@ -301,6 +360,7 @@ function Wait-Bg([string]$id, [datetime]$deadline, [string]$wt = "", [string]$do
     # agents view still says "working" (measured: three hours of that, twice).
     $missing = 0
     while ((Get-Date) -lt $deadline) {
+        Write-Load
         if ($wt -and (Test-DoneQuiet $wt $doneNotePath)) { return "done-note" }
         $e = Get-BgEntry $id
         if (-not $e) {
@@ -364,10 +424,78 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
             Log "$key dependencies merged: $($deps -join ', ')"
         }
     }
-    if ($DryRun) { Log "dry run: would create $wt and run claude there"; return $true }
+    # Operator control: an empty stop-<key> file in the queue directory ends
+    # this lane before the session starts.
+    if (Test-Path (Join-Path $queueDir "stop-$key")) {
+        Log "$key stopped by the operator's stop marker before starting"
+        Update-State $key @{ status = "stopped-by-operator" }; return $false
+    }
+    # Merged elsewhere - by hand, or by another runner over the same state: an
+    # existing branch whose tip is already an ancestor of the base branch and
+    # is not simply equal to it (a freshly cut branch is an ancestor too).
+    if (-not $Fresh -and -not $DryRun) {
+        $tipB = ([string](git -C $repo rev-parse --verify --quiet $branch 2>$null)).Trim()
+        $tipBase = ([string](git -C $repo rev-parse --verify --quiet $cfg.baseBranch 2>$null)).Trim()
+        if ($tipB -and $tipBase -and $tipB -ne $tipBase) {
+            git -C $repo merge-base --is-ancestor $branch $cfg.baseBranch 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Log "$key ($branch) is already merged into $($cfg.baseBranch); skipping"
+                Update-State $key @{ status = "merged"; finished_by = "merged-elsewhere"; merged_into = $tipBase }
+                return $true
+            }
+        }
+    }
+    # Resource exclusion: never start while a RUNNING session holds a
+    # conflicting resource (write excludes all; read excludes write).
+    $wanted = @($info["resources"])
+    if ($wanted.Count) {
+        if ($DryRun) { Log "dry run: $key would hold $($wanted -join ', ') and wait for any running holder" }
+        else {
+            $announced = $false
+            while ($true) {
+                $st = Read-HandoffState $stateFile
+                $held = @()
+                foreach ($k in @($st.Keys)) {
+                    if ($k -eq $key) { continue }
+                    $e = $st[$k]
+                    if ($e -is [hashtable] -and $e.ContainsKey("status") -and $e["status"] -eq "running" -and $e.ContainsKey("resources")) {
+                        $held += , @{ key = $k; resources = @($e["resources"]) }
+                    }
+                }
+                $c = @(Test-HandoffResourceConflict $held $wanted)
+                if (-not $c.Count) { break }
+                if (-not $announced) {
+                    Log "$key waiting for resources held by $($c -join ', ') (wants $($wanted -join ', '))"
+                    Update-State $key @{ status = "waiting-resource"; waiting_for = ($c -join ",") }
+                    $announced = $true
+                }
+                Start-Sleep -Seconds $cfg.pollSeconds
+            }
+        }
+    }
+    if ($DryRun) {
+        if ($info["guardsOnly"]) { Log "dry run: $key is guards-only; would cut $wt at $($cfg.baseBranch) and run the guards there" }
+        Log "dry run: would create $wt and run claude there"; return $true
+    }
 
     Ensure-Worktree $wt $branch $vars
-    Update-State $key @{ status = "running"; worktree = $wt; branch = $branch; model = $info.model }
+    Update-State $key @{ status = "running"; worktree = $wt; branch = $branch; model = $info.model; resources = @($info["resources"]) }
+
+    if ($info["guardsOnly"]) {
+        # No agent: the pinned, idle final suite on a worktree at the merged HEAD.
+        $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $guard = Build-HandoffGuardCommand $cfg $vars
+        if (-not $guard) { Log "$key is guards-only but no guards are configured; nothing to do"; Update-State $key @{ status = "guards-green" }; return $true }
+        $guardLog = Join-Path $stateDir "session-$key-$stamp-guards.txt"
+        Log "$key is guards-only: running the guards on $wt (cut at $($cfg.baseBranch)'s HEAD), no agent launched"
+        Push-Location $wt
+        try { & $guard.command @($guard.args) 2>&1 | Out-File -Encoding utf8 $guardLog; $green = ($LASTEXITCODE -eq 0) }
+        finally { Pop-Location }
+        $baseSha = ([string](git -C $repo rev-parse HEAD 2>$null)).Trim()
+        Log "guards $(if ($green) { 'GREEN' } else { 'RED' }) at $baseSha`: $guardLog"
+        Update-State $key @{ status = $(if ($green) { "guards-green" } else { "guards-red" }); guard_log = $guardLog; base_sha = $baseSha }
+        return $green
+    }
 
     $doneNote = Join-Path $wt $vars["doneNote"]
     $sessionId = $null
@@ -377,6 +505,12 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
     while ($true) {
+        if (Test-Path (Join-Path $queueDir "stop-$key")) {
+            # The operator says this session is done: never resume it again.
+            if (Test-Path $doneNote) { Log "$key has the operator's stop marker and a DONE note; proceeding to the guards"; break }
+            Log "$key stopped by the operator's stop marker; lane stops"
+            Update-State $key @{ status = "stopped-by-operator" }; return $false
+        }
         $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $log = Join-Path $stateDir "session-$key-$stamp.log"
         # ARGUMENT ORDER MATTERS: `--allowedTools <tools...>` is variadic and
@@ -497,11 +631,14 @@ function Run-Session([string]$s, [bool]$isFollowUpRun) {
     }
     if (-not $merged) { Update-State $key @{ status = "merge-conflict" }; Log "lane stops: merging $branch into $($cfg.baseBranch) conflicted; resolve by hand"; return $false }
     $mergedSha = ([string](git -C $repo rev-parse HEAD 2>$null)).Trim()
-    Update-State $key @{ status = "merged"; merged_into = $mergedSha }
+    $refusals = 0
+    if (Test-Path $doneNote) { $refusals = Get-HandoffRefusalCount (Get-Content $doneNote -Raw) }
+    Update-State $key @{ status = "merged"; merged_into = $mergedSha; refusals = $refusals }
     Log "merged $branch into $($cfg.baseBranch) ($mergedSha)"
     # The session is done and its process still holds the worktree folder;
     # stopping it is what lets the operator remove the worktree later.
     if ($cfg.stopAfterMerge -and $bgId) { Invoke-Launcher "stop" @{ id = $bgId } | Out-Null; Log "stopped finished session $bgId" }
+    if ($cfg.removeWorktreeAfterMerge) { Remove-Worktree $wt $branch; Log "removed worktree $wt and branch $branch" }
     return $true
 }
 
@@ -552,13 +689,36 @@ if ($Validate) {
     foreach ($k in ($cfg.sessions.Keys | Sort-Object)) {
         $dd = @($cfg.sessions[$k]["dependsOn"])
         if ($dd.Count) { Write-Host "  dependsOn: $k waits for $($dd -join ', ')" }
+        $rr = @($cfg.sessions[$k]["resources"])
+        if ($rr.Count) { Write-Host "  resources: $k holds $($rr -join ', ')" }
+        if ($cfg.sessions[$k]["guardsOnly"]) { Write-Host "  guardsOnly: $k launches no agent" }
     }
+    Write-Host "  queue:     $queueDir   load: $loadFile"
     Write-Host "  guards:    $(if (Build-HandoffGuardCommand $cfg @{}) { 'configured' } else { 'none' })"
     Write-Host "  subagents: $(if (Build-HandoffSubagentPolicy $cfg) { 'policy configured' } else { 'none' })"
     # Surfaced because a repo driving a different agent has no other way to
     # confirm the swap took before committing a night to it.
     $onPath = if (Get-Command $cfg.launcher.command -ErrorAction SilentlyContinue) { "on PATH" } else { "NOT ON PATH" }
     Write-Host "  launcher:  $($cfg.launcher.command) ($onPath)"
+    exit 0
+}
+
+if ($Cleanup) {
+    # Everything a finished day leaves behind: the done sessions' processes
+    # (still holding their worktree folders), the worktrees, the branches, the
+    # Serena rows. Only MERGED sessions are touched; a lane left for review keeps
+    # its worktree.
+    $state = Read-HandoffState $stateFile
+    foreach ($k in @($state.Keys | Sort-Object)) {
+        $e = $state[$k]
+        if ($e -isnot [hashtable] -or -not $e.ContainsKey("status") -or $e["status"] -ne "merged") { continue }
+        if ($e.ContainsKey("bg_id") -and $e["bg_id"]) { try { Invoke-Launcher "stop" @{ id = $e["bg_id"] } | Out-Null } catch { } }
+        $wt = if ($e.ContainsKey("worktree")) { [string]$e["worktree"] } else { "" }
+        $br = if ($e.ContainsKey("branch")) { [string]$e["branch"] } else { "" }
+        if ($wt -and $br) { Remove-Worktree $wt $br; Log "cleanup: $k - removed $wt and $br" }
+        Update-State $k @{ cleaned = (Get-Date -Format "s") }
+    }
+    Log "cleanup finished"
     exit 0
 }
 
@@ -659,6 +819,34 @@ else {
             -RedirectStandardError (Join-Path $stateDir "lane$n.err.log")
         Start-Sleep -Seconds 30
     }
-    $procs | Wait-Process
+    # While lanes run, the queue directory is the operator's way in: a
+    # lane-<name>.json ({"sessions": ["F9"]}) starts another lane child, which
+    # re-reads the config - so a session added to the config after this runner
+    # started is launchable without a second runner over the same state file.
+    while ($true) {
+        foreach ($qf in @(Get-ChildItem $queueDir -Filter "lane-*.json" -ErrorAction SilentlyContinue)) {
+            try {
+                $spec = ConvertTo-HandoffHash (Get-Content $qf.FullName -Raw | ConvertFrom-Json)
+                $sessions = @(@($spec["sessions"]) | Where-Object { $_ })
+                if (-not $sessions.Count) { throw "no sessions listed" }
+                $n++
+                $childArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath,
+                    "-Config", $cfg.configPath, "-Sessions", ($sessions -join ","), "-LaneName", "lane$n")
+                if ($NoMerge) { $childArgs += "-NoMerge" }
+                Log "lane [$($sessions -join ',')] queued by the operator ($($qf.Name)); starting as lane$n"
+                $procs += Start-Process -FilePath $shell -ArgumentList $childArgs -PassThru -WindowStyle Hidden `
+                    -RedirectStandardOutput (Join-Path $stateDir "lane$n.out.log") `
+                    -RedirectStandardError (Join-Path $stateDir "lane$n.err.log")
+                Move-Item -Force $qf.FullName ($qf.FullName -replace '\.json$', '.started')
+            }
+            catch {
+                Log "queue file $($qf.Name) ignored: $($_.Exception.Message)"
+                Move-Item -Force $qf.FullName ($qf.FullName -replace '\.json$', '.rejected') -ErrorAction SilentlyContinue
+            }
+        }
+        $alive = @($procs | Where-Object { $_ -and -not $_.HasExited })
+        if (-not $alive.Count) { break }
+        Start-Sleep -Seconds $cfg.pollSeconds
+    }
     Log "all lanes finished; state: $stateFile"
 }

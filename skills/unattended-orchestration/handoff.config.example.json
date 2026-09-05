@@ -129,8 +129,30 @@
     "D": { "name": "drying",      "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-D-drying.md" },
     "E": { "name": "preliminary", "model": "claude-fable-5-1", "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-E-preliminary.md" },
     "G": { "name": "integration", "model": "opus",             "briefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/session-G-integration.md",
-           "dependsOn": ["A", "B"] }
+           "dependsOn": ["A", "B"], "resources": ["store:write"] },
+    "FINAL": { "name": "final-suite", "model": "sonnet", "guardsOnly": true, "dependsOn": ["A", "B", "D", "E", "G"] }
   },
+
+  "$comment_resources_guardsOnly": [
+    "resources: what a session HOLDS while running, as name or name:read / name:write (bare =",
+    "write). The runner will not start a session whose resources conflict with a RUNNING one:",
+    "write excludes everything on that name, read excludes only write. Ordering (dependsOn) is",
+    "not exclusion - a reader once starved the writer of a single-holder store.",
+    "guardsOnly: no agent is launched; the session cuts a worktree at the base branch's HEAD",
+    "and runs the guards there - the pinned, idle final suite. It needs no brief.",
+    "machineBudget (below) is ADVISORY: rendered into briefs as {{machineBudget}} with the path",
+    "of <stateDir>/load.json, which the runner refreshes every poll (cpu_percent,",
+    "running_sessions). A runner that blocked on CPU would deadlock behind another project."
+  ],
+  "machineBudget": { "maxCpuPercent": 75, "maxWorkersPerSession": 8, "note": "Other projects share this host." },
+
+  "$comment_controllerBrief": [
+    "OPTIONAL. The orchestrator's own brief, rendered FIRST by -EmitBriefs with {{stateFile}},",
+    "{{runnerLog}}, {{loadFile}}, {{queueDir}} and {{sessionsTable}} (every session's branch,",
+    "worktree, attach command and DONE note), so a controller session can be restarted from",
+    "the same source of truth as its lanes."
+  ],
+  "controllerBriefFile": "docs/superpowers/plans/2026-09-03-session-handoffs/_controller.md",
 
   "$comment_lanes": [
     "Lanes run in PARALLEL; sessions inside a lane run in SEQUENCE. Put sessions",
@@ -142,7 +164,7 @@
     "ends without merging (guards red, conflict, blocked) stops G's lane instead of",
     "leaving it polling all night. maxDependencyHours (default 48) bounds the wait."
   ],
-  "lanes": [["E", "A"], ["D", "B"], ["G"]],
+  "lanes": [["E", "A"], ["D", "B"], ["G", "FINAL"]],
 
   "$comment_briefTemplate": [
     "Wrapped around each session's brief; {{brief}} is where the session body lands.",
@@ -206,6 +228,7 @@
   ],
   "quietMinutes": 20,
   "stopAfterMerge": true,
+  "removeWorktreeAfterMerge": false,
 
   "stateDir": "output/sessions",
   "maxContinues": 8,

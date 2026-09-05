@@ -463,6 +463,54 @@ try {
         Assert-True (Test-HandoffDoneQuiet $true ($now - 3600) $now 20 $false) "DONE note + clean + quiet an hour -> finished"
     }
 
+    Write-Host "`nResources, refusals, guards-only sessions, controller brief"
+    It "write excludes everything on a resource name; read excludes only write" {
+        $held = @(@{ key = "W"; resources = @("store:write") }, @{ key = "R"; resources = @("store:read") }, @{ key = "X"; resources = @("other") })
+        Assert-Equal "W,R" (@(Test-HandoffResourceConflict $held @("store")) -join ",") "a bare name is a write and conflicts with both"
+        Assert-Equal "W" (@(Test-HandoffResourceConflict $held @("store:read")) -join ",") "a read conflicts with the writer only"
+        Assert-Equal 0 (@(Test-HandoffResourceConflict $held @("elsewhere:write")).Count) "an unrelated name never conflicts"
+        Assert-Equal 0 (@(Test-HandoffResourceConflict @() @("store")).Count) "nothing running -> nothing conflicts"
+    }
+    It "counts reported refusals and skips the sentences that say nothing was refused" {
+        $note = "## Refused`n- 14:21 Stop-Process ... refused as a whole`n- 18:02 prune --apply was refused`nNothing else was refused this session.`n"
+        Assert-Equal 2 (Get-HandoffRefusalCount $note)
+        Assert-Equal 0 (Get-HandoffRefusalCount "**Nothing was refused by the auto-mode classifier this session.**")
+        Assert-Equal 0 (Get-HandoffRefusalCount "")
+    }
+    It "accepts a guards-only session with no brief, normalises resources, and lets guards-green satisfy a dependency" {
+        $g = $good.Clone()
+        $g.sessions = @{ A = @{ name = "alpha"; model = "opus"; brief = "a"; resources = "store:write" }
+                         F = @{ name = "final"; model = "sonnet"; guardsOnly = $true; dependsOn = @("A") } }
+        $g.lanes = @(@("A"), @("F"))
+        $p = Join-Path $tmp "guardsonly.json"; $g | ConvertTo-Json -Depth 8 | Set-Content $p -Encoding utf8
+        $c = Read-HandoffConfig $p
+        Assert-True $c.sessions.F.guardsOnly "guardsOnly must be a bool true"
+        Assert-True (-not $c.sessions.A.guardsOnly) "default is false"
+        Assert-Equal "store:write" (@($c.sessions.A.resources) -join ",") "a bare string becomes a one-element array"
+        Assert-Equal 0 (@($c.sessions.F.resources).Count)
+        $r = Get-HandoffDependencyState @{ A = @{ status = "guards-green" } } @("A")
+        Assert-True $r.ready "a guards-only session that went green satisfies its dependents"
+    }
+    It "renders the machine budget into the brief vars only when configured" {
+        $c = Read-HandoffConfig $goodPath
+        $v = Get-HandoffSessionVars $c "A" $false
+        Assert-Equal "" $v["machineBudget"]
+        Assert-True ($v["loadFile"] -match "load\.json$") "loadFile must point into the state dir"
+        $c["machineBudget"] = @{ maxCpuPercent = 75; maxWorkersPerSession = 8 }
+        $v = Get-HandoffSessionVars $c "A" $false
+        Assert-True ($v["machineBudget"] -match "above 75" -and $v["machineBudget"] -match "8 worker") "budget numbers must reach the brief"
+    }
+    It "emits a controller brief with every session's attach name when configured" {
+        $c = Read-HandoffConfig $goodPath
+        Assert-Equal "" (Build-HandoffControllerBrief $c) "no controller brief by default"
+        $c["controllerBrief"] = "You watch {{stateFile}} and {{runnerLog}}. Lanes:`n{{sessionsTable}}"
+        $b = Build-HandoffControllerBrief $c
+        Assert-True ($b -match "state\.json" -and $b -match "runner\.log") "state and log paths must be filled in"
+        Assert-True ($b -match "claude attach handoff-A") "each session's attach command must be listed"
+        $md = Export-HandoffBriefs $c
+        Assert-True ($md -match "## Controller") "-EmitBriefs must include the controller section"
+    }
+
     Write-Host "`nPortability — scaffolding"
     It "generates a config that Read-HandoffConfig accepts unedited" {
         $dest = Join-Path $tmp "scaffold.json"

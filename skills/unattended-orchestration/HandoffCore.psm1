@@ -31,7 +31,11 @@ $script:HandoffDefaults = @{
     maxDependencyHours = 48
     quietMinutes   = 20
     stopAfterMerge = $true
+    removeWorktreeAfterMerge = $false
     traps          = @()
+    machineBudget  = $null
+    controllerBrief = $null
+    controllerBriefFile = $null
     allowedTools   = @("Bash", "Edit", "Write", "Read", "Glob", "Grep", "Agent", "ToolSearch", "Skill")
     guards         = $null
     postWorktree   = $null
@@ -359,7 +363,7 @@ function Get-HandoffDependencyState {
         terminal non-merged status FAILS the dependent rather than leaving it
         polling all night for a merge that cannot come.  #>
     param([hashtable]$State, [string[]]$Deps)
-    $satisfied = @("merged", "done-unmerged")
+    $satisfied = @("merged", "done-unmerged", "guards-green")
     $terminal = @("failed", "auth-failed", "blocked", "guards-red", "merge-conflict", "crashed",
                   "dependency-failed", "dependency-timeout")
     $waiting = @(); $failed = @()
@@ -404,6 +408,107 @@ function Test-HandoffDoneQuiet {
     return (($NowEpoch - $LastCommitEpoch) -ge ($QuietMinutes * 60))
 }
 
+function Test-HandoffResourceConflict {
+    <#  -> the keys of running sessions whose held resources conflict with $Wanted.
+
+        A resource is "name" or "name:read" / "name:write" (bare = write).
+        Write excludes everything on that name; read excludes only write.
+        Measured need (basic-analysis, 2026-09-04): a read-only evidence job on
+        a single-holder HDF5 store starved the writing pass; the orchestrator
+        coordinated by hand. Lanes order sessions; this excludes them.  #>
+    param([array]$Held, [string[]]$Wanted)
+    $want = @{}
+    foreach ($w in @($Wanted)) {
+        if (-not $w) { continue }
+        $parts = ([string]$w).Split(":", 2)
+        $mode = if ($parts.Count -gt 1) { $parts[1].Trim().ToLower() } else { "write" }
+        $want[$parts[0].Trim()] = $mode
+    }
+    $conflicts = @()
+    foreach ($h in @($Held)) {
+        if (-not $h -or -not ($h -is [hashtable])) { continue }
+        foreach ($r in @($h["resources"])) {
+            if (-not $r) { continue }
+            $parts = ([string]$r).Split(":", 2)
+            $name = $parts[0].Trim()
+            $mode = if ($parts.Count -gt 1) { $parts[1].Trim().ToLower() } else { "write" }
+            if ($want.ContainsKey($name) -and ($mode -eq "write" -or $want[$name] -eq "write")) {
+                if ($conflicts -notcontains [string]$h["key"]) { $conflicts += [string]$h["key"] }
+            }
+        }
+    }
+    # Plain return: callers wrap the result in @(...). A leading-comma return
+    # arrives at an @() caller as ONE element holding the whole array.
+    return $conflicts
+}
+
+function Get-HandoffRefusalCount {
+    <#  How many lines of a DONE note report a refusal by the permission
+        classifier. Crude on purpose: it counts sentences that say something
+        WAS refused and skips the ones that say nothing was, so the morning
+        reader sees the pattern across lanes without opening every note.  #>
+    param([string]$Text)
+    if (-not $Text) { return 0 }
+    $n = 0
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -notmatch "(?i)refus(ed|al)") { continue }
+        if ($line -match "^\s*#") { continue }                                  # a heading, not a report
+        if ($line -match "(?i)\b(nothing|none|no command|no commands|not refused|zero refusals|no refusals)\b") { continue }
+        $n++
+    }
+    return $n
+}
+
+function Build-HandoffMachineBudget {
+    <#  The machine-budget paragraph rendered into every brief as
+        {{machineBudget}}. Advisory, deliberately: a runner that blocks lanes
+        on CPU would deadlock behind another project's compute. Empty when
+        the config declares no budget.  #>
+    param([hashtable]$Config, [hashtable]$Vars)
+    if (-not $Config.ContainsKey("machineBudget") -or -not $Config["machineBudget"]) { return "" }
+    $b = $Config["machineBudget"]
+    $parts = @("The machine is ONE budget shared by every lane, every subagent and every compute pass.")
+    if ($b.ContainsKey("maxCpuPercent") -and $b["maxCpuPercent"]) {
+        $parts += "Before any run longer than a minute, read $($Vars['loadFile']) (cpu_percent, running_sessions; the runner refreshes it every poll) and defer while cpu_percent is above $($b['maxCpuPercent'])."
+    }
+    if ($b.ContainsKey("maxWorkersPerSession") -and $b["maxWorkersPerSession"]) {
+        $parts += "Never run more than $($b['maxWorkersPerSession']) worker processes (n_jobs) at once."
+    }
+    if ($b.ContainsKey("note") -and $b["note"]) { $parts += [string]$b["note"] }
+    return ($parts -join " ")
+}
+
+function Build-HandoffControllerBrief {
+    <#  The orchestrator's own brief, rendered from the same config so a
+        controller session can be restarted from one source of truth: where
+        the state, log, load and queue files are, and how to reach each lane.  #>
+    param([hashtable]$Config)
+    $hasFile = $Config.ContainsKey("controllerBriefFile") -and $Config["controllerBriefFile"]
+    $hasInline = $Config.ContainsKey("controllerBrief") -and $Config["controllerBrief"]
+    if (-not ($hasFile -or $hasInline)) { return "" }
+    $stateDir = if ([System.IO.Path]::IsPathRooted($Config["stateDir"])) { $Config["stateDir"] } else { Join-Path $Config["repo"] $Config["stateDir"] }
+    $rows = @()
+    foreach ($k in ($Config["sessions"].Keys | Sort-Object)) {
+        $v = Get-HandoffSessionVars $Config $k $false
+        $rows += "- $k ($($v['sessionName'])): branch $($v['branch']), worktree $($v['worktree']), attach with `claude attach $($v['rcName'])`, DONE note $($v['doneNote'])"
+    }
+    $vars = @{
+        repo = $Config["repo"]; baseBranch = $Config["baseBranch"]; stateDir = $stateDir
+        stateFile = (Join-Path $stateDir "state.json"); runnerLog = (Join-Path $stateDir "runner.log")
+        loadFile = (Join-Path $stateDir "load.json"); queueDir = (Join-Path $stateDir "queue")
+        sessionsTable = ($rows -join "`n")
+    }
+    if ($Config.ContainsKey("vars") -and $Config["vars"]) {
+        foreach ($k in $Config["vars"].Keys) { if (-not $vars.ContainsKey($k)) { $vars[$k] = Expand-HandoffTemplate ([string]$Config["vars"][$k]) $vars } }
+    }
+    $tpl = if ($hasFile) {
+        $tp = if ([System.IO.Path]::IsPathRooted($Config["controllerBriefFile"])) { $Config["controllerBriefFile"] } else { Join-Path $Config["repo"] $Config["controllerBriefFile"] }
+        if (-not (Test-Path $tp)) { throw "controllerBriefFile not found: $tp" }
+        Get-Content $tp -Raw
+    } else { [string]$Config["controllerBrief"] }
+    return (Expand-HandoffTemplate $tpl $vars)
+}
+
 function Get-HandoffSessionVars {
     <#  Every placeholder a brief, guard or hook can reference, for one session.
         Pure so that -EmitBriefs renders exactly what a real run would launch —
@@ -437,8 +542,11 @@ function Get-HandoffSessionVars {
     if ($Config.ContainsKey("vars") -and $Config["vars"]) {
         foreach ($k in $Config["vars"].Keys) { $vars[$k] = Expand-HandoffTemplate ([string]$Config["vars"][$k]) $vars }
     }
+    $vars["loadFile"] = Join-Path $stateDir "load.json"
+    $vars["queueDir"] = Join-Path $stateDir "queue"
     $vars["subagentPolicy"] = Build-HandoffSubagentPolicy $Config
     $vars["traps"] = Build-HandoffTraps $Config
+    $vars["machineBudget"] = Build-HandoffMachineBudget $Config $vars
     $vars["doneNote"] = Expand-HandoffTemplate ([string]$Config["doneNote"]) $vars
     return $vars
 }
@@ -481,6 +589,15 @@ function Export-HandoffBriefs {
     [void]$out.AppendLine()
     [void]$out.AppendLine("Generated from ``$($Config['configPath'])``. Lanes run in parallel; sessions inside a lane run in sequence.")
     [void]$out.AppendLine()
+    $ctl = Build-HandoffControllerBrief $Config
+    if ($ctl) {
+        [void]$out.AppendLine("## Controller")
+        [void]$out.AppendLine()
+        [void]$out.AppendLine('```text')
+        [void]$out.AppendLine($ctl.Trim())
+        [void]$out.AppendLine('```')
+        [void]$out.AppendLine()
+    }
     $laneNo = 0
     foreach ($lane in $Config["lanes"]) {
         $laneNo++
@@ -548,9 +665,23 @@ function Read-HandoffConfig {
         if ($s -isnot [hashtable]) { throw "session '$key' must be an object" }
         if (-not $s.ContainsKey("model") -or -not $s["model"]) { throw "session '$key' must set 'model'" }
         if (-not $s.ContainsKey("name") -or -not $s["name"]) { $s["name"] = $key.ToLower() }
-        if (-not ($s.ContainsKey("brief") -and $s["brief"]) -and -not ($s.ContainsKey("briefFile") -and $s["briefFile"])) {
+        # A guards-only session launches no agent: it cuts a worktree at the
+        # base branch's HEAD and runs the guards there - the pinned, idle
+        # final suite that every lane's DONE note used to say was "still owed".
+        $s["guardsOnly"] = [bool]($s.ContainsKey("guardsOnly") -and $s["guardsOnly"])
+        if (-not $s["guardsOnly"] -and -not ($s.ContainsKey("brief") -and $s["brief"]) -and -not ($s.ContainsKey("briefFile") -and $s["briefFile"])) {
             throw "session '$key' must set either 'brief' or 'briefFile'"
         }
+        if (-not ($s.ContainsKey("brief") -and $s["brief"]) -and -not ($s.ContainsKey("briefFile") -and $s["briefFile"])) { $s["brief"] = "(guards only)" }
+        # `resources`: what the session HOLDS while running, as name[:read|write]
+        # (bare name = write). Ordering (dependsOn) is not exclusion: a reader can
+        # starve a single-holder store's writer, so the runner refuses to start a
+        # session whose resources conflict with a RUNNING one.
+        $res = @()
+        if ($s.ContainsKey("resources") -and $null -ne $s["resources"]) {
+            foreach ($r in @($s["resources"])) { $n = ([string]$r).Trim(); if ($n) { $res += $n } }
+        }
+        $s["resources"] = $res
         # `dependsOn`: sessions that must have MERGED before this one starts. It
         # is the one cross-lane primitive: a lane holding a dependent session
         # waits (its worktree is cut only once the base branch carries the
@@ -610,4 +741,5 @@ Test-HandoffPermissionPrompt, Read-HandoffState, Write-HandoffState, Resolve-Han
 Build-HandoffGuardCommand, Read-HandoffConfig, Build-HandoffSubagentPolicy,
 Get-HandoffSessionVars, Build-HandoffBrief, Export-HandoffBriefs,
 Get-HandoffLinkType, Resolve-HandoffRepoRoot, Build-HandoffLaunchArgs, New-HandoffConfigScaffold,
-Get-HandoffDependencyState, Build-HandoffTraps, Test-HandoffDoneQuiet
+Get-HandoffDependencyState, Build-HandoffTraps, Test-HandoffDoneQuiet,
+Test-HandoffResourceConflict, Get-HandoffRefusalCount, Build-HandoffMachineBudget, Build-HandoffControllerBrief
