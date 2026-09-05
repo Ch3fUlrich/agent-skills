@@ -692,7 +692,11 @@ function Preflight {
         # A one-word headless call: the cheapest proof that the CLI's own login
         # is alive. An expired OAuth session fails every session instantly,
         # which is not something to discover at 03:00.
-        $probe = Join-Path $stateDir "preflight-auth.json"
+        # Per-process file: two runners starting in the same second (a queued lane
+        # and a relaunch) both wrote preflight-auth.json and one died with "cannot
+        # access the file because it is being used by another process" - before
+        # logging a line, so the lane simply never existed (measured 2026-09-05).
+        $probe = Join-Path $stateDir "preflight-auth-$PID.json"
         Push-Location $repo
         try { Invoke-Launcher "probe" @{ prompt = "Reply with exactly the word OK."; probeModel = $cfg.launcher.probeModel } | Out-File -Encoding utf8 $probe }
         finally { Pop-Location }
