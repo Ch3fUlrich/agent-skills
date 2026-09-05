@@ -188,3 +188,41 @@ a file both were told to append to.
   nothing to the shared changelog and the runner never had a changelog conflict; the controller's
   `changelog_append.py --expect-head` never refused a stale write because there was never a second
   writer.
+
+---
+
+## 11. Adopted for `gen-analysis`, 2026-09-05 — the second real run, and what it cost
+
+*Written by the gen-analysis controller session (`gen-analysis-d0`, Fable 5.1) while the run was
+still going: eleven sessions in five lanes, one guards-only final suite, launched 07:20. Every item
+below was measured in `runner.log`, `state.json` or a DONE note that day.*
+
+| § | what happened | built / documented | where |
+|---|---|---|---|
+| 11.1 | `-Lanes 'A' 'B' 'C'` through `Start-Process` bound lanes 2–4 to `-Sessions`, `-OutFile`, `-WaitUntil`; one lane ran alone in-process | `-Lanes "A;B;C"` one-token form; smoke test | `c6f1e28` |
+| 11.2 | a tracked placeholder (`data/.gitkeep`) made git create the directory before the junction; the old "link if absent" skipped the live-data link silently | placeholder-only directories are replaced, real content is refused and logged; per-session `linkDirs`/`copyDirs`/`copyFiles` so ONE lane sees the live data | `cfe7883` |
+| 11.3 | a session's guard went red on its own new test file and its DONE note: `git grep` sees the committed tree, the session tested the working tree | a config `trap`; the adopting repo's guard was rewritten | config |
+| 11.4 | a stop marker beside a DONE note stopped the lane before start instead of going to the guards, contradicting §3 | pre-start check honours the DONE note | `36d4b5d` |
+| 11.5 | two runners starting in the same second shared `preflight-auth.json`; the queued lane's child died on the file lock before logging anything and was missing for 1 h 45 min | per-process probe file; the parent now logs every lane child's exit code | `fd18fd4`, this commit |
+| 11.6 | the controller folded a session's changelog paragraph into `CHANGELOG.md` while the one session allowed to edit that file was still unmerged: conflict | rule in the adopting plan: fold nothing until the changelog-editing session has merged | plan README |
+| 11.7 | `app/main.py` (router registration) conflicted on three of nine merges — every lane that adds a page includes a router there; "lanes never share a file" missed the registration point | documented below; proposal: name the registration files in the plan and pre-assign their insertion order, or make registration a per-module table | this file |
+| 11.8 | three hand-resolved merges each failed the final-suite lane's dependency check the moment the terminal state appeared; FINAL was re-queued three times | `guards-red` and `merge-conflict` are waited on by dependents; terminal stays terminal | `60a5fc0` |
+| 11.9 | Serena's `uvx`-launched MCP server missed the 30 s startup timeout in three of nine sessions under load; the sessions fell back to grep and finished without loss | adopting repo: `.claude/settings.local.json` with `MCP_TIMEOUT=120000`, copied into every worktree by `trust_worktree.py` | config |
+| 11.10 | two DONE notes carried a family's full names, kit codes and lab-document names; one reached the public origin before the controller read it | brief-template rule (counts, hashes, slugs only), a redaction tool with a gitignored map, a shape-based guard test; **the controller must run the guard on a merged note before pushing** | adopting repo |
+| 11.11 | full-suite wall time varied 6:54 → 53:21 for the same suite as one to four lanes ran suites concurrently; a 120 s job-wait test with a 22 % idle margin failed in three sessions' own runs and passed alone every time | measured; proposal: a `resources` entry for "the suite" so at most N guard suites run at once, and a `machineBudget` that briefs actually read | this file |
+
+**11.7 in detail — registration files are shared files.** The adopting plan's lane rule said
+lanes never share a file, and the briefs honoured it for modules, tests and migrations. Every lane
+that adds a page still had to add `from app.routes_x import router` and `app.include_router(...)`
+to `app/main.py`, at the same two lines, so L1 vs D2 and then A2 vs both conflicted. The fix was
+trivial each time (keep both), but it stopped a lane and cascaded into 11.8. When writing briefs,
+name every registration point (`main.py` includes, a capabilities registry, an i18n catalogue, a
+migration index) and either give each session its own line by position or move registration into
+a per-module table the app discovers.
+
+**11.11 in detail — the suite is a resource too.** Four sessions ran the full suite before their
+DONE notes, the runner ran it again as each guard, and the controller's own merged-tree run made
+it nine full suites in five hours on one host. The suite's own duration went from 6:54 (idle) to
+53:21 (four concurrent), and its one timing-sensitive test failed whenever more than two suites
+overlapped. `resources: ["suite"]` on every session would serialise the guards; the sessions'
+pre-DONE runs are the brief's to cap ("run it once, and read `load.json` first").

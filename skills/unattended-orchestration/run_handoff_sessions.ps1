@@ -902,6 +902,7 @@ else {
             -RedirectStandardError (Join-Path $stateDir "lane$n.err.log")
         Start-Sleep -Seconds 30
     }
+    $reported = @()
     # While lanes run, the queue directory is the operator's way in: a
     # lane-<name>.json ({"sessions": ["F9"]}) starts another lane child, which
     # re-reads the config - so a session added to the config after this runner
@@ -926,6 +927,19 @@ else {
                 Log "queue file $($qf.Name) ignored: $($_.Exception.Message)"
                 Move-Item -Force $qf.FullName ($qf.FullName -replace '\.json$', '.rejected') -ErrorAction SilentlyContinue
             }
+        }
+        # A lane child that dies BEFORE its first log line - a preflight crash, a
+        # locked file - used to vanish without a trace: no state entry, nothing in
+        # runner.log, and the lane was discovered missing hours later (measured
+        # 2026-09-05: a queued lane lost 1 h 45 min this way). Every exit is logged
+        # once, with the code and where its stderr went.
+        foreach ($pr in @($procs)) {
+            if (-not $pr -or -not $pr.HasExited) { continue }
+            if ($reported -contains $pr.Id) { continue }
+            $reported += $pr.Id
+            $code = $pr.ExitCode
+            if ($code -eq 0) { Log "lane child pid $($pr.Id) exited (0)" }
+            else { Log "lane child pid $($pr.Id) EXITED WITH CODE $code before finishing its lane - read its lane*.err.log in $stateDir" }
         }
         $alive = @($procs | Where-Object { $_ -and -not $_.HasExited })
         if (-not $alive.Count) { break }
