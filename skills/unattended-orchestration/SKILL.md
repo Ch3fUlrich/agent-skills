@@ -285,7 +285,7 @@ The four-step path is in *Adopting this skill* above. Beyond it:
 | Flag | Effect |
 |---|---|
 | `-Sessions X,Y` | run just these, as one sequential lane, ignoring configured lanes |
-| `-Lanes "X,Y" "Z"` | override the configured lanes for this run |
+| `-Lanes "X,Y;Z"` | override the configured lanes for this run — one string, `;` between lanes, so it survives `pwsh -File` and `Start-Process`, which flatten an array argument into positional tokens (measured 2026-09-05: `-Lanes 'A' 'L' 'D' 'FINAL'` through Start-Process bound `L` to `-Sessions` and `FINAL` to `-WaitUntil`) |
 | `-Fresh` | ignore recorded state; re-run sessions already marked merged |
 | `-NoMerge` | stop after the guards; leave branches for review |
 | `-WaitUntil "yyyy-MM-dd HH:mm"` | sleep, then start |

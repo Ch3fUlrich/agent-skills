@@ -16,6 +16,10 @@ config), so it can drive agents other than Claude Code.
   -Cleanup     stop, remove and prune every MERGED session's background process,
                worktree, branch and Serena project row; launches nothing
   -Status      print every session's state from state.json as a table
+
+-Lanes takes several lanes as ONE string separated by `;` ("A,B;C;D"), so it
+survives `pwsh -File` and Start-Process, which flatten an array argument into
+positional tokens and bind them to the wrong parameters.
   (no flag)    run it
 
 While it runs, <stateDir>/queue is the operator's control surface: drop
@@ -822,7 +826,19 @@ if ($Sessions.Count -gt 0) {
     $runLanes += , @($Sessions | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 elseif ($Lanes.Count -gt 0) {
-    foreach ($l in $Lanes) { $runLanes += , @($l -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    # A lane list may arrive as ONE string with `;` between lanes: `pwsh -File` (and
+    # therefore Start-Process) hands an array argument to the script as separate
+    # positional tokens, and PowerShell then binds the second lane to -Sessions, the
+    # third to -OutFile and the fourth to -WaitUntil - measured 2026-09-05, when
+    # `-Lanes 'A1,A2,A3' 'L1,L2,L3,L4' 'D1,D2' 'FINAL'` ran lane L alone in-process
+    # and logged "could not parse -WaitUntil 'FINAL'". `-Lanes 'A1,A2,A3;L1,L2;FINAL'`
+    # is one token everywhere.
+    foreach ($group in $Lanes) {
+        foreach ($l in ($group -split ";")) {
+            $items = @($l -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            if ($items.Count) { $runLanes += , $items }
+        }
+    }
 }
 else {
     foreach ($l in $cfg.lanes) { $runLanes += , @($l) }

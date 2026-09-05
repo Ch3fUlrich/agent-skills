@@ -57,6 +57,13 @@ try {
         Assert-Match $out "lanes:\s+X,Y" "a sequential lane must stay sequential"
         Assert-NotMatch $out "X\s+\|\s+Y" "must not split into parallel lanes"
     }
+    It "splits one -Lanes token on semicolons into separate lanes (the Start-Process-safe form)" {
+        $p = New-Config @(, @("X", "Y")) "semilanes"
+        $out = (& pwsh -NoProfile -File $runner -Config $p -DryRun -Lanes "X;Y" 2>&1 | Out-String)
+        $log = Get-Content (Join-Path (Split-Path $p -Parent) "state-semilanes\runner.log") -Raw
+        Assert-Match $log "lane \[X\] starting as lane1" "X must be its own lane"
+        Assert-Match $log "lane \[Y\] starting as lane2" "Y must be its own lane"
+    }
     It "reports two lanes as two" {
         $p = New-Config @(@("X"), @("Y")) "twolanes"
         $out = (& pwsh -NoProfile -File $runner -Config $p -Validate 2>&1 | Out-String)
